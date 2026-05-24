@@ -24,25 +24,6 @@ export default function AuthScreen() {
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
 
-  // Demo Account für Tests
-  const handleDemoLogin = async () => {
-    setLoading(true);
-    try {
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email: 'demo@test.com',
-        password: 'demo123456',
-      });
-
-      if (error) throw error;
-
-      router.replace('/(tabs)');
-    } catch (error: any) {
-      Alert.alert('Error', error.message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const handleAuth = async () => {
     if (!email || !password) {
       Alert.alert('Error', 'Please fill in all fields');
