@@ -30,22 +30,18 @@ export function AuthScreen({ onAuthSuccess }: AuthScreenProps) {
       setLoading(false);
     }
   };
-  
-  // Form state
+
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
 
-  
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     setLoading(true);
 
-    // Trim email and password to remove any whitespace
     const cleanEmail = email.trim();
     const cleanPassword = password.trim();
 
-    // Validate that email and password are not empty after trimming
     if (!cleanEmail || !cleanPassword) {
       setError('Email and password are required');
       setLoading(false);
@@ -59,36 +55,28 @@ export function AuthScreen({ onAuthSuccess }: AuthScreenProps) {
           password: cleanPassword,
           name: '',
         });
-        
-        // Auto-signin after signup
+
         await api.signin(cleanEmail, cleanPassword);
       } else {
         await api.signin(cleanEmail, cleanPassword);
       }
-      
-      // CRITICAL: Wait for Supabase session to be fully established before proceeding
-        const { data: supabaseSession, error: supabaseError } = await supabase.auth.signInWithPassword({
-          email: cleanEmail,
-          password: cleanPassword,
-        });
-      
+
+      const { data: supabaseSession, error: supabaseError } = await supabase.auth.signInWithPassword({
+        email: cleanEmail,
+        password: cleanPassword,
+      });
+
       if (supabaseError || !supabaseSession?.session) {
         throw new Error(`Failed to establish session: ${supabaseError?.message || 'No session returned'}`);
       }
-      
-      console.log('✅ Supabase session established');
-      
-      // Wait a bit for session to propagate through the app
+
       await new Promise(resolve => setTimeout(resolve, 200));
-      
-      // Verify session is still valid before proceeding
+
       const { data: { session: verifySession } } = await supabase.auth.getSession();
       if (!verifySession?.access_token) {
         throw new Error('Session verification failed - session not persisted');
       }
-      
-      console.log('✅ Session verified, proceeding to app');
-      
+
       onAuthSuccess();
     } catch (err: any) {
       setError(err.message || 'Authentication failed');
@@ -185,6 +173,8 @@ export function AuthScreen({ onAuthSuccess }: AuthScreenProps) {
                 🔍 Continue with Google
               </Button>
             </div>
+          </div>
+        )}
 
         <div className="mt-6 text-center">
           <button

@@ -263,10 +263,6 @@ const styles = StyleSheet.create({
   buttonDisabled: {
     backgroundColor: '#F5A08A',
   },
-  demoButton: {
-    backgroundColor: '#4CAF50',
-    marginTop: 16,
-  },
   buttonText: {
     color: '#fff',
     fontSize: 16,
@@ -327,21 +323,6 @@ const styles = StyleSheet.create({
   linkInline: {
     color: '#FF6B35',
     textDecorationLine: 'underline',
-  },
-  divider: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginVertical: 24,
-  },
-  dividerLine: {
-    flex: 1,
-    height: 1,
-    backgroundColor: '#ddd',
-  },
-  dividerText: {
-    marginHorizontal: 16,
-    color: '#999',
-    fontSize: 14,
   },
 });
 

@@ -9,7 +9,6 @@ import { SettingsScreen } from './components/SettingsScreen';
 import { BlyveProfileScreen } from './components/BlyveProfileScreen';
 import { EditProfileScreen } from './components/EditProfileScreen';
 import { BottomNavigation } from './components/BottomNavigation';
-import { ApiDebug } from './components/ApiDebug';
 import { api } from './lib/api';
 import { LegalDocs } from './components/LegalDocs';
 import { Toaster } from './components/ui/sonner';
@@ -21,7 +20,6 @@ import { useMessageRealtime } from './hooks/useMessageRealtime';
 import { useTypingRealtime } from './hooks/useTypingRealtime';
 import { NotificationPrompt } from './components/NotificationPrompt';
 import { UnreadProvider } from './context/UnreadContext';
-import { DebugPanel } from './components/DebugPanel';
 import { CallProvider, useCall } from './context/CallContext';
 import { IncomingCallPopup } from './components/IncomingCallPopup';
 import { CallJoinScreen } from './components/CallJoinScreen';
@@ -574,7 +572,6 @@ function AppContent({ onUserIdChange }: AppContentProps = {}) {
             </div>
           ) : null}
           <AuthScreen onAuthSuccess={handleAuthSuccess} />
-          <ApiDebug />
         </ErrorBoundary>
       ) : needsOnboarding ? (
         <ErrorBoundary
@@ -768,9 +765,6 @@ export default function App() {
               <AppContent />
             </UnreadProviderWrapper>
           </AppProviders>
-
-          {/* Debug Panel (nur in Development) - Innerhalb ToastProvider für useToast */}
-          {process.env.NODE_ENV === 'development' && <DebugPanel />}
         </AppDataProvider>
       </ToastProvider>
     </QueryClientProvider>
