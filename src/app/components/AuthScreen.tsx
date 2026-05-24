@@ -35,87 +35,7 @@ export function AuthScreen({ onAuthSuccess }: AuthScreenProps) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
 
-  const handleDemoLogin = async () => {
-    setEmail('demo@blyve.com');
-    setPassword('demo123456');
-    setLoading(true);
-    setError('');
-
-    console.log('=== DEMO LOGIN STARTED ===');
-
-    try {
-      // Try to sign in with demo account
-      try {
-        console.log('Attempting to sign in with existing demo account...');
-        const signInResult = await api.signin('demo@blyve.com', 'demo123456');
-        console.log('✅ Demo login successful:', signInResult);
-        console.log('Access token received:', signInResult.accessToken ? 'Yes' : 'No');
-        
-        // Also sign in to Supabase directly for direct queries
-        try {
-          const { data: supabaseSession, error: supabaseError } = await supabase.auth.signInWithPassword({
-            email: 'demo@blyve.com',
-            password: 'demo123456',
-          });
-          if (supabaseError) {
-            console.warn('Supabase direct login failed (non-critical):', supabaseError);
-          } else {
-            console.log('✅ Supabase session established for direct queries');
-          }
-        } catch (supabaseErr) {
-          console.warn('Could not establish Supabase session (non-critical):', supabaseErr);
-        }
-        
-        // Small delay to ensure token is fully set
-        await new Promise(resolve => setTimeout(resolve, 100));
-        
-        onAuthSuccess();
-        return;
-      } catch (signInError) {
-        // If demo account doesn't exist, create it
-        console.log('Demo account not found, creating new demo account...');
-        console.log('Sign in error was:', signInError);
-        
-        await api.signup({
-          email: 'demo@blyve.com',
-          password: 'demo123456',
-          name: 'Demo User',
-        });
-        
-        console.log('Demo account created successfully, now signing in...');
-        // Now sign in
-        const signInResult = await api.signin('demo@blyve.com', 'demo123456');
-        console.log('✅ Demo login successful after signup:', signInResult);
-        console.log('Access token received:', signInResult.accessToken ? 'Yes' : 'No');
-        
-        // Also sign in to Supabase directly for direct queries
-        try {
-          const { data: supabaseSession, error: supabaseError } = await supabase.auth.signInWithPassword({
-            email: 'demo@blyve.com',
-            password: 'demo123456',
-          });
-          if (supabaseError) {
-            console.warn('Supabase direct login failed (non-critical):', supabaseError);
-          } else {
-            console.log('✅ Supabase session established for direct queries');
-          }
-        } catch (supabaseErr) {
-          console.warn('Could not establish Supabase session (non-critical):', supabaseErr);
-        }
-        
-        // Small delay to ensure token is fully set
-        await new Promise(resolve => setTimeout(resolve, 100));
-        
-        onAuthSuccess();
-      }
-    } catch (err: any) {
-      console.error('❌ Demo login failed:', err);
-      setError(err.message || 'Demo login failed. Please try manual signup.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
+  
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
@@ -265,18 +185,6 @@ export function AuthScreen({ onAuthSuccess }: AuthScreenProps) {
                 🔍 Continue with Google
               </Button>
             </div>
-
-            <Button
-              type="button"
-              onClick={handleDemoLogin}
-              disabled={loading}
-              variant="outline"
-              className="w-full mt-4 border-2 border-orange-300 bg-gradient-to-br from-orange-500 via-red-500 to-pink-500 bg-clip-text text-transparent hover:bg-gradient-to-br hover:from-orange-50 hover:via-pink-50 hover:to-red-50 h-12"
-            >
-              🚀 Try Demo Account
-            </Button>
-          </div>
-        )}
 
         <div className="mt-6 text-center">
           <button
