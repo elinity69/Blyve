@@ -1,0 +1,23 @@
+port: 7880
+log_level: info
+
+rtc:
+  tcp_port: 7881
+  port_range_start: 50000
+  port_range_end: 60000
+  # Keep this true: the server runs behind a home router/NAT and must
+  # advertise its public-facing address to WebRTC clients on the internet.
+  use_external_ip: true
+
+keys:
+  # Testing only: rotate and replace in production.
+  # Keep token generation server-side in the Supabase Edge Function.
+  # Secret must be >= 32 chars or LiveKit refuses to boot.
+  devkey: devsecret_77_181_7_65_blyve_local_2026_key
+
+turn:
+  # Disabled for minimal local testing setup.
+  # This machine sits behind a home router that forwards:
+  # - public 77.181.7.65 -> local 192.168.1.193
+  # - TCP 7880-7881 and UDP 50000-60000
+  enabled: false

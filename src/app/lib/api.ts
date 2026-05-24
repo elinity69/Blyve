@@ -1,0 +1,829 @@
+// Refactored ApiClient to use Supabase SDK directly instead of Edge Functions
+import { supabase } from './supabase';
+
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL ?? '';
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY ?? '';
+
+export class ApiClient {
+  private accessToken: string | null = null;
+
+  setAccessToken(token: string | null) {
+    console.log('API - setAccessToken called with:', token ? `Token (${token.substring(0, 30)}...)` : 'null');
+    this.accessToken = token;
+    if (token) {
+      localStorage.setItem('accessToken', token);
+      console.log('API - Token saved to localStorage');
+    } else {
+      localStorage.removeItem('accessToken');
+      console.log('API - Token removed from localStorage');
+    }
+  }
+
+  async getAccessToken(): Promise<string | null> {
+    try {
+      // CRITICAL: Always get fresh token from Supabase session (source of truth)
+      const { data: { session }, error } = await supabase.auth.getSession();
+      
+      if (error) {
+        // Don't log as error during login process - might be temporary
+        if (!error.message?.includes('session_not_found')) {
+          console.warn('API - Failed to get session from Supabase:', error);
+        }
+        // Fallback to localStorage (might be during login transition)
+        const storedToken = localStorage.getItem('accessToken');
+        if (storedToken) {
+          this.accessToken = storedToken;
+          return storedToken;
+        }
+        return null;
+      }
+      
+      if (session?.access_token) {
+        const freshToken = session.access_token;
+        // Update internal cache and localStorage
+        if (this.accessToken !== freshToken) {
+          console.log('API - Token refreshed from Supabase session');
+          this.accessToken = freshToken;
+          localStorage.setItem('accessToken', freshToken);
+        }
+        return freshToken;
+      }
+      
+      // No active session - but don't clear token immediately (might be during login)
+      // Only log if we previously had a token
+      if (this.accessToken || localStorage.getItem('accessToken')) {
+        console.log('API - Session expired, token cleared');
+      }
+      
+      // Don't clear immediately - let the auth flow complete
+      // Token will be set once session is established
+      return null;
+    } catch (err) {
+      // Silently handle errors during login process
+      // Fallback to localStorage as last resort
+    const storedToken = localStorage.getItem('accessToken');
+    if (storedToken) {
+        this.accessToken = storedToken;
+        return storedToken;
+    }
+      return null;
+    }
+  }
+
+  /**
+   * Edge invoke URL = `${SUPABASE_URL}/functions/v1/blyve` + path.
+   * Path must be `/friends`, not `/blyve/friends` (would produce .../blyve/blyve/... → 404).
+   * Strips a mistaken `/blyve` prefix so stale bundles or bad callers still work.
+   */
+  private normalizeEdgeFunctionPath(path: string): string {
+    let p = path.startsWith('/') ? path : `/${path}`;
+    if (p === '/blyve') return '/';
+    if (p.startsWith('/blyve/')) {
+      p = p.slice('/blyve'.length) || '/';
+    }
+    return p;
+  }
+
+  private async edgeRequest(path: string, init: RequestInit = {}) {
+    const token = await this.getAccessToken();
+    if (!token) {
+      throw new Error('Not authenticated');
+    }
+    if (!SUPABASE_URL) {
+      throw new Error('Missing VITE_SUPABASE_URL');
+    }
+
+    const safePath = this.normalizeEdgeFunctionPath(path);
+    const url = `${SUPABASE_URL.replace(/\/+$/, '')}/functions/v1/blyve${safePath}`;
+    const headers: HeadersInit = {
+      Authorization: `Bearer ${token}`,
+      apikey: SUPABASE_ANON_KEY,
+      ...(init.body ? { 'Content-Type': 'application/json' } : {}),
+      ...(init.headers || {}),
+    };
+
+    const response = await fetch(url, {
+      ...init,
+      headers,
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      const rawError = String(payload?.error || '');
+      if (
+        response.status === 503 &&
+        rawError.toLowerCase().includes('livekit is not configured')
+      ) {
+        throw new Error(
+          'LiveKit backend config is missing. Set LIVEKIT_URL, LIVEKIT_API_KEY, and LIVEKIT_API_SECRET in Supabase function secrets.'
+        );
+      }
+      throw new Error(payload?.error || `Request failed (${response.status})`);
+    }
+    return payload;
+  }
+
+  // Auth - Use Supabase SDK directly
+  async signup(data: { email: string; password: string; name: string }) {
+    try {
+      // Sign up with Supabase Auth
+      const { data: authData, error: authError } = await supabase.auth.signUp({
+        email: data.email,
+        password: data.password,
+      });
+
+      if (authError) {
+        throw authError;
+      }
+
+      if (!authData.user) {
+        throw new Error('User creation failed');
+      }
+
+      // Create profile in database
+      const { error: profileError } = await supabase
+        .from('profiles')
+        .insert({
+          id: authData.user.id,
+          email: data.email,
+          name: data.name,
+          display_name: data.name,
+          onboarding_complete: false,
+        });
+
+      if (profileError) {
+        console.error('Profile creation error:', profileError);
+        // Don't throw - user is created, profile can be created later
+      }
+
+      // Set token from session
+      if (authData.session?.access_token) {
+        this.setAccessToken(authData.session.access_token);
+      }
+
+      return {
+        userId: authData.user.id,
+        accessToken: authData.session?.access_token || null,
+      };
+    } catch (error: any) {
+      console.error('Signup error:', error);
+      throw error;
+    }
+  }
+
+  async signin(email: string, password: string) {
+    console.log('API - Signing in user:', email);
+    try {
+      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+    });
+
+      if (authError) {
+        throw authError;
+      }
+
+      if (!authData.user || !authData.session) {
+        throw new Error('Sign in failed: No user or session returned');
+      }
+
+    console.log('API - Signin response:', { 
+        hasAccessToken: !!authData.session.access_token,
+        userId: authData.user.id 
+    });
+
+      if (authData.session.access_token) {
+      console.log('API - Storing access token in localStorage');
+        this.setAccessToken(authData.session.access_token);
+      console.log('API - Token stored successfully');
+    } else {
+        console.error('API - No access token received from Supabase!');
+    }
+
+      return {
+        userId: authData.user.id,
+        accessToken: authData.session.access_token,
+      };
+    } catch (error: any) {
+      console.error('Signin error:', error);
+      throw error;
+    }
+  }
+
+  async signout() {
+    await supabase.auth.signOut();
+    this.setAccessToken(null);
+  }
+
+  // Profile - Use Supabase SDK directly
+  async getProfile() {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        throw new Error('No authenticated user');
+      }
+      const { data: profile, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', user.id)
+        .maybeSingle();
+      if (error) {
+        throw error;
+      }
+      return profile;
+    } catch (error) {
+      console.error('API - Failed to get profile from Supabase:', error);
+      throw error;
+    }
+  }
+
+  async updateProfile(updates: any) {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        throw new Error('No authenticated user');
+      }
+      const { data, error } = await supabase
+        .from('profiles')
+        .update(updates)
+        .eq('id', user.id)
+        .select()
+        .single();
+      if (error) {
+        throw error;
+      }
+      return data;
+    } catch (error) {
+      console.error('API - Failed to update profile:', error);
+      throw error;
+    }
+  }
+
+  async uploadProfilePicture(file: File) {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        throw new Error('No authenticated user');
+      }
+    
+    console.log('Upload starting...', {
+      fileName: file.name,
+      fileSize: file.size,
+      fileType: file.type,
+        userId: user.id
+      });
+
+      // Upload to Supabase Storage
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${user.id}/${Date.now()}.${fileExt}`;
+      
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from('avatars')
+        .upload(fileName, file, {
+          cacheControl: '3600',
+          upsert: false
+        });
+
+      if (uploadError) {
+        throw uploadError;
+      }
+
+      // Get public URL
+      const { data: { publicUrl } } = supabase.storage
+        .from('avatars')
+        .getPublicUrl(fileName);
+
+      // Update profile with new avatar URL
+      const { data: profileData, error: profileError } = await supabase
+        .from('profiles')
+        .update({ avatar_url: publicUrl })
+        .eq('id', user.id)
+        .select()
+        .single();
+
+      if (profileError) {
+        throw profileError;
+      }
+
+      console.log('Upload successful:', { publicUrl, profileData });
+      return { url: publicUrl, profile: profileData };
+    } catch (error) {
+      console.error('Upload exception:', error);
+      throw error;
+    }
+  }
+
+  async deleteAccount() {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        throw new Error('No authenticated user');
+      }
+      // Delete profile first
+      const { error: profileError } = await supabase
+        .from('profiles')
+        .delete()
+        .eq('id', user.id);
+      
+      if (profileError) {
+        console.error('Error deleting profile:', profileError);
+      }
+
+      // Then delete auth user
+      const { error: authError } = await supabase.auth.admin.deleteUser(user.id);
+      if (authError) {
+        // Admin API might not be available, try regular signout
+        await this.signout();
+      }
+      
+      return { success: true };
+    } catch (error) {
+      console.error('Delete account error:', error);
+      throw error;
+    }
+  }
+
+  // Update online status - Use Supabase directly
+  async updateOnlineStatus() {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        throw new Error('No authenticated user');
+      }
+
+      const now = new Date().toISOString();
+      let { error } = await supabase
+        .from('profiles')
+        .update({ last_seen: now, updated_at: now })
+        .eq('id', user.id);
+
+      // Remote DB may not have last_seen yet (migration / PostgREST cache); still bump activity.
+      if (
+        error &&
+        (error as { code?: string; message?: string }).code === 'PGRST204' &&
+        String((error as { message?: string }).message || '').includes('last_seen')
+      ) {
+        ({ error } = await supabase
+          .from('profiles')
+          .update({ updated_at: now })
+          .eq('id', user.id));
+      }
+
+      if (error) {
+        throw error;
+      }
+
+      return { success: true };
+    } catch (error) {
+      console.error('API - Failed to update online status:', error);
+      throw error;
+    }
+  }
+
+  // Chat: Get conversations - Use Supabase directly
+  async getConversations() {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        throw new Error('No authenticated user');
+      }
+
+      const { data: conversations, error } = await supabase
+        .from('conversations')
+        .select(`
+          *,
+          user1:profiles!conversations_user1_id_fkey(id, name, avatar_url, images),
+          user2:profiles!conversations_user2_id_fkey(id, name, avatar_url, images)
+        `)
+        .or(`user1_id.eq.${user.id},user2_id.eq.${user.id}`)
+        .order('updated_at', { ascending: false });
+
+      if (error) {
+        throw error;
+      }
+
+      return { conversations: conversations || [] };
+    } catch (error) {
+      console.error('API - Failed to get conversations:', error);
+      throw error;
+    }
+  }
+
+  // Chat: Get messages for a conversation - Use Supabase directly
+  async getMessages(otherUserId: string) {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        throw new Error('No authenticated user');
+      }
+
+      // Find conversation
+      const { data: conversation } = await supabase
+        .from('conversations')
+        .select('id')
+        .or(`and(user1_id.eq.${user.id},user2_id.eq.${otherUserId}),and(user1_id.eq.${otherUserId},user2_id.eq.${user.id})`)
+        .single();
+
+      if (!conversation) {
+        return { messages: [] };
+      }
+
+      const { data: messages, error } = await supabase
+        .from('messages')
+        .select('*')
+        .eq('conversation_id', conversation.id)
+        .order('created_at', { ascending: true });
+
+      if (error) {
+        throw error;
+      }
+
+      return { messages: messages || [] };
+    } catch (error) {
+      console.error('API - Failed to get messages:', error);
+      throw error;
+    }
+  }
+
+  // User Actions - RPC Functions (already using Supabase SDK)
+  async blockUser(targetId: string) {
+    const { data, error } = await supabase.rpc('block_user_safe', {
+      target_id: targetId,
+    });
+    if (error) throw error;
+    return data;
+  }
+
+  async sendMessageSafe(conversationId: string, content: string) {
+    const { data, error } = await supabase.rpc('send_message_safe', {
+      p_conversation_id: conversationId,
+      p_content: content,
+    });
+    if (error) throw error;
+    return data;
+  }
+
+  async sendFriendRequest(friendUsername: string) {
+    const username = friendUsername.trim().replace(/^@/, '');
+    return this.edgeRequest('/friends/request', {
+      method: 'POST',
+      body: JSON.stringify({ friend_username: username }),
+    });
+  }
+
+  async getFriends() {
+    return this.edgeRequest('/friends', { method: 'GET' });
+  }
+
+  async respondToFriendRequest(requestId: string, action: 'accept' | 'decline') {
+    return this.edgeRequest('/friends/respond', {
+      method: 'POST',
+      body: JSON.stringify({ request_id: requestId, action }),
+    });
+  }
+
+  async uploadGroupIcon(file: File) {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      throw new Error('No authenticated user');
+    }
+
+    const fileExt = file.name.split('.').pop() || 'jpg';
+    const fileName = `${user.id}/groups/${Date.now()}.${fileExt}`;
+
+    const { error: uploadError } = await supabase.storage
+      .from('avatars')
+      .upload(fileName, file, {
+        cacheControl: '3600',
+        upsert: false,
+      });
+
+    if (uploadError) {
+      throw uploadError;
+    }
+
+    const { data: { publicUrl } } = supabase.storage.from('avatars').getPublicUrl(fileName);
+    return publicUrl;
+  }
+
+  async createGroup(payload: {
+    name: string;
+    description?: string | null;
+    is_private?: boolean;
+    iconUrl?: string | null;
+  }) {
+    return this.edgeRequest('/groups/create', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async getMyGroups() {
+    return this.edgeRequest('/groups', { method: 'GET' });
+  }
+
+  async getGroupDetails(groupId: string) {
+    return this.edgeRequest(`/groups/${groupId}`, { method: 'GET' });
+  }
+
+  async getGroupChannels(groupId: string) {
+    return this.edgeRequest(`/groups/${groupId}/channels`, { method: 'GET' });
+  }
+
+  async getGroupInvite(groupId: string) {
+    return this.edgeRequest(`/groups/${groupId}/invite`, { method: 'GET' });
+  }
+
+  async refreshGroupInvite(groupId: string) {
+    return this.edgeRequest(`/groups/${groupId}/invite/refresh`, { method: 'POST' });
+  }
+
+  async joinGroupViaInvite(code: string) {
+    return this.edgeRequest('/groups/join-invite', {
+      method: 'POST',
+      body: JSON.stringify({ code }),
+    });
+  }
+
+  async uploadChannelIcon(groupId: string, file: File) {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      throw new Error('No authenticated user');
+    }
+
+    const fileExt = file.name.split('.').pop() || 'jpg';
+    const fileName = `${user.id}/channels/${groupId}/${Date.now()}.${fileExt}`;
+
+    const { error: uploadError } = await supabase.storage
+      .from('avatars')
+      .upload(fileName, file, {
+        cacheControl: '3600',
+        upsert: false,
+      });
+
+    if (uploadError) {
+      throw uploadError;
+    }
+
+    const { data: { publicUrl } } = supabase.storage.from('avatars').getPublicUrl(fileName);
+    return publicUrl;
+  }
+
+  async createGroupChannel(
+    groupId: string,
+    payload: { name: string; type?: 'text' | 'voice'; iconUrl?: string | null }
+  ) {
+    return this.edgeRequest(`/groups/${groupId}/channels`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async updateGroupChannel(
+    groupId: string,
+    channelId: string,
+    payload: { name?: string; position?: number; iconUrl?: string | null }
+  ) {
+    return this.edgeRequest(`/groups/${groupId}/channels/${channelId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async deleteGroupChannel(groupId: string, channelId: string) {
+    return this.edgeRequest(`/groups/${groupId}/channels/${channelId}`, { method: 'DELETE' });
+  }
+
+  async getVoiceChannelState(groupId: string, channelId: string) {
+    return this.edgeRequest(`/groups/${groupId}/channels/${channelId}/voice`, { method: 'GET' });
+  }
+
+  async joinVoiceChannel(groupId: string, channelId: string, callType: 'audio' | 'video' = 'audio') {
+    return this.edgeRequest(`/groups/${groupId}/channels/${channelId}/voice/join`, {
+      method: 'POST',
+      body: JSON.stringify({ callType }),
+    });
+  }
+
+  async leaveVoiceChannel(groupId: string, channelId: string) {
+    return this.edgeRequest(`/groups/${groupId}/channels/${channelId}/voice/leave`, {
+      method: 'POST',
+      body: JSON.stringify({}),
+    });
+  }
+
+  async joinGroup(groupId: string) {
+    return this.edgeRequest(`/groups/${groupId}/join`, { method: 'POST', body: JSON.stringify({}) });
+  }
+
+  async leaveGroup(groupId: string) {
+    return this.edgeRequest(`/groups/${groupId}/leave`, { method: 'POST', body: JSON.stringify({}) });
+  }
+
+  async getGroupMessages(groupId: string, channelId: string) {
+    const q = new URLSearchParams({ channel_id: channelId });
+    return this.edgeRequest(`/groups/${groupId}/messages?${q.toString()}`, { method: 'GET' });
+  }
+
+  async sendGroupMessage(groupId: string, content: string, channelId: string) {
+    return this.edgeRequest(`/groups/${groupId}/messages`, {
+      method: 'POST',
+      body: JSON.stringify({ content, channel_id: channelId }),
+    });
+  }
+
+  async updateGroupMessage(groupId: string, messageId: string, content: string) {
+    return this.edgeRequest(`/groups/${groupId}/messages/${messageId}`, {
+      method: 'PUT',
+      body: JSON.stringify({ content }),
+    });
+  }
+
+  async deleteGroupMessage(groupId: string, messageId: string) {
+    return this.edgeRequest(`/groups/${groupId}/messages/${messageId}`, { method: 'DELETE' });
+  }
+
+  private async callFunction(functionName: string, init: RequestInit = {}) {
+    const token = await this.getAccessToken();
+    if (!token) throw new Error('Not authenticated');
+    if (!SUPABASE_URL) throw new Error('Missing VITE_SUPABASE_URL');
+
+    const url = `${SUPABASE_URL.replace(/\/+$/, '')}/functions/v1/${functionName}`;
+    const headers: HeadersInit = {
+      Authorization: `Bearer ${token}`,
+      apikey: SUPABASE_ANON_KEY,
+      ...(init.body ? { 'Content-Type': 'application/json' } : {}),
+      ...(init.headers || {}),
+    };
+
+    const response = await fetch(url, { ...init, headers });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(payload?.error || `Request failed (${response.status})`);
+    }
+    return payload;
+  }
+
+  /** LiveKit token via smart-action (default action=livekit). */
+  async getLivekitToken(payload: { identity: string; room: string; name?: string }) {
+    const token = await this.getAccessToken();
+    if (!token) throw new Error('Not authenticated');
+    const { data, error } = await supabase.functions.invoke('smart-action', {
+      body: { action: 'livekit', ...payload },
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (error) {
+      throw new Error(error.message || 'Failed to get LiveKit token');
+    }
+    return data;
+  }
+
+  /** Jitsi join via smart-action (alternative to joinCall). room_name is server-side only. */
+  async getJitsiJoinViaSmartAction(sessionId: string, inviteToken?: string) {
+    const token = await this.getAccessToken();
+    if (!token) throw new Error('Not authenticated');
+    const { data, error } = await supabase.functions.invoke('smart-action', {
+      body: { action: 'jitsi-join', sessionId, inviteToken },
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (error) {
+      throw new Error(error.message || 'Failed to join Jitsi call');
+    }
+    return data;
+  }
+
+  private async jitsiEdgeRequest(path: string, init: RequestInit = {}) {
+    try {
+      return await this.edgeRequest(path, init);
+    } catch (primaryError) {
+      const match = path.match(/^\/calls\/jitsi\/([^/]+)\/(accept|join|invite|end)$/);
+      if (match) {
+        const [, sessionId, action] = match;
+        const fn =
+          action === 'accept' ? 'accept-call'
+          : action === 'join' ? 'join-call'
+          : action === 'invite' ? 'invite-participant'
+          : 'end-call';
+        const body = init.body ? JSON.parse(String(init.body)) : {};
+        return this.callFunction(fn, {
+          method: 'POST',
+          body: JSON.stringify({ sessionId, ...body }),
+        });
+      }
+      if (path === '/calls/jitsi/create') {
+        return this.callFunction('create-call-session', init);
+      }
+      throw primaryError;
+    }
+  }
+
+  /** LiveKit path — unchanged blyve /calls/create */
+  async createCall(payload: {
+    callType: 'audio' | 'video' | 'screen';
+    contextType: 'direct' | 'group';
+    conversationId?: string | null;
+    groupId?: string | null;
+    participantIds: string[];
+  }) {
+    return this.edgeRequest('/calls/create', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  /** Jitsi path — blyve /calls/jitsi/create with standalone fallback */
+  async createCallSession(payload: {
+    callType: 'audio' | 'video' | 'screen';
+    contextType: 'direct' | 'group';
+    conversationId?: string | null;
+    groupId?: string | null;
+    participantIds?: string[];
+    generateInviteLink?: boolean;
+    inviteExpiresInMinutes?: number;
+  }) {
+    return this.jitsiEdgeRequest('/calls/jitsi/create', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async acceptCall(
+    sessionId: string,
+    action: 'accept' | 'decline' | 'missed' = 'accept'
+  ) {
+    return this.jitsiEdgeRequest(`/calls/jitsi/${sessionId}/accept`, {
+      method: 'POST',
+      body: JSON.stringify({ action }),
+    });
+  }
+
+  async joinCall(sessionId: string, inviteToken?: string) {
+    const body: { sessionId: string; inviteToken?: string } = { sessionId };
+    if (inviteToken) body.inviteToken = inviteToken;
+    return this.jitsiEdgeRequest(`/calls/jitsi/${sessionId}/join`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+  }
+
+  async inviteCallParticipant(
+    sessionId: string,
+    userId: string,
+    options?: { generateInviteLink?: boolean; inviteExpiresInMinutes?: number }
+  ) {
+    return this.jitsiEdgeRequest(`/calls/jitsi/${sessionId}/invite`, {
+      method: 'POST',
+      body: JSON.stringify({
+        userId,
+        generateInviteLink: options?.generateInviteLink,
+        inviteExpiresInMinutes: options?.inviteExpiresInMinutes,
+      }),
+    });
+  }
+
+  /** LiveKit path — blyve /calls/:id/respond */
+  async respondToCall(
+    callSessionId: string,
+    action: 'accept' | 'decline' | 'missed' | 'leave'
+  ) {
+    return this.edgeRequest(`/calls/${callSessionId}/respond`, {
+      method: 'POST',
+      body: JSON.stringify({ action }),
+    });
+  }
+
+  /** Jitsi end — blyve /calls/jitsi/:id/end with standalone fallback */
+  async endCallSession(sessionId: string) {
+    return this.jitsiEdgeRequest(`/calls/jitsi/${sessionId}/end`, {
+      method: 'POST',
+      body: JSON.stringify({ sessionId }),
+    });
+  }
+
+  /** LiveKit end — blyve /calls/:id/end */
+  async endCall(callSessionId: string) {
+    return this.edgeRequest(`/calls/${callSessionId}/end`, {
+      method: 'POST',
+      body: JSON.stringify({}),
+    });
+  }
+
+  async leaveCallSession(callSessionId: string) {
+    try {
+      return await this.edgeRequest(`/calls/${callSessionId}/leave`, {
+        method: 'POST',
+        body: JSON.stringify({}),
+      });
+    } catch (e: unknown) {
+      const m = e instanceof Error ? e.message : String(e);
+      if (/\(404\)|\b404\b|not found/i.test(m)) {
+        return this.edgeRequest(`/calls/${callSessionId}/respond`, {
+          method: 'POST',
+          body: JSON.stringify({ action: 'leave' }),
+        });
+      }
+      throw e;
+    }
+  }
+}
+
+export const api = new ApiClient();

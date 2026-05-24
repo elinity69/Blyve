@@ -1,0 +1,7 @@
+turn:
+  enabled: true
+  domain: 77.181.7.65
+  tls_port: 5349
+  udp_port: 3478
+  cert_file: ./fullchain.pem
+  key_file: ./privkey.pem

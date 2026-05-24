@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <meta http-equiv="Permissions-Policy" content="camera=*, microphone=*, display-capture=*, fullscreen=*" />
+    <title>Blyve</title>
+    <link rel="manifest" href="/manifest.json" />
+    <meta name="theme-color" content="#0f172a" />
+  </head>
+
+  <body>
+    <!-- Black Curtain - Sicherheitsnetz gegen White Flash -->
+    <div id="black-curtain" style="position: fixed; inset: 0; background-color: #ffffff; z-index: -9999;"></div>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
+

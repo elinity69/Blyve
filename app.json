@@ -1,0 +1,66 @@
+{
+  "expo": {
+    "name": "Blyve",
+    "slug": "blyve",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.blyve.app",
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "Blyve needs your location to find training partners nearby.",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "Blyve needs your location to find training partners nearby."
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#ffffff"
+      },
+      "package": "com.blyve.app",
+      "permissions": [
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION"
+      ],
+      "googleMobileAdsAppId": "ca-app-pub-5310075752699995~7961931590"
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Allow Blyve to use your location to find nearby training partners."
+        }
+      ],
+      [
+        "react-native-google-mobile-ads",
+        {
+          "androidAppId": "ca-app-pub-5310075752699995~7961931590",
+          "iosAppId": "ca-app-pub-5310075752699995~7961931590"
+        }
+      ],
+      "expo-router"
+    ],
+    "scheme": "blyve",
+    "extra": {
+      "router": {
+        "origin": false
+      },
+      "eas": {
+        "projectId": "your-project-id"
+      }
+    }
+  }
+}

@@ -1,0 +1,202 @@
+/* ========================================
+   🚀 NATIVE iOS-STYLE TOUCH OPTIMIZATION
+   ======================================== */
+
+/* Remove 300ms click delay globally */
+html {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Disable tap highlight on all elements */
+*,
+*::before,
+*::after {
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+}
+
+/* Buttons & Links - Immediate response */
+button,
+a,
+[role="button"],
+.clickable {
+  touch-action: manipulation;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* Inputs - Allow text selection */
+input,
+textarea,
+select {
+  touch-action: manipulation;
+  user-select: text;
+  -webkit-user-select: text;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Prevent iOS auto-zoom on focus */
+input[type="text"],
+input[type="email"],
+input[type="password"],
+input[type="search"],
+input[type="tel"],
+input[type="url"],
+textarea {
+  font-size: 16px !important;
+}
+
+/* Smooth scrolling on iOS */
+* {
+  *:not(.navigation-stack-container):not(.navigation-stack-content) {
+    -webkit-overflow-scrolling: touch;
+  }
+}
+
+/* Active state feedback (native-style) */
+button:active,
+a:active {
+  transform: scale(0.98);
+  transition: transform 0.1s ease;
+}
+
+/* ======================================== */
+
+@import './fonts.css';
+@import './tailwind.css';
+@import './theme.css';
+
+/* Custom Scrollbar Styling */
+.overflow-y-auto::-webkit-scrollbar {
+  width: 6px;
+}
+
+.overflow-y-auto::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.overflow-y-auto::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 10px;
+}
+
+.overflow-y-auto::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.3);
+}
+
+/* iOS reset + safe area support */
+button,
+input,
+select,
+textarea {
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+/* ZEMENTIERTER DARK BACKGROUND - Verhindert White Flash */
+html {
+  background-color: #ffffff; /* Weiß im Light Mode */
+  min-height: 100vh;
+}
+
+html.dark {
+  background-color: #000000 !important;
+}
+
+body {
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
+  background-color: #ffffff; /* Weiß im Light Mode */
+  min-height: 100vh;
+  overscroll-behavior: none; /* Verhindert das "Ziehen" über den Rand, das oft Weiß zeigt */
+}
+
+body.dark {
+  background-color: #000000 !important;
+}
+
+#root {
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
+  background-color: #ffffff; /* Weiß im Light Mode */
+  min-height: 100vh;
+}
+
+#root.dark {
+  background-color: #000000 !important;
+}
+
+.btn-primary,
+button.bg-gradient-to-r {
+  color: #fff;
+}
+/* FIX: Buttons im Dark Mode müssen sichtbare Textfarben haben */
+.dark button.bg-white {
+  background-color: #ffffff !important;
+  color: #111827 !important;
+}
+
+.dark button.text-orange-600 {
+  color: #ea580c !important;
+}
+
+.dark button.text-green-600 {
+  color: #16a34a !important;
+}
+
+.dark button.text-blue-600,
+.dark button.text-indigo-600 {
+  color: #2563eb !important;
+}
+
+.dark button.text-purple-600 {
+  color: #9333ea !important;
+}
+
+.dark button.text-gray-700,
+.dark button.text-gray-900 {
+  color: #ffffff !important;
+}
+
+/* FIX: Gender Preference Buttons im Dark Mode - Text muss weiß sein */
+.dark .gender-preference-btn {
+  color: #ffffff !important;
+  -webkit-text-fill-color: #ffffff !important;
+  -webkit-text-stroke-color: #ffffff !important;
+}
+
+/* FIX: Gender Preference Buttons in BlyveProfileScreen - Force white text in Dark Mode */
+.dark button[data-gender-preference] {
+  color: #ffffff !important;
+  -webkit-text-fill-color: #ffffff !important;
+  -webkit-text-stroke-color: #ffffff !important;
+}
+
+/* MediaEditScreen instruction text border color in dark mode */
+@media (prefers-color-scheme: dark) {
+  div[data-dark-border] {
+    border-color: rgba(203, 208, 231, 0.1) !important;
+  }
+}
+.dark div[data-dark-border] {
+  border-color: rgba(203, 208, 231, 0.1) !important;
+}
+
+/* FIX: MediaEditScreen toggle buttons - Force white text in dark mode */
+.dark button.media-edit-toggle-btn {
+  color: rgba(247, 247, 247, 1) !important;
+  -webkit-text-fill-color: rgba(247, 247, 247, 1) !important;
+  -webkit-text-stroke-color: rgba(247, 247, 247, 1) !important;
+}
+
+/* Prevent iOS auto-zoom on input focus - minimum 16px font size */
+@media screen and (max-width: 768px) {
+  input,
+  textarea,
+  select {
+    font-size: 16px !important;
+  }
+}

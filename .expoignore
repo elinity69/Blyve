@@ -1,0 +1,8 @@
+# Ignore src/app directory so Expo Router doesn't detect it
+src/app/
+src/_old-app/
+src/_old-vite-app/
+
+# Also ignore all files inside src/app
+src/app/**
+

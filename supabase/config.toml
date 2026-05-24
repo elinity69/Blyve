@@ -1,0 +1,25 @@
+# Supabase CLI config (https://supabase.com/docs/guides/cli/config)
+#
+# blyve: gateway JWT off — auth enforced per-route via getSupabase(c).auth.getUser()
+# Call/Jitsi functions + smart-action: verify_jwt=true (gateway validates JWT before handler)
+
+[functions.blyve]
+verify_jwt = false
+
+[functions.smart-action]
+verify_jwt = true
+
+[functions.create-call-session]
+verify_jwt = true
+
+[functions.accept-call]
+verify_jwt = true
+
+[functions.join-call]
+verify_jwt = true
+
+[functions.invite-participant]
+verify_jwt = true
+
+[functions.end-call]
+verify_jwt = true
