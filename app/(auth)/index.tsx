@@ -203,20 +203,6 @@ export default function AuthScreen() {
           </Text>
         </TouchableOpacity>
 
-        <View style={styles.divider}>
-          <View style={styles.dividerLine} />
-          <Text style={styles.dividerText}>OR</Text>
-          <View style={styles.dividerLine} />
-        </View>
-
-        <TouchableOpacity
-          style={[styles.button, styles.demoButton]}
-          onPress={handleDemoLogin}
-          disabled={loading}
-        >
-          <Text style={styles.buttonText}>Try Demo Account</Text>
-        </TouchableOpacity>
-
         <TouchableOpacity
           style={styles.linkButton}
           onPress={() => Linking.openURL('https://meine-app-url.vercel.app/?legal=1')}
