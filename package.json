@@ -5,11 +5,8 @@
   "scripts": {
     "dev": "vite",
     "dev:host": "vite --host",
-<<<<<<< HEAD
-=======
     "build": "vite build",
     "preview": "vite preview",
->>>>>>> 2210f22 (Add render config)
     "start": "expo start",
     "android": "expo start --android",
     "ios": "expo start --ios",
