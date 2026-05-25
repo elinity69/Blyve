@@ -1,6 +1,7 @@
 import { supabase } from './supabase';
 import type { FavoriteEmbed } from './favoriteEmbeds';
-import { mergeFavoriteEmbeds, normalizeUrlForMatch } from './favoriteEmbeds';
+import { mergeFavoriteEmbeds } from './favoriteEmbeds';
+import { normalizeUrlForMatch } from './linkEmbeds';
 
 type FavoriteEmbedRow = {
   id: string;
