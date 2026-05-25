@@ -266,7 +266,7 @@ button.bg-gradient-to-r {
 }
 
 .dark .message-bubble-tail-other::after {
-  background: #344861;
+  background: #1a222d;
 }
 
 .message-bubble-tail-me::after {
@@ -278,4 +278,8 @@ button.bg-gradient-to-r {
   height: 10px;
   background: #4a7db8;
   clip-path: polygon(0 0, 100% 100%, 0 100%);
+}
+
+.dark .message-bubble-tail-me::after {
+  background: #243752;
 }

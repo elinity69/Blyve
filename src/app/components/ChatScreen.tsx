@@ -25,6 +25,7 @@ import { useLongPress } from '../hooks/useLongPress';
 import { MessageReplyComposerBar } from './chat/MessageReplyComposerBar';
 import { MessageReplyQuote } from './chat/MessageReplyQuote';
 import { MessageRowReplyWrapper } from './chat/MessageRowReplyWrapper';
+import { MessageRowReplyButton } from './chat/MessageRowReplyButton';
 import {
   buildReplyTarget,
   resolveReplyQuote,
@@ -436,10 +437,10 @@ export function ChatScreen({
     activeCall?.conversationId === conversationId;
   const isCallButtonDisabled = isThisChatBusyForMe;
   return (
-    <div className="relative flex h-full min-h-0 w-full flex-col bg-white dark:bg-black md:dark:bg-[#121212]">
+    <div className="relative flex h-full min-h-0 w-full flex-col bg-white dark:bg-[#0d0d0d] md:dark:bg-[#0e0e0e]">
       {/* Header */}
       <div 
-        className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-gray-800 bg-white dark:bg-black md:dark:bg-[#121212]"
+        className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-[#1f1f1f] bg-white dark:bg-[#0d0d0d] md:dark:bg-[#0e0e0e]"
         style={{ flexShrink: 0 }}
       >
         <div className="flex items-center gap-3">
@@ -584,7 +585,6 @@ export function ChatScreen({
                   className={isGroupStart ? CHAT_MESSAGE_ROW_CLASS : CHAT_MESSAGE_ROW_GROUPED_CLASS}
                 >
                   <MessageRowReplyWrapper
-                    isMe={isMe}
                     onReply={() =>
                       setReplyTarget(buildReplyTarget(msg, getSenderLabel(msg.sender_id)))
                     }
@@ -607,23 +607,34 @@ export function ChatScreen({
                               align={isMe ? 'end' : 'start'}
                             />
                           )}
-                          <MessageBubble
-                            position={groupPosition}
-                            isMe={isMe}
-                            time={messageTime}
-                            isRead={isOutgoingMessageRead(msg, messages, currentUserId)}
+                          <div
+                            className={`group/bubble flex w-fit items-center gap-1.5 ${
+                              isMe ? 'flex-row-reverse' : 'flex-row'
+                            }`}
                           >
-                            {replyQuote ? <MessageReplyQuote quote={replyQuote} isMe={isMe} /> : null}
-                            <p
-                              className={
-                                isBundled
-                                  ? CHAT_MESSAGE_BUBBLE_TEXT_GROUPED_CLASS
-                                  : CHAT_MESSAGE_BUBBLE_TEXT_CLASS
-                              }
+                            <MessageBubble
+                              position={groupPosition}
+                              isMe={isMe}
+                              time={messageTime}
+                              isRead={isOutgoingMessageRead(msg, messages, currentUserId)}
                             >
-                              {msg.content}
-                            </p>
-                          </MessageBubble>
+                              {replyQuote ? <MessageReplyQuote quote={replyQuote} isMe={isMe} /> : null}
+                              <p
+                                className={
+                                  isBundled
+                                    ? CHAT_MESSAGE_BUBBLE_TEXT_GROUPED_CLASS
+                                    : CHAT_MESSAGE_BUBBLE_TEXT_CLASS
+                                }
+                              >
+                                {msg.content}
+                              </p>
+                            </MessageBubble>
+                            <MessageRowReplyButton
+                              onReply={() =>
+                                setReplyTarget(buildReplyTarget(msg, getSenderLabel(msg.sender_id)))
+                              }
+                            />
+                          </div>
                           {isLastOwnMessage && isGroupEnd && msg.read_at && (
                             <div className="mt-0.5 text-right text-[10px] leading-none text-[#8E8E93]">
                               {t('chat.read')}{' '}
@@ -643,7 +654,7 @@ export function ChatScreen({
       </div>
 
       {/* Input — in-flow at bottom; scroll area ends directly above */}
-      <div className="relative z-20 shrink-0 border-t border-gray-200 bg-white px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] dark:border-gray-800 dark:bg-black md:dark:bg-[#121212]">
+      <div className="relative z-20 shrink-0 border-t border-gray-200 bg-white px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] dark:border-[#1f1f1f] dark:bg-[#0d0d0d] md:dark:bg-[#0e0e0e]">
         <AnimatePresence>
           {isPartnerTyping && (
             <div ref={typingIndicatorRef} className="absolute bottom-full left-4 z-30 mb-2">
@@ -669,7 +680,7 @@ export function ChatScreen({
               }
             }}
             placeholder={t('chat.dmMessagePlaceholder')}
-            className="flex-1 px-4 py-2 bg-gray-100 dark:bg-gray-800 rounded-full text-gray-900 dark:text-white focus:outline-none"
+            className="flex-1 px-4 py-2 bg-gray-100 dark:bg-[#1a1a1a] rounded-full text-gray-900 dark:text-[#dce6ef] focus:outline-none"
             style={{
               touchAction: 'manipulation',
               WebkitTapHighlightColor: 'transparent',

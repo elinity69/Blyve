@@ -25,9 +25,7 @@ export function MessageBubble({
   const tailClass = getMessageBubbleTailClass(position, isMe);
 
   return (
-    <div
-      className={`relative max-w-[min(100%,20rem)] min-w-[3rem] ${isMe ? 'ml-auto' : 'mr-auto'}`}
-    >
+    <div className="relative max-w-[min(100%,20rem)] min-w-[3rem]">
       <div
         className={`relative px-3 py-1.5 ${getMessageBubbleRadius(position, isMe)} ${getMessageBubbleColors(isMe)} ${tailClass}`}
       >
@@ -36,7 +34,7 @@ export function MessageBubble({
           {time ? (
             <span
               className={`inline-flex shrink-0 items-center gap-0.5 pb-px text-[10px] leading-none ${
-                isMe ? 'text-white/75' : 'text-gray-500 dark:text-[#8fa8c4]'
+                isMe ? 'text-white/75 dark:text-[#8fa4b8]' : 'text-gray-500 dark:text-[#6b7d8f]'
               }`}
             >
               {time}

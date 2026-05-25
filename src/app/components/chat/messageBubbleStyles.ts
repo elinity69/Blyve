@@ -31,9 +31,9 @@ export function getMessageBubbleRadius(
 
 export function getMessageBubbleColors(isMe: boolean): string {
   if (isMe) {
-    return 'bg-[#4a7db8] text-white dark:bg-[#4a7db8] dark:text-white';
+    return 'bg-[#4a7db8] text-white dark:bg-[#243752] dark:text-[#dce6ef]';
   }
-  return 'bg-[#dfe7f0] text-gray-900 dark:bg-[#344861] dark:text-[#e8edf3]';
+  return 'bg-[#dfe7f0] text-gray-900 dark:bg-[#1a222d] dark:text-[#b4c0cc]';
 }
 
 export function getMessageBubbleTailClass(position: MessageGroupPosition, isMe: boolean): string {

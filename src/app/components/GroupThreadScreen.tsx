@@ -21,6 +21,7 @@ import { NotificationManager } from '../lib/notifications';
 import { MessageReplyComposerBar } from './chat/MessageReplyComposerBar';
 import { MessageReplyQuote } from './chat/MessageReplyQuote';
 import { MessageRowReplyWrapper } from './chat/MessageRowReplyWrapper';
+import { MessageRowReplyButton } from './chat/MessageRowReplyButton';
 import {
   buildReplyTarget,
   resolveReplyQuote,
@@ -384,10 +385,10 @@ export function GroupThreadScreen({
       : 'en-US';
 
   return (
-    <div className="relative flex h-full min-h-0 w-full flex-col bg-white dark:bg-black md:dark:bg-[#121212]">
+    <div className="relative flex h-full min-h-0 w-full flex-col bg-white dark:bg-[#0d0d0d] md:dark:bg-[#0e0e0e]">
       {/* Header — aligned with ChatScreen */}
       <div
-        className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-gray-800 bg-white dark:bg-black md:dark:bg-[#121212] shrink-0"
+        className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-[#1f1f1f] bg-white dark:bg-[#0d0d0d] md:dark:bg-[#0e0e0e] shrink-0"
       >
         <div className="flex items-center gap-3 min-w-0">
           <button
@@ -474,7 +475,6 @@ export function GroupThreadScreen({
                 className={isGroupStart ? CHAT_MESSAGE_ROW_CLASS : CHAT_MESSAGE_ROW_GROUPED_CLASS}
               >
                 <MessageRowReplyWrapper
-                  isMe={mine}
                   onReply={() =>
                     setReplyTarget(buildReplyTarget(m, getSenderLabel(m.sender_id, m)))
                   }
@@ -497,23 +497,34 @@ export function GroupThreadScreen({
                             align={mine ? 'end' : 'start'}
                           />
                         )}
-                        <MessageBubble
-                          position={groupPosition}
-                          isMe={mine}
-                          time={messageTime}
-                          isRead={false}
+                        <div
+                          className={`group/bubble flex w-fit items-center gap-1.5 ${
+                            mine ? 'flex-row-reverse' : 'flex-row'
+                          }`}
                         >
-                          {replyQuote ? <MessageReplyQuote quote={replyQuote} isMe={mine} /> : null}
-                          <p
-                            className={
-                              isBundled
-                                ? CHAT_MESSAGE_BUBBLE_TEXT_GROUPED_CLASS
-                                : CHAT_MESSAGE_BUBBLE_TEXT_CLASS
-                            }
+                          <MessageBubble
+                            position={groupPosition}
+                            isMe={mine}
+                            time={messageTime}
+                            isRead={false}
                           >
-                            {m.content}
-                          </p>
-                        </MessageBubble>
+                            {replyQuote ? <MessageReplyQuote quote={replyQuote} isMe={mine} /> : null}
+                            <p
+                              className={
+                                isBundled
+                                  ? CHAT_MESSAGE_BUBBLE_TEXT_GROUPED_CLASS
+                                  : CHAT_MESSAGE_BUBBLE_TEXT_CLASS
+                              }
+                            >
+                              {m.content}
+                            </p>
+                          </MessageBubble>
+                          <MessageRowReplyButton
+                            onReply={() =>
+                              setReplyTarget(buildReplyTarget(m, getSenderLabel(m.sender_id, m)))
+                            }
+                          />
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -525,7 +536,7 @@ export function GroupThreadScreen({
       </div>
 
       {/* Input — in-flow at bottom; scroll area ends directly above */}
-      <div className="relative z-20 shrink-0 border-t border-gray-200 bg-white px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] dark:border-gray-800 dark:bg-black md:dark:bg-[#121212]">
+      <div className="relative z-20 shrink-0 border-t border-gray-200 bg-white px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] dark:border-[#1f1f1f] dark:bg-[#0d0d0d] md:dark:bg-[#0e0e0e]">
         <AnimatePresence>
           {typers.length > 0 ? (
             <motion.div
@@ -560,7 +571,7 @@ export function GroupThreadScreen({
               }
             }}
             placeholder={t('groups.messagePlaceholder')}
-            className="flex-1 px-4 py-2 bg-gray-100 dark:bg-gray-800 rounded-full text-gray-900 dark:text-white focus:outline-none"
+            className="flex-1 px-4 py-2 bg-gray-100 dark:bg-[#1a1a1a] rounded-full text-gray-900 dark:text-[#dce6ef] focus:outline-none"
             style={{
               touchAction: 'manipulation',
               WebkitTapHighlightColor: 'transparent',

@@ -1,28 +1,21 @@
 import React from 'react';
 import { Reply } from 'lucide-react';
-import { useTranslation } from 'react-i18next';
 import { useSwipeToReply } from '../../hooks/useSwipeToReply';
 import { useIsMdUp } from '../ui/use-mobile';
 
 interface MessageRowReplyWrapperProps {
   children: React.ReactNode;
-  isMe: boolean;
   onReply: () => void;
 }
 
-/** Full-width row wrapper: mobile swipe-left-to-reply, desktop hover reply. */
-export function MessageRowReplyWrapper({
-  children,
-  isMe,
-  onReply,
-}: MessageRowReplyWrapperProps) {
-  const { t } = useTranslation();
+/** Mobile swipe-left-to-reply. Desktop reply button lives beside the bubble in the message row. */
+export function MessageRowReplyWrapper({ children, onReply }: MessageRowReplyWrapperProps) {
   const isMdUp = useIsMdUp();
   const { offsetX, swipeProgress, swipeHandlers } = useSwipeToReply(onReply, !isMdUp);
 
   return (
     <div
-      className="group relative w-full touch-pan-y"
+      className="relative w-full touch-pan-y"
       {...(!isMdUp ? swipeHandlers : {})}
     >
       {!isMdUp && swipeProgress > 0.08 ? (
@@ -45,15 +38,6 @@ export function MessageRowReplyWrapper({
       >
         {children}
       </div>
-
-      <button
-        type="button"
-        onClick={onReply}
-        className="absolute top-1/2 right-1 z-10 hidden -translate-y-1/2 rounded-full bg-white/95 p-1.5 text-gray-500 opacity-0 shadow-sm transition-opacity group-hover:opacity-100 hover:text-orange-500 dark:bg-gray-800/95 dark:text-gray-300 dark:hover:text-orange-400 md:block"
-        aria-label={t('chat.replyToMessage')}
-      >
-        <Reply className="h-3.5 w-3.5" />
-      </button>
     </div>
   );
 }

@@ -12,7 +12,7 @@ export function MessageGroupHeader({ name, align }: MessageGroupHeaderProps) {
         align === 'end' ? 'justify-end' : 'justify-start'
       }`}
     >
-      <strong className="font-semibold text-gray-800 dark:text-gray-200">{name}</strong>
+      <strong className="font-semibold text-gray-800 dark:text-[#9aa8b6]">{name}</strong>
     </div>
   );
 }
