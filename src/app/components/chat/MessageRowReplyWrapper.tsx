@@ -49,9 +49,7 @@ export function MessageRowReplyWrapper({
       <button
         type="button"
         onClick={onReply}
-        className={`absolute top-1/2 z-10 hidden -translate-y-1/2 rounded-full bg-white/95 p-1.5 text-gray-500 opacity-0 shadow-sm transition-opacity group-hover:opacity-100 hover:text-orange-500 dark:bg-gray-800/95 dark:text-gray-300 dark:hover:text-orange-400 md:block ${
-          isMe ? 'right-1' : 'left-1'
-        }`}
+        className="absolute top-1/2 right-1 z-10 hidden -translate-y-1/2 rounded-full bg-white/95 p-1.5 text-gray-500 opacity-0 shadow-sm transition-opacity group-hover:opacity-100 hover:text-orange-500 dark:bg-gray-800/95 dark:text-gray-300 dark:hover:text-orange-400 md:block"
         aria-label={t('chat.replyToMessage')}
       >
         <Reply className="h-3.5 w-3.5" />
