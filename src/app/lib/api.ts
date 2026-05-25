@@ -453,10 +453,11 @@ export class ApiClient {
     return data;
   }
 
-  async sendMessageSafe(conversationId: string, content: string) {
+  async sendMessageSafe(conversationId: string, content: string, replyToMessageId?: string | null) {
     const { data, error } = await supabase.rpc('send_message_safe', {
       p_conversation_id: conversationId,
       p_content: content,
+      p_reply_to_message_id: replyToMessageId ?? null,
     });
     if (error) throw error;
     return data;
@@ -479,6 +480,65 @@ export class ApiClient {
       method: 'POST',
       body: JSON.stringify({ request_id: requestId, action }),
     });
+  }
+
+  async removeFriend(friendUserId: string) {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      throw new Error('No authenticated user');
+    }
+
+    const { error } = await supabase
+      .from('friends')
+      .delete()
+      .or(`and(user_id.eq.${user.id},friend_id.eq.${friendUserId}),and(user_id.eq.${friendUserId},friend_id.eq.${user.id})`);
+
+    if (error) throw error;
+    return { success: true };
+  }
+
+  async getGroupUnreadCounts(): Promise<{
+    groupUnreadById: Record<string, number>;
+    channelUnreadById: Record<string, number>;
+  }> {
+    const { data, error } = await supabase.rpc('get_group_unread_counts');
+    if (error) {
+      const message = String(error.message || '');
+      if (/does not exist|PGRST202|42883/i.test(message)) {
+        return { groupUnreadById: {}, channelUnreadById: {} };
+      }
+      throw error;
+    }
+
+    const groupUnreadById: Record<string, number> = {};
+    const channelUnreadById: Record<string, number> = {};
+
+    for (const row of (data || []) as Array<{
+      group_id: string;
+      channel_id: string;
+      unread_count: number | string;
+    }>) {
+      const count = Number(row.unread_count) || 0;
+      channelUnreadById[row.channel_id] = count;
+      groupUnreadById[row.group_id] = (groupUnreadById[row.group_id] || 0) + count;
+    }
+
+    return { groupUnreadById, channelUnreadById };
+  }
+
+  async markGroupChannelRead(channelId: string, readAt?: string) {
+    const { error } = await supabase.rpc('mark_group_channel_read', {
+      p_channel_id: channelId,
+      p_read_at: readAt ?? new Date().toISOString(),
+    });
+    if (error) {
+      const message = String(error.message || '');
+      if (/does not exist|PGRST202|42883/i.test(message)) {
+        localStorage.setItem(`blyve_group_channel_last_read_${channelId}`, readAt ?? new Date().toISOString());
+        return;
+      }
+      throw error;
+    }
   }
 
   async uploadGroupIcon(file: File) {
@@ -624,10 +684,19 @@ export class ApiClient {
     return this.edgeRequest(`/groups/${groupId}/messages?${q.toString()}`, { method: 'GET' });
   }
 
-  async sendGroupMessage(groupId: string, content: string, channelId: string) {
+  async sendGroupMessage(
+    groupId: string,
+    content: string,
+    channelId: string,
+    replyToMessageId?: string | null
+  ) {
     return this.edgeRequest(`/groups/${groupId}/messages`, {
       method: 'POST',
-      body: JSON.stringify({ content, channel_id: channelId }),
+      body: JSON.stringify({
+        content,
+        channel_id: channelId,
+        reply_to_message_id: replyToMessageId ?? null,
+      }),
     });
   }
 

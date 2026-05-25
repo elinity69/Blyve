@@ -1,17 +1,40 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="dark">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
     <meta http-equiv="Permissions-Policy" content="camera=*, microphone=*, display-capture=*, fullscreen=*" />
+    <meta name="color-scheme" content="dark light" />
     <title>Blyve</title>
+    <meta name="description" content="Blyve — connect, chat, and call." />
+    <meta name="theme-color" content="#000000" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="Blyve" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black" />
     <link rel="manifest" href="/manifest.json" />
-    <meta name="theme-color" content="#0f172a" />
+    <link rel="icon" href="/favicon.ico" sizes="any" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+    <link rel="icon" type="image/svg+xml" href="/icons/blyve-icon.svg" />
+    <script>
+      (function () {
+        try {
+          var raw = localStorage.getItem('blyve_theme_v1');
+          if (!raw) return;
+          var cache = JSON.parse(raw);
+          if (cache && typeof cache.darkMode === 'boolean') {
+            document.documentElement.classList.toggle('dark', cache.darkMode);
+            document.documentElement.style.colorScheme = cache.darkMode ? 'dark' : 'light';
+          }
+        } catch (e) {}
+      })();
+    </script>
   </head>
 
   <body>
     <!-- Black Curtain - Sicherheitsnetz gegen White Flash -->
-    <div id="black-curtain" style="position: fixed; inset: 0; background-color: #ffffff; z-index: -9999;"></div>
+    <div id="black-curtain" style="position: fixed; inset: 0; background-color: #000000; z-index: -9999;"></div>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

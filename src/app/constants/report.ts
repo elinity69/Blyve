@@ -1,9 +1,11 @@
 export const REPORT_REASONS = [
-  { key: 'spam_fake', label: 'Fake-Profil / Spam' },
-  { key: 'harassment', label: 'Belästigung oder Mobbing' },
-  { key: 'sexual_harassment', label: 'Sexuelle Belästigung' },
-  { key: 'hate_speech', label: 'Hassrede / Diskriminierung' },
-  { key: 'nudity_inappropriate', label: 'Nacktheit / Unangemessene Fotos' },
-  { key: 'underage', label: 'Minderjährig' },
-  { key: 'physical_danger', label: 'Physische Gefahr' },
-];
+  { key: 'spam_fake' },
+  { key: 'harassment' },
+  { key: 'sexual_harassment' },
+  { key: 'hate_speech' },
+  { key: 'nudity_inappropriate' },
+  { key: 'underage' },
+  { key: 'physical_danger' },
+] as const;
+
+export type ReportReasonKey = (typeof REPORT_REASONS)[number]['key'];

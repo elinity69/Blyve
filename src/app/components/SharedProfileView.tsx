@@ -3,17 +3,25 @@ import { motion, AnimatePresence, useMotionValue, useTransform, PanInfo } from '
 import { User } from '../types';
 import { getOptimizedImageUrl } from '../lib/images';
 import { useTranslation } from 'react-i18next';
+import { useLongPress } from '../hooks/useLongPress';
 
 interface SharedProfileViewProps {
   profile: any;
   onClose: () => void;
   bottomAccessory?: React.ReactNode;
+  conversationId?: string;
+  onOpenConversationActions?: (
+    event: React.MouseEvent | React.PointerEvent,
+    conversationId: string
+  ) => void;
 }
 
 export function SharedProfileView({
   profile,
   onClose,
   bottomAccessory,
+  conversationId,
+  onOpenConversationActions,
 }: SharedProfileViewProps) {
   const { t, i18n } = useTranslation();
   const [imageIndex, setImageIndex] = useState(0);
@@ -122,6 +130,23 @@ export function SharedProfileView({
     setScrollTop(e.currentTarget.scrollTop);
   };
 
+  const openActionsFromProfile = (event: React.MouseEvent | React.PointerEvent) => {
+    if (!conversationId || !onOpenConversationActions) return;
+    onOpenConversationActions(event, conversationId);
+  };
+
+  const profileLongPress = useLongPress(openActionsFromProfile);
+  const profileActionHandlers =
+    conversationId && onOpenConversationActions
+      ? {
+          onContextMenu: (event: React.MouseEvent) => {
+            event.preventDefault();
+            openActionsFromProfile(event);
+          },
+          ...profileLongPress,
+        }
+      : {};
+
   return (
     <AnimatePresence>
       <motion.div
@@ -195,6 +220,7 @@ export function SharedProfileView({
                 userSelect: 'none',
                 WebkitUserSelect: 'none',
               }}
+              {...profileActionHandlers}
             >
               {!isDesktop ? (
                 <div className="absolute left-1/2 top-2 z-30 h-1.5 w-12 -translate-x-1/2 rounded-full bg-gray-300 dark:bg-gray-700" />

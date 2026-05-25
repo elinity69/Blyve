@@ -5,6 +5,11 @@ import { api } from '../lib/api';
 import { RealtimeChannel } from '@supabase/supabase-js';
 import { dispatchConversationPreviewUpdate } from '../lib/messageEvents';
 import { useUnread } from '../context/UnreadContext';
+import {
+  DM_MESSAGES_PAGE_SIZE,
+  dmMessagesQueryKey,
+  fetchDmMessages,
+} from '../lib/chatMessages';
 
 export interface Message {
   id: string;
@@ -14,6 +19,7 @@ export interface Message {
   created_at: string;
   is_read: boolean;
   read_at: string | null;
+  reply_to_message_id?: string | null;
 }
 
 export interface Conversation {
@@ -37,6 +43,18 @@ export interface Conversation {
   has_messages: boolean;
 }
 
+function mergeMessages(base: Message[], extras: Message[]): Message[] {
+  const map = new Map<string, Message>();
+  base.forEach((m) => map.set(m.id, m));
+  extras.forEach((m) => map.set(m.id, m));
+  return Array.from(map.values()).sort((a, b) => a.created_at.localeCompare(b.created_at));
+}
+
+function isAbortError(err: unknown): boolean {
+  const msg = String((err as { message?: string })?.message ?? err ?? '');
+  return msg.includes('AbortError') || msg.includes('aborted');
+}
+
 export function useChat(conversationId: string | null, onMessageSent?: (conversationId: string, lastMessage: string, lastMessageAt: string) => void) {
   const { refreshUnreadCount } = useUnread();
   const [messages, setMessages] = useState<Message[]>([]);
@@ -45,75 +63,90 @@ export function useChat(conversationId: string | null, onMessageSent?: (conversa
   const [hasMore, setHasMore] = useState(true);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const channelRef = useRef<RealtimeChannel | null>(null);
+  const currentUserIdRef = useRef<string | null>(null);
+  const prevConversationIdRef = useRef<string | null>(null);
   const queryClient = useQueryClient();
-  const pageSize = 50;
+  const pageSize = DM_MESSAGES_PAGE_SIZE;
 
   useEffect(() => {
-    if (!conversationId) {
-      setCurrentUserId(null);
-      return;
-    }
-    const loadCurrentUser = async () => {
-      try {
-        const { data: { user } } = await supabase.auth.getUser();
-        setCurrentUserId(user?.id || null);
-      } catch (err) {
-        console.error('Failed to get current user for messages:', err);
-        setCurrentUserId(null);
-      }
+    let cancelled = false;
+    void supabase.auth.getUser().then(({ data: { user } }) => {
+      if (cancelled) return;
+      currentUserIdRef.current = user?.id ?? null;
+    });
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      currentUserIdRef.current = session?.user?.id ?? null;
+    });
+    return () => {
+      cancelled = true;
+      subscription.unsubscribe();
     };
-    loadCurrentUser();
-  }, [conversationId]);
+  }, []);
 
-  const { data: fetchedMessages, isLoading, isFetched, error: queryError } = useQuery({
-    queryKey: ['messages', conversationId, currentUserId],
-    enabled: !!conversationId && !!currentUserId,
-    queryFn: async () => {
-      const { data, error: fetchError } = await supabase
-        .from('messages')
-        .select('*')
-        .eq('conversation_id', conversationId)
-        .order('created_at', { ascending: false })
-        .limit(pageSize);
-
-      if (fetchError) throw fetchError;
-      return (data || []).slice().reverse();
-    },
-    staleTime: 5 * 60 * 1000,
+  const {
+    data: fetchedMessages,
+    isPending,
+    isFetched,
+    error: queryError,
+    refetch,
+  } = useQuery({
+    queryKey: dmMessagesQueryKey(conversationId!),
+    enabled: !!conversationId,
+    queryFn: () => fetchDmMessages(conversationId!),
+    staleTime: 60_000,
+    refetchOnWindowFocus: true,
   });
 
-  // Subscribe to realtime updates
+  // Sync query results into local state (single effect — no separate clear effect that races).
   useEffect(() => {
     if (!conversationId) {
+      prevConversationIdRef.current = null;
+      setMessages([]);
+      setLoading(false);
+      setError(null);
       return;
     }
 
-    if (!isFetched || !currentUserId) {
-      setLoading(true);
-      return;
-    }
-    setLoading(false);
-    if (queryError) {
-      setError((queryError as Error).message || 'Failed to load messages');
-    } else {
+    const conversationChanged = prevConversationIdRef.current !== conversationId;
+    if (conversationChanged) {
+      prevConversationIdRef.current = conversationId;
+      setMessages([]);
+      setHasMore(true);
+      setLoadingMore(false);
       setError(null);
     }
 
-    if (fetchedMessages) {
-      setMessages((prev) => {
-        const map = new Map<string, Message>();
-        fetchedMessages.forEach((m) => map.set(m.id, m as Message));
-        prev.forEach((m) => {
-          if (!map.has(m.id)) map.set(m.id, m);
-        });
-        return Array.from(map.values()).sort((a, b) => a.created_at.localeCompare(b.created_at));
-      });
-      setHasMore(fetchedMessages.length === pageSize);
+    if (isPending) {
+      setLoading(true);
+      return;
     }
 
-    // Subscribe to realtime changes
+    setLoading(false);
+
+    if (queryError) {
+      setError((queryError as Error).message || 'Failed to load messages');
+      return;
+    }
+
+    setError(null);
+
+    if (fetchedMessages) {
+      setMessages((prev) =>
+        conversationChanged
+          ? (fetchedMessages as Message[])
+          : mergeMessages(fetchedMessages as Message[], prev)
+      );
+      setHasMore(fetchedMessages.length === pageSize);
+    }
+  }, [conversationId, fetchedMessages, isPending, isFetched, queryError]);
+
+  // Realtime subscription — only tied to conversationId.
+  useEffect(() => {
+    if (!conversationId) {
+      return;
+    }
+
     const channel = supabase
       .channel(`messages:${conversationId}`)
       .on(
@@ -125,7 +158,6 @@ export function useChat(conversationId: string | null, onMessageSent?: (conversa
           filter: `conversation_id=eq.${conversationId}`,
         },
         (payload) => {
-          console.log('New message received:', payload);
           const newMessage = payload.new as Message;
           setMessages((prev) => {
             if (prev.some((m) => m.id === newMessage.id)) {
@@ -139,7 +171,7 @@ export function useChat(conversationId: string | null, onMessageSent?: (conversa
             newMessage.content,
             newMessage.created_at
           );
-          if (newMessage.sender_id !== currentUserId) {
+          if (newMessage.sender_id !== currentUserIdRef.current) {
             void refreshUnreadCount();
           }
         }
@@ -153,7 +185,6 @@ export function useChat(conversationId: string | null, onMessageSent?: (conversa
           filter: `conversation_id=eq.${conversationId}`,
         },
         (payload) => {
-          console.log('Message updated:', payload);
           const updatedMessage = payload.new as Message;
           setMessages((prev) =>
             prev.map((m) => (m.id === updatedMessage.id ? updatedMessage : m))
@@ -170,19 +201,40 @@ export function useChat(conversationId: string | null, onMessageSent?: (conversa
         channelRef.current = null;
       }
     };
-  }, [conversationId, fetchedMessages, isLoading, isFetched, queryError, currentUserId, refreshUnreadCount]);
+  }, [conversationId, refreshUnreadCount]);
 
+  // Refetch after inactivity / tab focus / auth token refresh.
   useEffect(() => {
     if (!conversationId) return;
-    setMessages([]);
-    setHasMore(true);
-    setLoadingMore(false);
-    setError(null);
-  }, [conversationId]);
 
-  // Send a message
+    const refetchMessages = () => {
+      void refetch();
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        refetchMessages();
+      }
+    };
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (session?.user && (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED')) {
+        refetchMessages();
+      }
+    });
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('focus', refetchMessages);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('focus', refetchMessages);
+      subscription.unsubscribe();
+    };
+  }, [conversationId, refetch]);
+
   const sendMessage = useCallback(
-    async (content: string): Promise<Message | null> => {
+    async (content: string, replyToMessageId?: string | null): Promise<Message | null> => {
       if (!conversationId || !content.trim()) {
         return null;
       }
@@ -191,14 +243,16 @@ export function useChat(conversationId: string | null, onMessageSent?: (conversa
         setSending(true);
         setError(null);
 
-        // Use secure RPC function that validates conversation participation server-side
-        const result = await api.sendMessageSafe(conversationId, content.trim());
+        const result = await api.sendMessageSafe(
+          conversationId,
+          content.trim(),
+          replyToMessageId ?? null
+        );
 
         if (!result || !result.success) {
           throw new Error(result?.message || 'Failed to send message. Permission denied or conversation not allowed.');
         }
 
-        // The function returns the message ID, so we need to fetch the full message
         const { data: newMessage, error: fetchError } = await supabase
           .from('messages')
           .select('*')
@@ -207,7 +261,6 @@ export function useChat(conversationId: string | null, onMessageSent?: (conversa
 
         if (fetchError) throw fetchError;
 
-        // Message will be added via realtime subscription, but we can add it optimistically
         if (newMessage) {
           setMessages((prev) => {
             if (prev.some((m) => m.id === newMessage.id)) {
@@ -226,7 +279,7 @@ export function useChat(conversationId: string | null, onMessageSent?: (conversa
             onMessageSent(conversationId, newMessage.content, newMessage.created_at);
           }
         }
-        queryClient.invalidateQueries({ queryKey: ['messages', conversationId] });
+        void queryClient.invalidateQueries({ queryKey: dmMessagesQueryKey(conversationId) });
 
         return newMessage;
       } catch (err: any) {
@@ -237,10 +290,9 @@ export function useChat(conversationId: string | null, onMessageSent?: (conversa
         setSending(false);
       }
     },
-    [conversationId, onMessageSent]
+    [conversationId, onMessageSent, queryClient]
   );
 
-  // Mark messages as read
   const markAsRead = useCallback(async () => {
     if (!conversationId) return;
 
@@ -257,7 +309,9 @@ export function useChat(conversationId: string | null, onMessageSent?: (conversa
         .single();
 
       if (profileError) {
-        console.warn('Error loading ghost mode status:', profileError);
+        if (!isAbortError(profileError)) {
+          console.warn('Error loading ghost mode status:', profileError);
+        }
         return;
       }
 
@@ -299,11 +353,13 @@ export function useChat(conversationId: string | null, onMessageSent?: (conversa
 
       void refreshUnreadCount();
       void queryClient.invalidateQueries({
-        queryKey: ['messages', conversationId],
+        queryKey: dmMessagesQueryKey(conversationId),
         refetchType: 'active',
       });
     } catch (err) {
-      console.error('Error marking messages as read:', err);
+      if (!isAbortError(err)) {
+        console.error('Error marking messages as read:', err);
+      }
     }
   }, [conversationId, queryClient, refreshUnreadCount]);
 
@@ -316,7 +372,7 @@ export function useChat(conversationId: string | null, onMessageSent?: (conversa
       setLoadingMore(true);
       const { data, error: fetchError } = await supabase
         .from('messages')
-        .select('*')
+        .select('id, conversation_id, sender_id, content, created_at, is_read, read_at')
         .eq('conversation_id', conversationId)
         .lt('created_at', oldestMessage.created_at)
         .order('created_at', { ascending: false })
@@ -351,7 +407,6 @@ export function useChat(conversationId: string | null, onMessageSent?: (conversa
     sendMessage,
     markAsRead,
     loadOlderMessages,
-    reload: () => queryClient.invalidateQueries({ queryKey: ['messages', conversationId] }),
+    reload: () => queryClient.invalidateQueries({ queryKey: dmMessagesQueryKey(conversationId!) }),
   };
 }
-

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback } from 'react';
-import { ArrowLeft, Send, Loader2, MoreVertical, Ban, CheckCheck, Phone, X } from 'lucide-react';
+import { ArrowLeft, Send, Loader2, MoreVertical, Ban, Phone, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useTranslation } from 'react-i18next';
 import { useChat } from '../hooks/useChat';
@@ -15,6 +15,41 @@ import { useIsMdUp } from './ui/use-mobile';
 import { useCall } from '../context/CallContext';
 import { ChatCallPanel } from './ChatCallPanel';
 import { NotificationManager } from '../lib/notifications';
+import { getAppDateLocale } from '../../lib/i18n';
+import {
+  ConversationActionsMenu,
+  openConversationActionsMenuFromEvent,
+  type ConversationActionTarget,
+} from './ConversationActionsMenu';
+import { useLongPress } from '../hooks/useLongPress';
+import { MessageReplyComposerBar } from './chat/MessageReplyComposerBar';
+import { MessageReplyQuote } from './chat/MessageReplyQuote';
+import { MessageRowReplyWrapper } from './chat/MessageRowReplyWrapper';
+import {
+  buildReplyTarget,
+  resolveReplyQuote,
+  type ReplyTarget,
+} from '../lib/messageReply';
+import {
+  CHAT_MESSAGE_BUBBLE_TEXT_CLASS,
+  CHAT_MESSAGE_BUBBLE_TEXT_GROUPED_CLASS,
+  CHAT_MESSAGE_LIST_CLASS,
+  CHAT_MESSAGE_ROW_CLASS,
+  CHAT_MESSAGE_ROW_GROUPED_CLASS,
+  CHAT_MESSAGE_ROW_INNER_CLASS,
+  CHAT_MESSAGE_ROW_INNER_GROUPED_CLASS,
+} from './chat/chatMessageStyles';
+import { MessageRowAvatarSlot } from './chat/MessageRowAvatarSlot';
+import { MessageGroupHeader } from './chat/MessageGroupHeader';
+import { MessageBubble } from './chat/MessageBubble';
+import {
+  formatMessageTime,
+  getMessageGroupPosition,
+  isMessageBundled,
+  isMessageGroupEnd,
+  isMessageGroupStart,
+} from '../lib/messageGrouping';
+import { isOutgoingMessageRead } from '../lib/messageReadReceipts';
 
 interface ChatScreenProps {
   onBack: () => void;
@@ -28,7 +63,8 @@ interface ChatScreenProps {
     is_online?: boolean;
   };
   currentUserId: string;
-  onOpenProfilePreview?: (userId: string) => void; // ✅ NEU: Callback nach oben
+  onOpenProfilePreview?: (userId: string) => void;
+  onConversationUpdated?: () => void;
 }
 
 export function ChatScreen({
@@ -37,8 +73,10 @@ export function ChatScreen({
   otherUser,
   currentUserId,
   onOpenProfilePreview,
+  onConversationUpdated,
 }: ChatScreenProps) {
   const { t, i18n } = useTranslation();
+  const [conversationActionsMenu, setConversationActionsMenu] = useState<ConversationActionTarget | null>(null);
   const { messages, loading, loadingMore, hasMore, sending, error, sendMessage, markAsRead, loadOlderMessages } = useChat(conversationId);
   const { currentUserProfile } = useAppData();
   const {
@@ -50,9 +88,12 @@ export function ChatScreen({
   const isMdUp = useIsMdUp();
   
   const [messageInput, setMessageInput] = useState('');
+  const [replyTarget, setReplyTarget] = useState<ReplyTarget | null>(null);
   const messageInputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
+  const typingIndicatorRef = useRef<HTMLDivElement>(null);
+  const [typingClearance, setTypingClearance] = useState(0);
   const isLoadingOlderRef = useRef(false);
   const optionsMenuRef = useRef<HTMLDivElement>(null);
   const optionsButtonRef = useRef<HTMLButtonElement>(null);
@@ -61,13 +102,10 @@ export function ChatScreen({
   const [showBlockModal, setShowBlockModal] = useState(false);
   const [selectedReportReason, setSelectedReportReason] = useState<string | null>(null);
   const [reportTargetUserId, setReportTargetUserId] = useState<string | null>(null);
-  const [isTransitionDone, setIsTransitionDone] = useState(false);
   const [newlyLoadedIds, setNewlyLoadedIds] = useState<Set<string>>(new Set());
   const initialScrollDoneRef = useRef(false);
   const canLoadOlderRef = useRef(false);
   const lastMessageIdRef = useRef<string | null>(null);
-  const lastReadReceiptIdRef = useRef<string | null>(null);
-  const lastTypingStateRef = useRef<boolean>(false);
 
   const isGhostMode = !!currentUserProfile?.ghost_mode;
 
@@ -76,8 +114,70 @@ export function ChatScreen({
   const meDisplay =
     currentUserProfile?.display_name?.trim() ||
     currentUserProfile?.name ||
-    'Du';
+    t('chat.you');
+
+  const getSenderLabel = useCallback(
+    (senderId: string) =>
+      senderId === currentUserId ? meDisplay : otherDisplay,
+    [currentUserId, meDisplay, otherDisplay]
+  );
+
+  const meAvatarUrl =
+    currentUserProfile?.avatar_url ||
+    currentUserProfile?.images?.[0] ||
+    currentUserProfile?.imageUrl ||
+    null;
+
+  useEffect(() => {
+    setReplyTarget(null);
+  }, [conversationId]);
+
+  const openProfileActions = useCallback(
+    (event: React.MouseEvent | React.PointerEvent) => {
+      event.preventDefault();
+      event.stopPropagation();
+      setConversationActionsMenu(
+        openConversationActionsMenuFromEvent(event, conversationId, {
+          id: otherUser.id,
+          name: otherDisplay,
+          username: otherUser.username,
+          imageUrl: otherUser.imageUrl,
+        })
+      );
+    },
+    [conversationId, otherDisplay, otherUser.id, otherUser.imageUrl, otherUser.username]
+  );
+  const profileLongPress = useLongPress(openProfileActions);
+
+  const handleRemoveFriend = useCallback(async () => {
+    const confirmed = window.confirm(t('chat.deleteFriendConfirm', { name: otherDisplay }));
+    if (!confirmed) return;
+
+    try {
+      await api.removeFriend(otherUser.id);
+      toast.success(t('chat.deleteFriendSuccess'));
+      onConversationUpdated?.();
+      onBack();
+    } catch (error: any) {
+      toast.error(t('chat.deleteFriendFailedTitle'), error.message || t('chat.deleteFriendFailedTitle'));
+    }
+  }, [onBack, onConversationUpdated, otherDisplay, otherUser.id, t]);
+
+  const handleBlockFromMenu = useCallback(async () => {
+    const confirmed = window.confirm(t('chat.blockUserConfirm'));
+    if (!confirmed) return;
+
+    try {
+      await api.blockUser(otherUser.id);
+      toast.success(t('chat.blockSuccess'));
+      onConversationUpdated?.();
+      onBack();
+    } catch (error: any) {
+      toast.error(t('chat.blockFailedTitle'), error.message || t('chat.blockFailedTitle'));
+    }
+  }, [onBack, onConversationUpdated, otherUser.id, t]);
   const { isPartnerTyping, sendTyping } = useTyping(conversationId, currentUserId, isGhostMode);
+
   const lastOwnMessageId = useMemo(() => {
     for (let i = messages.length - 1; i >= 0; i -= 1) {
       if (messages[i].sender_id === currentUserId) {
@@ -87,35 +187,13 @@ export function ChatScreen({
     return null;
   }, [messages, currentUserId]);
 
-  const smoothScrollToBottom = useCallback((element: HTMLElement, duration = 400) => {
-    const start = element.scrollTop;
-    const end = element.scrollHeight - element.clientHeight;
-    const distance = end - start;
-    if (distance === 0) return;
-    const startTime = performance.now();
-
-    const easeOutCubic = (t: number) => 1 - Math.pow(1 - t, 3);
-
-    const animateScroll = (currentTime: number) => {
-      const elapsed = currentTime - startTime;
-      const progress = Math.min(elapsed / duration, 1);
-      const eased = easeOutCubic(progress);
-      element.scrollTop = start + distance * eased;
-      if (progress < 1) {
-        requestAnimationFrame(animateScroll);
-      }
-    };
-
-    requestAnimationFrame(animateScroll);
-  }, []);
-
-  useEffect(() => {
-    const timer = setTimeout(() => setIsTransitionDone(true), 350);
-    return () => clearTimeout(timer);
+  const scrollToBottomInstant = useCallback((element: HTMLElement) => {
+    element.scrollTop = element.scrollHeight;
   }, []);
 
   useEffect(() => {
     initialScrollDoneRef.current = false;
+    lastMessageIdRef.current = null;
   }, [conversationId]);
 
   useEffect(() => {
@@ -138,49 +216,54 @@ export function ChatScreen({
     return () => clearTimeout(timer);
   }, [conversationId]);
 
-  useEffect(() => {
-    if (!isTransitionDone || messages.length === 0 || initialScrollDoneRef.current) return;
-    const scrollTimeout = setTimeout(() => {
-      const container = messagesContainerRef.current;
-      if (!container) return;
-      smoothScrollToBottom(container, 350);
-      initialScrollDoneRef.current = true;
-    }, 100);
-    return () => clearTimeout(scrollTimeout);
-  }, [isTransitionDone, messages, smoothScrollToBottom]);
+  useLayoutEffect(() => {
+    if (loading || messages.length === 0) return;
+    const container = messagesContainerRef.current;
+    if (!container) return;
 
-  useEffect(() => {
-    if (!initialScrollDoneRef.current || messages.length === 0) return;
+    if (!initialScrollDoneRef.current) {
+      scrollToBottomInstant(container);
+      initialScrollDoneRef.current = true;
+      lastMessageIdRef.current = messages[messages.length - 1]?.id ?? null;
+      return;
+    }
+
     const lastMessage = messages[messages.length - 1];
     if (lastMessageIdRef.current === lastMessage.id) return;
     lastMessageIdRef.current = lastMessage.id;
-    const container = messagesContainerRef.current;
-    if (!container) return;
-    smoothScrollToBottom(container, 300);
-  }, [messages, currentUserId, smoothScrollToBottom]);
+    scrollToBottomInstant(container);
+  }, [loading, messages, scrollToBottomInstant]);
 
-  useEffect(() => {
-    if (!initialScrollDoneRef.current || messages.length === 0) return;
-    const lastOwnReadMessage = [...messages].reverse().find(
-      (msg) => msg.sender_id === currentUserId && !!msg.read_at
-    );
-    if (!lastOwnReadMessage) return;
-    if (lastReadReceiptIdRef.current === lastOwnReadMessage.id) return;
-    lastReadReceiptIdRef.current = lastOwnReadMessage.id;
-    const container = messagesContainerRef.current;
-    if (!container) return;
-    smoothScrollToBottom(container, 250);
-  }, [messages, currentUserId, smoothScrollToBottom]);
+  useLayoutEffect(() => {
+    if (!isPartnerTyping) {
+      setTypingClearance(0);
+      return;
+    }
 
-  useEffect(() => {
-    if (!initialScrollDoneRef.current) return;
-    if (lastTypingStateRef.current === isPartnerTyping) return;
-    lastTypingStateRef.current = isPartnerTyping;
-    if (!isPartnerTyping) return;
+    const measure = () => {
+      const el = typingIndicatorRef.current;
+      const height = el?.offsetHeight ?? 40;
+      setTypingClearance(height + 8);
+    };
+    measure();
+    requestAnimationFrame(measure);
+
+    let observer: ResizeObserver | undefined;
+    const indicator = typingIndicatorRef.current;
+    if (indicator) {
+      observer = new ResizeObserver(measure);
+      observer.observe(indicator);
+    }
+
+    return () => observer?.disconnect();
+  }, [isPartnerTyping]);
+
+  useLayoutEffect(() => {
+    if (!isPartnerTyping || typingClearance <= 0) return;
     const container = messagesContainerRef.current;
-    if (!container) return;
-    smoothScrollToBottom(container, 200);
-  }, [isPartnerTyping, smoothScrollToBottom]);
+    if (!container || !initialScrollDoneRef.current) return;
+    scrollToBottomInstant(container);
+  }, [isPartnerTyping, typingClearance, scrollToBottomInstant]);
 
   const loadOlderAndPreserveScroll = useCallback(async () => {
     if (loadingMore || !hasMore || isLoadingOlderRef.current) return;
@@ -284,13 +367,19 @@ export function ChatScreen({
     const trimmed = messageInput.trim();
     if (!trimmed || sending) return;
 
+    const replyToId = replyTarget?.id ?? null;
+    const activeReply = replyTarget;
     setMessageInput('');
-    const sent = await sendMessage(trimmed);
+    setReplyTarget(null);
+    const sent = await sendMessage(trimmed, replyToId);
     if (!sent) {
       setMessageInput((prev) => (prev === '' ? trimmed : prev));
+      if (activeReply) {
+        setReplyTarget(activeReply);
+      }
     }
     focusMessageInput();
-  }, [messageInput, sending, sendMessage, focusMessageInput]);
+  }, [messageInput, sending, sendMessage, focusMessageInput, replyTarget]);
 
   const handleReportUser = () => {
     setReportTargetUserId(otherUser.id);
@@ -314,10 +403,10 @@ export function ChatScreen({
         });
 
       if (error) throw error;
-      toast.success('Danke, wir prüfen das.');
+      toast.success(t('chat.reportSuccess'));
     } catch (error: any) {
       console.error('Failed to report user:', error);
-      toast.error('Fehler beim Melden', error.message || 'Failed to report user.');
+      toast.error(t('chat.reportFailedTitle'), error.message || t('chat.reportFailedTitle'));
     } finally {
       setShowReportModal(false);
       setSelectedReportReason(null);
@@ -333,12 +422,12 @@ export function ChatScreen({
   const confirmBlockUser = async () => {
     try {
       await api.blockUser(otherUser.id);
-      toast.success('Nutzer wurde blockiert und alle Nachrichten gelöscht.');
+      toast.success(t('chat.blockSuccess'));
       setShowBlockModal(false);
       onBack();
     } catch (error: any) {
       console.error('Failed to block user:', error);
-      toast.error('Fehler beim Blockieren', error.message || 'Failed to block user.');
+      toast.error(t('chat.blockFailedTitle'), error.message || t('chat.blockFailedTitle'));
     }
   };
 
@@ -347,7 +436,7 @@ export function ChatScreen({
     activeCall?.conversationId === conversationId;
   const isCallButtonDisabled = isThisChatBusyForMe;
   return (
-    <div className="relative flex h-full min-h-0 w-full flex-col bg-white pb-16 dark:bg-black md:pb-0 md:dark:bg-[#121212]">
+    <div className="relative flex h-full min-h-0 w-full flex-col bg-white dark:bg-black md:dark:bg-[#121212]">
       {/* Header */}
       <div 
         className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-gray-800 bg-white dark:bg-black md:dark:bg-[#121212]"
@@ -366,29 +455,34 @@ export function ChatScreen({
             <ArrowLeft className="w-6 h-6 text-gray-900 dark:text-white" />
           </button>
           
-          <button
-            onClick={() => onOpenProfilePreview?.(otherUser.id)}
-            className="flex items-center gap-3"
-            style={{
-              touchAction: 'manipulation',
-              WebkitTapHighlightColor: 'transparent',
-              cursor: 'pointer'
-            }}
+          <div
+            onContextMenu={openProfileActions}
+            {...profileLongPress}
           >
-            <img
-              src={otherUser.imageUrl ? getOptimizedImageUrl(otherUser.imageUrl, 200) : `https://ui-avatars.com/api/?name=${encodeURIComponent(otherDisplay)}`}
-              alt={otherDisplay}
-              className="w-10 h-10 rounded-full object-cover"
-            />
-            <div>
-              <h2 className="text-base font-semibold text-gray-900 dark:text-white">
-                {otherDisplay}
-              </h2>
-              <p className="text-xs text-gray-500 dark:text-gray-400">
-                {otherUser.is_online ? 'Online' : 'Offline'}
-              </p>
-            </div>
-          </button>
+            <button
+              onClick={() => onOpenProfilePreview?.(otherUser.id)}
+              className="flex items-center gap-3"
+              style={{
+                touchAction: 'manipulation',
+                WebkitTapHighlightColor: 'transparent',
+                cursor: 'pointer'
+              }}
+            >
+              <img
+                src={otherUser.imageUrl ? getOptimizedImageUrl(otherUser.imageUrl, 200) : `https://ui-avatars.com/api/?name=${encodeURIComponent(otherDisplay)}`}
+                alt={otherDisplay}
+                className="w-10 h-10 rounded-full object-cover"
+              />
+              <div>
+                <h2 className="text-base font-semibold text-gray-900 dark:text-white">
+                  {otherDisplay}
+                </h2>
+                <p className="text-xs text-gray-500 dark:text-gray-400">
+                  {otherUser.is_online ? t('chat.online') : t('chat.offline')}
+                </p>
+              </div>
+            </button>
+          </div>
         </div>
 
         <div className="flex items-center gap-1 shrink-0 min-w-0">
@@ -427,26 +521,26 @@ export function ChatScreen({
 
       {/* Messages */}
       <div 
-        className="flex-1 overflow-y-auto px-4 py-4 bg-white dark:bg-black md:dark:bg-[#121212]"
+        className={`${CHAT_MESSAGE_LIST_CLASS} ${typingClearance > 0 ? '' : 'pb-1'}`}
         ref={messagesContainerRef}
         onScroll={handleMessagesScroll}
         style={{
           overflowY: 'auto',
           WebkitOverflowScrolling: 'touch',
-          paddingBottom: '12px',
+          ...(typingClearance > 0 ? { paddingBottom: typingClearance } : {}),
         }}
       >
         {loading && messages.length === 0 ? (
-          <div className="flex items-center justify-center h-full">
+          <div className="flex h-full items-center justify-center">
             <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
           </div>
         ) : error ? (
-          <div className="flex items-center justify-center h-full">
+          <div className="flex h-full items-center justify-center">
             <p className="text-red-500 dark:text-red-400">{error}</p>
           </div>
         ) : messages.length === 0 ? (
-          <div className="flex items-center justify-center h-full">
-            <p className="text-gray-500 dark:text-gray-400">Noch keine Nachrichten. Sag Hallo! 👋</p>
+          <div className="flex h-full items-center justify-center">
+            <p className="text-gray-500 dark:text-gray-400">{t('chat.noMessagesHint')}</p>
           </div>
         ) : (
           <>
@@ -455,10 +549,28 @@ export function ChatScreen({
                 <Loader2 className="w-4 h-4 animate-spin text-gray-400" />
               </div>
             )}
-            {messages.map((msg) => {
+            {messages.map((msg, index) => {
               const isMe = msg.sender_id === currentUserId;
+              const prev = index > 0 ? messages[index - 1] : null;
+              const next = index < messages.length - 1 ? messages[index + 1] : null;
+              const isGroupStart = isMessageGroupStart(msg, prev);
+              const isGroupEnd = isMessageGroupEnd(msg, next);
+              const isBundled = isMessageBundled(msg, prev, next);
+              const groupPosition = getMessageGroupPosition(msg, prev, next);
               const isLastOwnMessage = isMe && msg.id === lastOwnMessageId;
               const isNewlyLoaded = newlyLoadedIds.has(msg.id);
+              const timeLocale = getAppDateLocale(i18n.language);
+              const messageTime = formatMessageTime(
+                msg.created_at,
+                timeLocale,
+                timeLocale === 'en-US'
+              );
+              const replyQuote = resolveReplyQuote(
+                msg.reply_to_message_id,
+                messages,
+                (senderId) => getSenderLabel(senderId),
+                t('chat.originalMessageUnavailable')
+              );
               return (
                 <motion.div
                   key={msg.id}
@@ -469,85 +581,79 @@ export function ChatScreen({
                     duration: 0.25,
                     ease: [0.25, 0.1, 0.25, 1]
                   }}
-                  style={{
-                    width: '100%',
-                    margin: '4px 0',
-                    padding: '0 12px',
-                    alignItems: isMe ? 'flex-end' : 'flex-start',
-                    display: 'flex',
-                    flexDirection: 'column',
-                  }}
+                  className={isGroupStart ? CHAT_MESSAGE_ROW_CLASS : CHAT_MESSAGE_ROW_GROUPED_CLASS}
                 >
-                  {!isMe && (
-                    <div
-                      className="max-w-[70%] text-[11px] text-gray-600 dark:text-gray-400 mb-0.5 px-1"
-                      style={{ alignSelf: 'flex-start' }}
-                    >
-                      <strong className="text-gray-800 dark:text-gray-200 font-semibold">{otherDisplay}</strong>
-                    </div>
-                  )}
-                  {isMe && (
-                    <div
-                      className="max-w-[70%] text-[11px] text-gray-600 dark:text-gray-400 mb-0.5 px-1"
-                      style={{ alignSelf: 'flex-end', textAlign: 'right' }}
-                    >
-                      <strong className="text-gray-800 dark:text-gray-200 font-semibold">{meDisplay}</strong>
-                    </div>
-                  )}
-                  <div
-                    className={`max-w-[70%] px-4 py-2 rounded-2xl ${
-                      isMe
-                        ? 'bg-gradient-to-br from-orange-500 via-red-500 to-pink-500 text-white'
-                        : 'bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-white'
-                    }`}
+                  <MessageRowReplyWrapper
+                    isMe={isMe}
+                    onReply={() =>
+                      setReplyTarget(buildReplyTarget(msg, getSenderLabel(msg.sender_id)))
+                    }
                   >
-                    <p className="text-sm whitespace-pre-wrap break-words">{msg.content}</p>
-                    <p className={`text-xs mt-1 flex items-center gap-1 ${isMe ? 'text-white/70' : 'text-gray-500 dark:text-gray-400'}`}>
-                      {new Date(msg.created_at).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}
-                      {isMe && (
-                        msg.read_at || msg.is_read ? (
-                          <CheckCheck className="w-3.5 h-3.5 text-blue-500" />
-                        ) : (
-                          <CheckCheck className="w-3.5 h-3.5 text-gray-400" />
-                        )
-                      )}
-                    </p>
-                  </div>
-                  {isLastOwnMessage && msg.read_at && (
-                    <div
-                      style={{
-                        fontSize: 10,
-                        color: '#8E8E93',
-                        marginTop: 4,
-                        marginRight: 2,
-                        textAlign: 'right',
-                      }}
-                    >
-                      {t('chat.read')} {(() => {
-                        const lang = i18n.language || 'de';
-                        const isEnglish = lang.startsWith('en');
-                        const locale = isEnglish ? 'en-US' : (lang.startsWith('es') ? 'es-ES' : 'de-DE');
-                        return new Date(msg.read_at).toLocaleTimeString(locale, {
-                          hour: '2-digit',
-                          minute: '2-digit',
-                          hour12: isEnglish
-                        });
-                      })()}
+                    <div className={`flex w-full flex-col ${isMe ? 'items-end' : 'items-start'}`}>
+                      <div
+                        className={`${
+                          isBundled ? CHAT_MESSAGE_ROW_INNER_GROUPED_CLASS : CHAT_MESSAGE_ROW_INNER_CLASS
+                        } ${isMe ? 'flex-row-reverse' : 'flex-row'}`}
+                      >
+                        <MessageRowAvatarSlot
+                          visible={isGroupEnd}
+                          imageUrl={isMe ? meAvatarUrl : otherUser.imageUrl}
+                          label={isMe ? meDisplay : otherDisplay}
+                        />
+                        <div className={`flex min-w-0 flex-1 flex-col ${isMe ? 'items-end' : 'items-start'}`}>
+                          {isGroupStart && (
+                            <MessageGroupHeader
+                              name={isMe ? meDisplay : otherDisplay}
+                              align={isMe ? 'end' : 'start'}
+                            />
+                          )}
+                          <MessageBubble
+                            position={groupPosition}
+                            isMe={isMe}
+                            time={messageTime}
+                            isRead={isOutgoingMessageRead(msg, messages, currentUserId)}
+                          >
+                            {replyQuote ? <MessageReplyQuote quote={replyQuote} isMe={isMe} /> : null}
+                            <p
+                              className={
+                                isBundled
+                                  ? CHAT_MESSAGE_BUBBLE_TEXT_GROUPED_CLASS
+                                  : CHAT_MESSAGE_BUBBLE_TEXT_CLASS
+                              }
+                            >
+                              {msg.content}
+                            </p>
+                          </MessageBubble>
+                          {isLastOwnMessage && isGroupEnd && msg.read_at && (
+                            <div className="mt-0.5 text-right text-[10px] leading-none text-[#8E8E93]">
+                              {t('chat.read')}{' '}
+                              {formatMessageTime(msg.read_at, timeLocale, timeLocale === 'en-US')}
+                            </div>
+                          )}
+                        </div>
+                      </div>
                     </div>
-                  )}
+                  </MessageRowReplyWrapper>
                 </motion.div>
               );
             })}
-            <div ref={messagesEndRef} style={{ scrollMarginBottom: '12px' }} />
+            <div ref={messagesEndRef} />
           </>
         )}
       </div>
 
-      {/* Input */}
-      <div className="relative z-20 shrink-0 border-t border-gray-200 bg-white px-4 py-3 dark:border-gray-800 dark:bg-black md:dark:bg-[#121212]">
+      {/* Input — in-flow at bottom; scroll area ends directly above */}
+      <div className="relative z-20 shrink-0 border-t border-gray-200 bg-white px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] dark:border-gray-800 dark:bg-black md:dark:bg-[#121212]">
         <AnimatePresence>
-          {isPartnerTyping && <TypingBubble />}
+          {isPartnerTyping && (
+            <div ref={typingIndicatorRef} className="absolute bottom-full left-4 z-30 mb-2">
+              <TypingBubble inline />
+            </div>
+          )}
         </AnimatePresence>
+        {replyTarget ? (
+          <MessageReplyComposerBar target={replyTarget} onCancel={() => setReplyTarget(null)} />
+        ) : null}
         <div className="flex w-full items-center gap-2">
           <input
             ref={messageInputRef}
@@ -562,7 +668,7 @@ export function ChatScreen({
                 void handleSend();
               }
             }}
-            placeholder="Nachricht schreiben..."
+            placeholder={t('chat.dmMessagePlaceholder')}
             className="flex-1 px-4 py-2 bg-gray-100 dark:bg-gray-800 rounded-full text-gray-900 dark:text-white focus:outline-none"
             style={{
               touchAction: 'manipulation',
@@ -598,13 +704,13 @@ export function ChatScreen({
             onClick={handleReportUser}
             className="w-full px-3 py-2 text-left text-xs text-gray-900 dark:text-white md:dark:text-white hover:bg-gray-50 dark:hover:bg-white/5"
           >
-            Profil melden
+            {t('chat.reportProfile')}
           </button>
           <button
             onClick={handleBlockUser}
             className="w-full px-3 py-2 text-left text-xs text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10"
           >
-            Profil blockieren
+            {t('chat.blockProfile')}
           </button>
     </div>
       )}
@@ -627,7 +733,7 @@ export function ChatScreen({
             className="relative bg-white dark:bg-[#0A0A0A] dark:border dark:border-white/5 rounded-2xl w-full max-w-md p-6"
           >
             <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-4">
-              Nutzer melden
+              {t('profile.reportUser')}
             </h3>
             <div className="space-y-2 mb-4">
               {REPORT_REASONS.map((reason) => (
@@ -640,7 +746,7 @@ export function ChatScreen({
                       : 'border-gray-200 dark:border-white/5 text-gray-700 dark:text-gray-200'
                   }`}
                 >
-                  {reason.label}
+                  {t(`report.reasons.${reason.key}`)}
                 </button>
               ))}
             </div>
@@ -653,14 +759,14 @@ export function ChatScreen({
                 }}
                 className="flex-1 py-2 rounded-lg border border-gray-200 dark:border-white/5 text-gray-700 dark:text-gray-200"
               >
-                Abbrechen
+                {t('profile.cancel')}
               </button>
               <button
                 onClick={submitReport}
                 disabled={!selectedReportReason}
                 className="flex-1 py-2 rounded-lg bg-gradient-to-br from-purple-500 via-pink-500 to-rose-500 hover:from-purple-600 hover:via-pink-600 hover:to-rose-600 text-white disabled:opacity-50 shadow-lg"
               >
-                Melden
+                {t('chat.reportSubmit')}
               </button>
             </div>
           </motion.div>
@@ -689,11 +795,11 @@ export function ChatScreen({
               </div>
 
               <h3 className="text-xl font-bold text-gray-900 dark:text-white">
-                Nutzer blockieren?
+                {t('chat.blockUserTitle')}
               </h3>
 
               <p className="text-gray-500 dark:text-gray-400 text-sm leading-relaxed">
-                Möchtest du diesen Nutzer wirklich blockieren? Alle Nachrichten und Chats werden gelöscht.
+                {t('chat.blockUserConfirm')}
               </p>
 
               <div className="flex gap-3 w-full mt-2">
@@ -701,20 +807,30 @@ export function ChatScreen({
                   onClick={() => setShowBlockModal(false)}
                   className="flex-1 py-3 px-4 rounded-xl bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 font-semibold text-sm"
                 >
-                  Abbrechen
+                  {t('profile.cancel')}
                 </button>
 
                 <button
                   onClick={confirmBlockUser}
                   className="flex-1 py-3 px-4 rounded-xl bg-red-500 hover:bg-red-600 text-white font-semibold text-sm shadow-lg shadow-red-500/30"
                 >
-                  Blockieren
+                  {t('chat.blockSubmit')}
                 </button>
               </div>
             </div>
           </motion.div>
         </div>
       )}
+
+      {conversationActionsMenu ? (
+        <ConversationActionsMenu
+          target={conversationActionsMenu}
+          onClose={() => setConversationActionsMenu(null)}
+          onViewProfile={() => onOpenProfilePreview?.(otherUser.id)}
+          onRemoveFriend={handleRemoveFriend}
+          onBlockUser={handleBlockFromMenu}
+        />
+      ) : null}
     </div>
   );
 }

@@ -1,7 +1,7 @@
 import i18n from 'i18next';
 import { initReactI18next } from 'react-i18next';
 
-// Übersetzungen für Deutsch und Englisch
+// App translations (English default; German and Spanish supported)
 const resources = {
   en: {
     translation: {
@@ -32,6 +32,35 @@ const resources = {
         decline: "Decline",
         loadingFriends: "Loading...",
         noMessagesYet: "No messages yet",
+        noMessagesHint: "No messages yet. Say hello! 👋",
+        newMessageToast: "New message",
+        dmMessagePlaceholder: "Write a message...",
+        replyingTo: "Replying to {{name}}",
+        replyToMessage: "Reply to message",
+        cancelReply: "Cancel reply",
+        originalMessageUnavailable: "Original message unavailable",
+        reportProfile: "Report profile",
+        blockProfile: "Block profile",
+        reportSubmit: "Report",
+        blockUserTitle: "Block user?",
+        blockUserConfirm: "Do you really want to block this user? All messages and chats will be deleted.",
+        blockSubmit: "Block",
+        reportFailedTitle: "Report failed",
+        blockSuccess: "User blocked and all messages deleted.",
+        blockFailedTitle: "Block failed",
+        muteSoundInChat: "Mute notification sound when in chat",
+        unmuteSoundInChat: "Unmute notification sound in chat",
+        muteSoundInChatEnabled: "Notification sound muted while this chat is open",
+        muteSoundInChatDisabled: "Notification sound enabled in this chat",
+        deleteFriend: "Remove friend",
+        deleteFriendConfirm: "Remove {{name}} from your friends?",
+        deleteFriendSuccess: "Friend removed",
+        deleteFriendFailedTitle: "Could not remove friend",
+        viewProfile: "View profile",
+        you: "You",
+        online: "Online",
+        offline: "Offline",
+        reportSuccess: "Thanks, we'll review this.",
         typingPreview: "typing...",
         retry: "Retry",
         unknownUser: "Unknown",
@@ -91,7 +120,14 @@ const resources = {
       groups: {
         tabDirect: "Direct",
         tabGroups: "Groups",
-        railCreateTooltip: "Create a group",
+        muteNotificationsInServer: "Mute toast & sound when in server",
+        unmuteNotificationsInServer: "Unmute toast & sound in server",
+        muteNotificationsInServerEnabled: "Notifications muted while this server is open",
+        muteNotificationsInServerDisabled: "Notifications enabled for this server",
+        railCreateTooltip: "Create or join a group",
+        groupActionTabCreate: "Create",
+        groupActionTabJoin: "Join",
+        joining: "Joining...",
         railDmTooltip: "Direct messages",
         channelGeneral: "general",
         channelsHeading: "Text channels",
@@ -247,6 +283,28 @@ const resources = {
         messages: "Messages",
         profile: "Profile"
       },
+      errors: {
+        loadMessages: "Failed to load messages",
+        loadProfile: "Failed to load profile",
+        reloadPage: "Reload page",
+      },
+      notifications: {
+        promptTitle: "Don't miss any messages!",
+        promptBody: "Enable notifications to get notified instantly when someone messages you.",
+        enable: "Enable",
+        later: "Later",
+      },
+      report: {
+        reasons: {
+          spam_fake: "Fake profile / spam",
+          harassment: "Harassment or bullying",
+          sexual_harassment: "Sexual harassment",
+          hate_speech: "Hate speech / discrimination",
+          nudity_inappropriate: "Nudity / inappropriate photos",
+          underage: "Underage",
+          physical_danger: "Physical danger",
+        },
+      },
       settings: {
         title: "Settings",
         profile: "Profile",
@@ -264,6 +322,8 @@ const resources = {
         deleteConfirm: "Are you sure? This action will permanently delete your account.",
       },
       onboarding: {
+        languageTitle: "Choose your language",
+        languageSubtitle: "You can change this anytime in settings.",
         houseRulesSubtitle: "Please follow these house rules",
         welcomeTitle: "Welcome to Blyve",
         welcomeAgree: "I agree",
@@ -358,6 +418,35 @@ const resources = {
         decline: "Ablehnen",
         loadingFriends: "Lädt...",
         noMessagesYet: "Noch keine Nachrichten",
+        noMessagesHint: "Noch keine Nachrichten. Sag Hallo! 👋",
+        newMessageToast: "Neue Nachricht",
+        dmMessagePlaceholder: "Nachricht schreiben...",
+        replyingTo: "Antwort an {{name}}",
+        replyToMessage: "Auf Nachricht antworten",
+        cancelReply: "Antwort abbrechen",
+        originalMessageUnavailable: "Originalnachricht nicht verfügbar",
+        reportProfile: "Profil melden",
+        blockProfile: "Profil blockieren",
+        reportSubmit: "Melden",
+        blockUserTitle: "Nutzer blockieren?",
+        blockUserConfirm: "Möchtest du diesen Nutzer wirklich blockieren? Alle Nachrichten und Chats werden gelöscht.",
+        blockSubmit: "Blockieren",
+        reportFailedTitle: "Fehler beim Melden",
+        blockSuccess: "Nutzer wurde blockiert und alle Nachrichten gelöscht.",
+        blockFailedTitle: "Fehler beim Blockieren",
+        muteSoundInChat: "Benachrichtigungston im Chat stummschalten",
+        unmuteSoundInChat: "Benachrichtigungston im Chat aktivieren",
+        muteSoundInChatEnabled: "Ton stumm, solange dieser Chat geöffnet ist",
+        muteSoundInChatDisabled: "Ton in diesem Chat wieder aktiv",
+        deleteFriend: "Freund entfernen",
+        deleteFriendConfirm: "{{name}} aus deiner Freundesliste entfernen?",
+        deleteFriendSuccess: "Freund entfernt",
+        deleteFriendFailedTitle: "Freund konnte nicht entfernt werden",
+        viewProfile: "Profil ansehen",
+        you: "Du",
+        online: "Online",
+        offline: "Offline",
+        reportSuccess: "Danke, wir prüfen das.",
         typingPreview: "schreibt...",
         retry: "Erneut versuchen",
       },
@@ -416,7 +505,14 @@ const resources = {
       groups: {
         tabDirect: "Direkt",
         tabGroups: "Gruppen",
-        railCreateTooltip: "Gruppe erstellen",
+        muteNotificationsInServer: "Toast & Ton im Server stummschalten",
+        unmuteNotificationsInServer: "Toast & Ton im Server aktivieren",
+        muteNotificationsInServerEnabled: "Benachrichtigungen stumm, solange dieser Server offen ist",
+        muteNotificationsInServerDisabled: "Benachrichtigungen für diesen Server wieder aktiv",
+        railCreateTooltip: "Gruppe erstellen oder beitreten",
+        groupActionTabCreate: "Erstellen",
+        groupActionTabJoin: "Beitreten",
+        joining: "Trete bei...",
         railDmTooltip: "Direktnachrichten",
         channelGeneral: "general",
         channelsHeading: "Textkanäle",
@@ -572,6 +668,28 @@ const resources = {
         messages: "Nachrichten",
         profile: "Profil"
       },
+      errors: {
+        loadMessages: "Fehler beim Laden der Nachrichten",
+        loadProfile: "Fehler beim Laden des Profils",
+        reloadPage: "Seite neu laden",
+      },
+      notifications: {
+        promptTitle: "Verpasse keine Nachrichten!",
+        promptBody: "Aktiviere Benachrichtigungen, um sofort informiert zu werden, wenn dir jemand schreibt.",
+        enable: "Aktivieren",
+        later: "Später",
+      },
+      report: {
+        reasons: {
+          spam_fake: "Fake-Profil / Spam",
+          harassment: "Belästigung oder Mobbing",
+          sexual_harassment: "Sexuelle Belästigung",
+          hate_speech: "Hassrede / Diskriminierung",
+          nudity_inappropriate: "Nacktheit / Unangemessene Fotos",
+          underage: "Minderjährig",
+          physical_danger: "Physische Gefahr",
+        },
+      },
       settings: {
         title: "Einstellungen",
         profile: "Profil",
@@ -589,6 +707,8 @@ const resources = {
         deleteConfirm: "Bist du sicher? Dieser Vorgang löscht dein Konto unwiderruflich.",
       },
       onboarding: {
+        languageTitle: "Sprache wählen",
+        languageSubtitle: "Du kannst das jederzeit in den Einstellungen ändern.",
         houseRulesSubtitle: "Bitte folge diesen Hausregeln",
         welcomeTitle: "Willkommen bei Blyve",
         welcomeAgree: "Ich stimme zu",
@@ -683,6 +803,35 @@ const resources = {
         decline: "Rechazar",
         loadingFriends: "Cargando...",
         noMessagesYet: "Aun no hay mensajes",
+        noMessagesHint: "Aun no hay mensajes. Di hola! 👋",
+        newMessageToast: "Nuevo mensaje",
+        dmMessagePlaceholder: "Escribe un mensaje...",
+        replyingTo: "Respondiendo a {{name}}",
+        replyToMessage: "Responder al mensaje",
+        cancelReply: "Cancelar respuesta",
+        originalMessageUnavailable: "Mensaje original no disponible",
+        reportProfile: "Reportar perfil",
+        blockProfile: "Bloquear perfil",
+        reportSubmit: "Reportar",
+        blockUserTitle: "Bloquear usuario?",
+        blockUserConfirm: "Quieres bloquear a este usuario? Se eliminaran todos los mensajes y chats.",
+        blockSubmit: "Bloquear",
+        reportFailedTitle: "Error al reportar",
+        blockSuccess: "Usuario bloqueado y todos los mensajes eliminados.",
+        blockFailedTitle: "Error al bloquear",
+        muteSoundInChat: "Silenciar sonido de notificacion en el chat",
+        unmuteSoundInChat: "Activar sonido de notificacion en el chat",
+        muteSoundInChatEnabled: "Sonido silenciado mientras este chat este abierto",
+        muteSoundInChatDisabled: "Sonido activado en este chat",
+        deleteFriend: "Eliminar amigo",
+        deleteFriendConfirm: "Eliminar a {{name}} de tus amigos?",
+        deleteFriendSuccess: "Amigo eliminado",
+        deleteFriendFailedTitle: "No se pudo eliminar al amigo",
+        viewProfile: "Ver perfil",
+        you: "Tu",
+        online: "En linea",
+        offline: "Desconectado",
+        reportSuccess: "Gracias, lo revisaremos.",
         typingPreview: "escribiendo...",
         retry: "Reintentar",
         unknownUser: "Desconocido",
@@ -742,7 +891,14 @@ const resources = {
       groups: {
         tabDirect: "Directo",
         tabGroups: "Grupos",
-        railCreateTooltip: "Crear grupo",
+        muteNotificationsInServer: "Silenciar toast y sonido en el servidor",
+        unmuteNotificationsInServer: "Activar toast y sonido en el servidor",
+        muteNotificationsInServerEnabled: "Notificaciones silenciadas mientras este servidor este abierto",
+        muteNotificationsInServerDisabled: "Notificaciones activadas para este servidor",
+        railCreateTooltip: "Crear o unirse a un grupo",
+        groupActionTabCreate: "Crear",
+        groupActionTabJoin: "Unirse",
+        joining: "Uniendose...",
         railDmTooltip: "Mensajes directos",
         channelGeneral: "general",
         channelsHeading: "Canales de texto",
@@ -898,6 +1054,28 @@ const resources = {
         messages: "Mensajes",
         profile: "Perfil"
       },
+      errors: {
+        loadMessages: "Error al cargar los mensajes",
+        loadProfile: "Error al cargar el perfil",
+        reloadPage: "Recargar pagina",
+      },
+      notifications: {
+        promptTitle: "No te pierdas ningun mensaje!",
+        promptBody: "Activa las notificaciones para enterarte al instante cuando alguien te escriba.",
+        enable: "Activar",
+        later: "Mas tarde",
+      },
+      report: {
+        reasons: {
+          spam_fake: "Perfil falso / spam",
+          harassment: "Acoso o bullying",
+          sexual_harassment: "Acoso sexual",
+          hate_speech: "Discurso de odio / discriminacion",
+          nudity_inappropriate: "Desnudez / fotos inapropiadas",
+          underage: "Menor de edad",
+          physical_danger: "Peligro fisico",
+        },
+      },
       settings: {
         title: "Ajustes",
         profile: "Perfil",
@@ -915,6 +1093,8 @@ const resources = {
         deleteConfirm: "¿Estás seguro? Esta acción eliminará permanentemente tu cuenta.",
       },
       onboarding: {
+        languageTitle: "Elige tu idioma",
+        languageSubtitle: "Puedes cambiarlo cuando quieras en ajustes.",
         houseRulesSubtitle: "Sigue estas reglas de la comunidad",
         welcomeTitle: "Bienvenido a Blyve",
         welcomeAgree: "Acepto",
@@ -982,17 +1162,42 @@ const resources = {
   }
 };
 
+export const APP_LANGUAGES = [
+  { code: 'en', label: 'English', flag: '🇬🇧' },
+  { code: 'de', label: 'Deutsch', flag: '🇩🇪' },
+  { code: 'es', label: 'Español', flag: '🇪🇸' },
+] as const;
+
+export type AppLanguageCode = (typeof APP_LANGUAGES)[number]['code'];
+
+const APP_LANGUAGE_CODES = new Set<string>(APP_LANGUAGES.map((lang) => lang.code));
+
+export function normalizeAppLanguage(language: string | undefined | null): AppLanguageCode {
+  const base = (language || '').split('-')[0];
+  if (APP_LANGUAGE_CODES.has(base)) {
+    return base as AppLanguageCode;
+  }
+  return 'en';
+}
+
+export function getAppDateLocale(language?: string | null): string {
+  const code = normalizeAppLanguage(language);
+  if (code === 'de') return 'de-DE';
+  if (code === 'es') return 'es-ES';
+  return 'en-US';
+}
+
 // Load saved language from localStorage
-const getSavedLanguage = (): string => {
+const getSavedLanguage = (): AppLanguageCode => {
   try {
     const saved = localStorage.getItem('app_language');
-    if (saved && (saved === 'en' || saved === 'de' || saved === 'es')) {
-      return saved;
+    if (saved) {
+      return normalizeAppLanguage(saved);
     }
   } catch (error) {
     console.error('Error loading saved language:', error);
   }
-  return 'de'; // Default to German
+  return 'en';
 };
 
 // Initialize i18next synchronously
@@ -1001,8 +1206,8 @@ i18n
   .use(initReactI18next)
   .init({
     resources,
-    lng: savedLanguage, // Load saved language or default to German
-    fallbackLng: "de",
+    lng: savedLanguage, // Load saved language or default to English
+    fallbackLng: "en",
     interpolation: {
       escapeValue: false // React macht das eh schon sicher
     },

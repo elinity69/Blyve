@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useCallback, useEffect } from 'react';
 import type { ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { AnimatePresence } from 'framer-motion';
 import { Toast } from '../components/Toast';
 import { setToastContext } from '../lib/toast';
@@ -10,9 +11,10 @@ interface ToastData {
   title: string;
   message: string;
   duration?: number;
-  imageUrl?: string; // Optional: Profilbild für Chat-Notifications
-  conversationId?: string; // Optional: Conversation-ID für Chat-Notifications (öffnet Chat beim Klick)
-  onClick?: () => void; // Optional: Custom onClick Handler
+  imageUrl?: string;
+  conversationId?: string;
+  variant?: 'default' | 'message';
+  onClick?: () => void;
 }
 
 interface ToastContextType {
@@ -48,18 +50,20 @@ export const ToastProvider = ({ children }: { children: ReactNode }) => {
   return (
     <ToastContext.Provider value={{ showToast }}>
       {children}
-      
-      {/* Toast Container */}
-      <AnimatePresence mode="sync">
-        {toasts.map((toast, index) => (
-          <Toast
-            key={toast.id}
-            {...toast}
-            index={index}
-            onClose={removeToast}
-          />
-        ))}
-      </AnimatePresence>
+
+      {createPortal(
+        <AnimatePresence mode="sync">
+          {toasts.map((toast, index) => (
+            <Toast
+              key={toast.id}
+              {...toast}
+              index={index}
+              onClose={removeToast}
+            />
+          ))}
+        </AnimatePresence>,
+        document.body
+      )}
     </ToastContext.Provider>
   );
 };

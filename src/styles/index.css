@@ -200,3 +200,82 @@ button.bg-gradient-to-r {
     font-size: 16px !important;
   }
 }
+
+/* Call participant volume slider — horizontal, high contrast */
+.call-volume-slider {
+  background: linear-gradient(
+    to right,
+    #5865f2 0%,
+    #5865f2 var(--volume-percent, 100%),
+    rgba(255, 255, 255, 0.35) var(--volume-percent, 100%),
+    rgba(255, 255, 255, 0.35) 100%
+  );
+}
+
+.call-volume-slider::-webkit-slider-runnable-track {
+  height: 8px;
+  border-radius: 9999px;
+  background: transparent;
+}
+
+.call-volume-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  margin-top: -5px;
+  border-radius: 9999px;
+  border: 2px solid #ffffff;
+  background: #5865f2;
+  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.35);
+  cursor: pointer;
+}
+
+.call-volume-slider::-moz-range-track {
+  height: 8px;
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.35);
+}
+
+.call-volume-slider::-moz-range-progress {
+  height: 8px;
+  border-radius: 9999px;
+  background: #5865f2;
+}
+
+.call-volume-slider::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: 9999px;
+  border: 2px solid #ffffff;
+  background: #5865f2;
+  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.35);
+  cursor: pointer;
+}
+
+/* Chat message bubble tails (Telegram-style) */
+.message-bubble-tail-other::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: -5px;
+  width: 10px;
+  height: 10px;
+  background: #dfe7f0;
+  clip-path: polygon(100% 0, 100% 100%, 0 100%);
+}
+
+.dark .message-bubble-tail-other::after {
+  background: #344861;
+}
+
+.message-bubble-tail-me::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  right: -5px;
+  width: 10px;
+  height: 10px;
+  background: #4a7db8;
+  clip-path: polygon(0 0, 100% 100%, 0 100%);
+}

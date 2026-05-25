@@ -9,6 +9,7 @@ import { SettingsScreen } from './components/SettingsScreen';
 import { BlyveProfileScreen } from './components/BlyveProfileScreen';
 import { EditProfileScreen } from './components/EditProfileScreen';
 import { BottomNavigation } from './components/BottomNavigation';
+import { useIsMobile } from './components/ui/use-mobile';
 import { api } from './lib/api';
 import { LegalDocs } from './components/LegalDocs';
 import { Toaster } from './components/ui/sonner';
@@ -25,6 +26,7 @@ import { IncomingCallPopup } from './components/IncomingCallPopup';
 import { CallJoinScreen } from './components/CallJoinScreen';
 import { parseCallJoinParams } from './lib/callJoinRoute';
 import i18n from '../lib/i18n';
+import { applyThemePreference, applyBootTheme, clearThemeCache, readThemeCache, applyResolvedTheme, syncThemeFromProfile } from './lib/theme';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -42,7 +44,9 @@ interface AppContentProps {
 }
 
 function AppContent({ onUserIdChange }: AppContentProps = {}) {
-  const [isDarkMode, setIsDarkMode] = useState(false);
+  const [isDarkMode, setIsDarkMode] = useState(() =>
+    typeof document !== 'undefined' ? document.documentElement.classList.contains('dark') : true
+  );
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [needsProfilePicture, setNeedsProfilePicture] = useState(false);
   const [needsOnboarding, setNeedsOnboarding] = useState(false);
@@ -56,7 +60,23 @@ function AppContent({ onUserIdChange }: AppContentProps = {}) {
   const [callJoinParams, setCallJoinParams] = useState(() => parseCallJoinParams());
   const [showCallJoin, setShowCallJoin] = useState(() => parseCallJoinParams() != null);
   const { state: callState, callDisplayMode } = useCall();
-  const hideBottomNavigation = callState === 'in_call' && callDisplayMode === 'fullscreen';
+  const isMobile = useIsMobile();
+  const [mobileChatStackOpen, setMobileChatStackOpen] = useState(false);
+
+  useEffect(() => {
+    const onOpen = () => setMobileChatStackOpen(true);
+    const onClose = () => setMobileChatStackOpen(false);
+    window.addEventListener('mobile-chat-stack-open', onOpen);
+    window.addEventListener('mobile-chat-stack-close', onClose);
+    return () => {
+      window.removeEventListener('mobile-chat-stack-open', onOpen);
+      window.removeEventListener('mobile-chat-stack-close', onClose);
+    };
+  }, []);
+
+  const hideBottomNavigation =
+    (isMobile && mobileChatStackOpen) ||
+    (callState === 'in_call' && callDisplayMode === 'fullscreen');
 
   const refreshCallJoinRoute = useCallback(() => {
     const params = parseCallJoinParams();
@@ -85,6 +105,8 @@ function AppContent({ onUserIdChange }: AppContentProps = {}) {
         setShowLegalDocs(true);
       }
 
+      let sessionUser: { id: string; email?: string | null } | null = null;
+
       try {
         // First, try to restore token from localStorage (fast, synchronous)
         const storedToken = localStorage.getItem('accessToken');
@@ -95,7 +117,8 @@ function AppContent({ onUserIdChange }: AppContentProps = {}) {
         
         // Then, verify with Supabase session (async, but more reliable)
         const { data: { session } } = await supabase.auth.getSession();
-        console.log('App Start - Session:', session?.user?.id);
+        sessionUser = session?.user ?? null;
+        console.log('App Start - Session:', sessionUser?.id);
         if (session?.access_token) {
           // Update token if session has a newer token
           if (session.access_token !== storedToken) {
@@ -107,6 +130,26 @@ function AppContent({ onUserIdChange }: AppContentProps = {}) {
           // The auth flow will handle validation
           console.log('App Start - Session expired, but keeping stored token for auth flow');
         }
+
+        // Apply cached theme immediately, then sync from profile once session is known
+        const sessionUserId = sessionUser?.id ?? null;
+        const cachedTheme = readThemeCache();
+        if (sessionUserId && cachedTheme?.userId === sessionUserId) {
+          applyResolvedTheme(cachedTheme.darkMode);
+        } else if (!sessionUserId && cachedTheme) {
+          applyResolvedTheme(cachedTheme.darkMode);
+        } else {
+          applyThemePreference(undefined);
+        }
+
+        if (sessionUserId) {
+          const { data: profile } = await supabase
+            .from('profiles')
+            .select('dark_mode')
+            .eq('id', sessionUserId)
+            .maybeSingle();
+          syncThemeFromProfile(sessionUserId, profile?.dark_mode);
+        }
       } catch (error) {
         console.warn('Session check failed:', error);
         // Fallback: try to restore from localStorage even if session check fails
@@ -115,26 +158,7 @@ function AppContent({ onUserIdChange }: AppContentProps = {}) {
           console.log('App Start - Fallback: Restoring token from localStorage after error');
           api.setAccessToken(storedToken);
         }
-      }
-
-      // Apply dark mode on app load
-      try {
-        const { data: { user } } = await supabase.auth.getUser();
-        if (user) {
-          const { data: profile } = await supabase
-            .from('profiles')
-            .select('dark_mode')
-            .eq('id', user.id)
-            .single();
-          
-          if (profile?.dark_mode) {
-            document.documentElement.classList.add('dark');
-          } else {
-            document.documentElement.classList.remove('dark');
-          }
-        }
-      } catch (error) {
-        console.error('Error loading dark mode:', error);
+        applyBootTheme();
       }
 
       // Check if user has existing session
@@ -147,7 +171,11 @@ function AppContent({ onUserIdChange }: AppContentProps = {}) {
       // Use Supabase directly instead of Edge Function to avoid JWT issues
       console.log('Verifying token validity...');
       try {
-        const { data: { user } } = await supabase.auth.getUser();
+        let user = sessionUser;
+        if (!user) {
+          const { data: { session: retrySession } } = await supabase.auth.getSession();
+          user = retrySession?.user ?? null;
+        }
         if (!user) {
           throw new Error('No user found');
         }
@@ -224,6 +252,7 @@ function AppContent({ onUserIdChange }: AppContentProps = {}) {
           profileComplete: mappedProfile.profileComplete,
           hasImageUrl: !!mappedProfile.imageUrl,
           });
+          syncThemeFromProfile(user.id, profile.dark_mode);
           setIsAuthenticated(true);
 
           // FIX: Prüfe onboarding_complete - wenn false oder null, zeige Onboarding
@@ -351,6 +380,7 @@ function AppContent({ onUserIdChange }: AppContentProps = {}) {
       }
 
       console.log('Profile loaded from Supabase:', profile);
+      syncThemeFromProfile(user.id, profile?.dark_mode);
       
       // FIX: Prüfe onboarding_complete explizit - wenn false/null/undefined, zeige Onboarding
       // WICHTIG: Prüfe explizit auf false/null, nicht nur auf truthy
@@ -412,6 +442,7 @@ function AppContent({ onUserIdChange }: AppContentProps = {}) {
           console.error('❌ Error reloading profile after onboarding:', profileError);
         } else if (profile) {
           console.log('✅ Profile reloaded after onboarding:', profile.name);
+          syncThemeFromProfile(user.id, profile.dark_mode);
           
           // Check if onboarding is really complete
           if (profile.onboarding_complete) {
@@ -451,10 +482,57 @@ function AppContent({ onUserIdChange }: AppContentProps = {}) {
   };
 
   const handleSignOut = () => {
+    clearThemeCache();
+    applyThemePreference(undefined);
     setIsAuthenticated(false);
     setNeedsProfilePicture(false);
     setActiveTab('messages');
   };
+
+  // Keep theme in sync when auth session restores or user switches account
+  useEffect(() => {
+    let mounted = true;
+
+    const syncThemeForSession = async (userId: string) => {
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('dark_mode')
+        .eq('id', userId)
+        .maybeSingle();
+      if (mounted) {
+        syncThemeFromProfile(userId, profile?.dark_mode);
+      }
+    };
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (!mounted) return;
+
+      if (event === 'SIGNED_OUT') {
+        clearThemeCache();
+        applyThemePreference(undefined);
+        return;
+      }
+
+      const userId = session?.user?.id;
+      if (!userId) return;
+
+      if (event === 'INITIAL_SESSION' || event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
+        const cachedTheme = readThemeCache();
+        if (cachedTheme?.userId === userId) {
+          applyResolvedTheme(cachedTheme.darkMode);
+        }
+        window.setTimeout(() => {
+          if (!mounted) return;
+          void syncThemeForSession(userId);
+        }, 0);
+      }
+    });
+
+    return () => {
+      mounted = false;
+      subscription.unsubscribe();
+    };
+  }, []);
 
   // Live message preview, unread badges, sounds, and toasts
   useMessageRealtime(isAuthenticated && currentUserId ? currentUserId : null);
@@ -463,16 +541,20 @@ function AppContent({ onUserIdChange }: AppContentProps = {}) {
   useEffect(() => {
     if (!isAuthenticated) return;
 
+    NotificationManager.resetActiveConversationTracking();
+
     const unlockAudio = () => {
       NotificationManager.unlockAudio();
     };
 
-    window.addEventListener('pointerdown', unlockAudio, { once: true });
-    window.addEventListener('keydown', unlockAudio, { once: true });
+    window.addEventListener('pointerdown', unlockAudio);
+    window.addEventListener('keydown', unlockAudio);
+    window.addEventListener('touchstart', unlockAudio);
 
     return () => {
       window.removeEventListener('pointerdown', unlockAudio);
       window.removeEventListener('keydown', unlockAudio);
+      window.removeEventListener('touchstart', unlockAudio);
     };
   }, [isAuthenticated]);
 
@@ -648,13 +730,13 @@ function AppContent({ onUserIdChange }: AppContentProps = {}) {
                           <div className="h-full flex items-center justify-center p-4">
                             <div className="text-center">
                               <p className="text-gray-600 dark:text-gray-300 mb-4">
-                                Fehler beim Laden der Nachrichten
+                                {i18n.t('errors.loadMessages')}
                               </p>
                               <button
                                 onClick={() => window.location.reload()}
                                 className="px-4 py-2 bg-orange-500 text-white rounded-lg"
                               >
-                                Seite neu laden
+                                {i18n.t('errors.reloadPage')}
                               </button>
                             </div>
                           </div>
@@ -674,13 +756,13 @@ function AppContent({ onUserIdChange }: AppContentProps = {}) {
                           <div className="h-full flex items-center justify-center p-4">
                             <div className="text-center">
                               <p className="text-gray-600 dark:text-gray-300 mb-4">
-                                Fehler beim Laden des Profils
+                                {i18n.t('errors.loadProfile')}
                               </p>
                               <button
                                 onClick={() => window.location.reload()}
                                 className="px-4 py-2 bg-orange-500 text-white rounded-lg"
                               >
-                                Seite neu laden
+                                {i18n.t('errors.reloadPage')}
                               </button>
                             </div>
                           </div>
@@ -733,7 +815,7 @@ function AppContent({ onUserIdChange }: AppContentProps = {}) {
               }}
               className="mb-4 px-4 py-2 bg-gray-200 dark:bg-slate-800 rounded-full"
             >
-              Zurück
+              {i18n.t('onboarding.back')}
             </button>
           </div>
           <LegalDocs />

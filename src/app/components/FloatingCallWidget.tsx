@@ -1,20 +1,33 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { GripHorizontal, Minimize2, User } from 'lucide-react';
+import { Minimize2, User } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useAppData } from '../context/AppDataContext';
-import { useCall } from '../context/CallContext';
+import { dedupeCallParticipants } from '../lib/callParticipants';
 import { getOptimizedImageUrl } from '../lib/images';
 import type { CallMediaType, JitsiHandle } from '../lib/jitsi';
 import type { JitsiJoinCredentials } from '../lib/jitsiCall';
 import type { CallStageParticipant } from './CallParticipantStage';
 import { JitsiCallView, type JitsiCallLayout } from './JitsiCallView';
 
-const PIP_WIDTH = 280;
-const PIP_HEIGHT = 168;
-const PIP_MARGIN = 16;
+const PIP_SIZE = 136;
+const PIP_MARGIN = 12;
+
+interface FloatingCallParty {
+  id: string;
+  name: string;
+  avatarUrl?: string;
+  jitsiParticipantId?: string;
+}
+
+interface FloatingCallActiveCall {
+  conversationId?: string | null;
+  participants: FloatingCallParty[];
+}
 
 interface FloatingCallWidgetProps {
   displayMode: 'pip' | 'fullscreen';
+  activeCall: FloatingCallActiveCall | null;
+  localIdentity: string | null;
   sessionId: string;
   inviteToken?: string;
   callType: CallMediaType;
@@ -64,8 +77,8 @@ interface FloatingCallWidgetProps {
 
 function clampPosition(x: number, y: number) {
   if (typeof window === 'undefined') return { x, y };
-  const maxX = Math.max(PIP_MARGIN, window.innerWidth - PIP_WIDTH - PIP_MARGIN);
-  const maxY = Math.max(PIP_MARGIN, window.innerHeight - PIP_HEIGHT - PIP_MARGIN);
+  const maxX = Math.max(PIP_MARGIN, window.innerWidth - PIP_SIZE - PIP_MARGIN);
+  const maxY = Math.max(PIP_MARGIN, window.innerHeight - PIP_SIZE - PIP_MARGIN);
   return {
     x: Math.min(Math.max(PIP_MARGIN, x), maxX),
     y: Math.min(Math.max(PIP_MARGIN, y), maxY),
@@ -120,6 +133,8 @@ function PipAvatar({
 
 export function FloatingCallWidget({
   displayMode,
+  activeCall,
+  localIdentity,
   sessionId,
   inviteToken,
   callType,
@@ -160,15 +175,13 @@ export function FloatingCallWidget({
 }: FloatingCallWidgetProps) {
   const { t } = useTranslation();
   const { currentUserProfile, conversations } = useAppData();
-  const { activeCall, localIdentity } = useCall();
   const [position, setPosition] = useState(() => {
     if (typeof window === 'undefined') return { x: PIP_MARGIN, y: PIP_MARGIN };
     return clampPosition(
-      window.innerWidth - PIP_WIDTH - PIP_MARGIN,
-      window.innerHeight - PIP_HEIGHT - 80
+      window.innerWidth - PIP_SIZE - PIP_MARGIN,
+      window.innerHeight - PIP_SIZE - 88
     );
   });
-  const [controlsVisible, setControlsVisible] = useState(false);
   const [remoteStreamActive, setRemoteStreamActive] = useState(false);
   const dragRef = useRef<{
     startX: number;
@@ -177,7 +190,6 @@ export function FloatingCallWidget({
     originY: number;
     moved: boolean;
   } | null>(null);
-  const controlsTimeoutRef = useRef<number | null>(null);
   const pipContentRef = useRef<HTMLDivElement>(null);
   const hasStreamRef = useRef(false);
   const onEnterFullscreenRef = useRef(onEnterFullscreen);
@@ -212,7 +224,7 @@ export function FloatingCallWidget({
       },
     ];
 
-    const remotes = [...(activeCall?.participants ?? [])];
+    const remotes = dedupeCallParticipants([...(activeCall?.participants ?? [])]);
     if (
       peer &&
       !remotes.some(
@@ -275,20 +287,6 @@ export function FloatingCallWidget({
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  const showControlsBriefly = useCallback(() => {
-    setControlsVisible(true);
-    if (controlsTimeoutRef.current) window.clearTimeout(controlsTimeoutRef.current);
-    controlsTimeoutRef.current = window.setTimeout(() => {
-      setControlsVisible(false);
-    }, 3500);
-  }, []);
-
-  useEffect(() => {
-    return () => {
-      if (controlsTimeoutRef.current) window.clearTimeout(controlsTimeoutRef.current);
-    };
-  }, []);
-
   useEffect(() => {
     const element = pipContentRef.current;
     if (!element || isFullscreen) return;
@@ -346,8 +344,9 @@ export function FloatingCallWidget({
     [hasStream, onEnterFullscreen, onOpenInChat]
   );
 
-  const handleHeaderPointerDown = (event: React.PointerEvent) => {
+  const handleDragPointerDown = (event: React.PointerEvent) => {
     if (isFullscreen) return;
+    if ((event.target as HTMLElement).closest('button, [data-call-controls]')) return;
     dragRef.current = {
       startX: event.clientX,
       startY: event.clientY,
@@ -358,7 +357,7 @@ export function FloatingCallWidget({
     (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
   };
 
-  const handleHeaderPointerMove = (event: React.PointerEvent) => {
+  const handleDragPointerMove = (event: React.PointerEvent) => {
     if (!dragRef.current || isFullscreen) return;
     const dx = event.clientX - dragRef.current.startX;
     const dy = event.clientY - dragRef.current.startY;
@@ -368,29 +367,32 @@ export function FloatingCallWidget({
     setPosition(clampPosition(dragRef.current.originX + dx, dragRef.current.originY + dy));
   };
 
-  const handleHeaderPointerUp = (event: React.PointerEvent) => {
+  const handleDragPointerUp = (event: React.PointerEvent) => {
     if (!dragRef.current) return;
-    const wasTap = !dragRef.current.moved;
     dragRef.current = null;
-    if (wasTap) {
-      showControlsBriefly();
-    }
     event.stopPropagation();
   };
 
   const avatarOverlay =
     !hasStream && displayParticipants.length > 0 ? (
-      <div className="pointer-events-none absolute inset-0 z-[5] flex items-center justify-center gap-2 bg-[#0b0b0b] px-2">
+      <div className="pointer-events-none absolute inset-0 z-[5] flex items-center justify-center gap-1.5 bg-[#0b0b0b] p-2">
         {displayParticipants.slice(0, 2).map((participant) => {
           const isSpeaking =
             speakingParticipantId === participant.id ||
             speakingParticipantId === participant.jitsiParticipantId;
+          const solo = displayParticipants.length === 1;
           return (
             <PipAvatar
               key={participant.id}
               participant={participant}
               isSpeaking={Boolean(isSpeaking)}
-              sizeClass={isFullscreen ? 'h-20 w-20 sm:h-24 sm:w-24' : 'h-12 w-12'}
+              sizeClass={
+                isFullscreen
+                  ? 'h-20 w-20 sm:h-24 sm:w-24'
+                  : solo
+                    ? 'h-16 w-16'
+                    : 'h-9 w-9'
+              }
             />
           );
         })}
@@ -412,9 +414,6 @@ export function FloatingCallWidget({
       isCameraEnabled={isCameraEnabled}
       isScreenShareEnabled={isScreenShareEnabled}
       overlay={avatarOverlay}
-      forceShowControls={!isFullscreen && controlsVisible}
-      compactControls={!isFullscreen}
-      onExpandRequest={!isFullscreen && hasStream ? onEnterFullscreen : undefined}
       onRemoteStreamActiveChange={setRemoteStreamActive}
       onJoinResolved={onJoinResolved}
       onJoinError={onJoinError}
@@ -444,48 +443,23 @@ export function FloatingCallWidget({
       style={
         isFullscreen
           ? undefined
-          : { left: position.x, top: position.y, width: PIP_WIDTH, height: PIP_HEIGHT }
+          : { left: position.x, top: position.y, width: PIP_SIZE, height: PIP_SIZE }
       }
     >
       <div
+        ref={pipContentRef}
         className={
           isFullscreen
             ? 'h-full w-full'
-            : 'flex h-full flex-col overflow-hidden rounded-xl border border-white/15 bg-[#18191c] shadow-2xl'
+            : 'relative h-full w-full cursor-grab touch-none overflow-hidden rounded-xl border border-white/15 bg-[#0b0b0b] shadow-2xl active:cursor-grabbing'
         }
+        onPointerDown={!isFullscreen ? handleDragPointerDown : undefined}
+        onPointerMove={!isFullscreen ? handleDragPointerMove : undefined}
+        onPointerUp={!isFullscreen ? handleDragPointerUp : undefined}
+        onPointerCancel={!isFullscreen ? handleDragPointerUp : undefined}
+        onDoubleClick={!isFullscreen ? handleDoubleActivate : undefined}
       >
-        {!isFullscreen ? (
-          <div
-            data-pip-drag-handle
-            className="flex shrink-0 cursor-grab touch-none items-center justify-between bg-[#1e1f22] px-2 py-1 active:cursor-grabbing"
-            onPointerDown={handleHeaderPointerDown}
-            onPointerMove={handleHeaderPointerMove}
-            onPointerUp={handleHeaderPointerUp}
-            onPointerCancel={handleHeaderPointerUp}
-            onDoubleClick={handleDoubleActivate}
-          >
-            <div className="flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-white/60">
-              <GripHorizontal className="h-3.5 w-3.5" />
-              {t('call.inCall')}
-            </div>
-            <span className="text-[10px] text-white/45">{t('call.pipHint')}</span>
-          </div>
-        ) : null}
-        <div
-          ref={pipContentRef}
-          className={isFullscreen ? 'relative h-full w-full' : 'relative min-h-0 flex-1'}
-          onClick={
-            isFullscreen
-              ? undefined
-              : (event) => {
-                  if (event.detail >= 2) return;
-                  if ((event.target as HTMLElement).closest('button, [data-call-controls]')) return;
-                  showControlsBriefly();
-                }
-          }
-        >
-          {jitsiView}
-        </div>
+        {jitsiView}
       </div>
       {isFullscreen ? (
         <button

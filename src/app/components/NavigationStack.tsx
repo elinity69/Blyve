@@ -296,13 +296,14 @@ export function NavigationStack({ children, onBack, onEdgeDragProgress }: Naviga
           backgroundColor: 'var(--color-background, white)',
           boxShadow: '-5px 0 20px rgba(0,0,0,0.15)',
           transform: `translateX(${translateX}px)`,
-          willChange: isDraggingRef.current ? 'transform' : 'auto', // ✅ Performance
-          overflowY: 'auto',
-          WebkitOverflowScrolling: 'touch',
-          touchAction: 'pan-y'
+          willChange: isDraggingRef.current ? 'transform' : 'auto',
+          overflow: 'hidden',
+          touchAction: 'pan-y',
         }}
       >
-        {children}
+        <div className="flex h-full min-h-0 w-full flex-col overflow-hidden">
+          {children}
+        </div>
       </div>
     );
   }

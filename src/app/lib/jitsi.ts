@@ -42,6 +42,8 @@ export interface JitsiMountOptions {
     screenShare: boolean;
   }) => void;
   onAuthError?: (message: string) => void;
+  /** When true, Jitsi won't request mic again (preflight already granted). */
+  skipInitialGUM?: boolean;
 }
 
 export interface JitsiHandle {
@@ -257,7 +259,7 @@ function readJitsiParticipantPayload(raw: unknown): { id?: string; displayName?:
 export async function mountJitsiMeetingFromServerJoin(
   options: JitsiMountOptions,
 ): Promise<JitsiHandle> {
-  const { container, sessionId, domain, roomName, displayName, callType, userId, jwt, jitsiAppId } =
+  const { container, sessionId, domain, roomName, displayName, callType, userId, jwt, jitsiAppId, skipInitialGUM } =
     options;
   const resolvedDomain = domain.trim();
   const resolvedRoom = roomName.trim();
@@ -319,7 +321,7 @@ export async function mountJitsiMeetingFromServerJoin(
       enableInsecureRoomNameWarning: false,
       disableThirdPartyRequests: true,
       enableBrowserWarningPage: false,
-      disableInitialGUM: false,
+      disableInitialGUM: skipInitialGUM === true,
       disableFilmstrip: true,
       disableTileView: true,
       disableSelfView: true,

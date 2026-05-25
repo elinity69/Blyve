@@ -1,0 +1,58 @@
+import React from 'react';
+import { CheckCheck } from 'lucide-react';
+import type { MessageGroupPosition } from '../../lib/messageGrouping';
+import {
+  getMessageBubbleColors,
+  getMessageBubbleRadius,
+  getMessageBubbleTailClass,
+} from './messageBubbleStyles';
+
+interface MessageBubbleProps {
+  position: MessageGroupPosition;
+  isMe: boolean;
+  time?: string;
+  isRead?: boolean;
+  children: React.ReactNode;
+}
+
+export function MessageBubble({
+  position,
+  isMe,
+  time,
+  isRead,
+  children,
+}: MessageBubbleProps) {
+  const tailClass = getMessageBubbleTailClass(position, isMe);
+
+  return (
+    <div
+      className={`relative max-w-[min(100%,20rem)] min-w-[3rem] ${isMe ? 'ml-auto' : 'mr-auto'}`}
+    >
+      <div
+        className={`relative px-3 py-1.5 ${getMessageBubbleRadius(position, isMe)} ${getMessageBubbleColors(isMe)} ${tailClass}`}
+      >
+        <div className="flex items-end gap-2">
+          <div className="min-w-0 flex-1">{children}</div>
+          {time ? (
+            <span
+              className={`inline-flex shrink-0 items-center gap-0.5 pb-px text-[10px] leading-none ${
+                isMe ? 'text-white/75' : 'text-gray-500 dark:text-[#8fa8c4]'
+              }`}
+            >
+              {time}
+              {isMe ? (
+                <CheckCheck
+                  className={`h-3.5 w-3.5 shrink-0 ${
+                    isRead ? 'text-[#34b7f1] drop-shadow-sm' : 'text-white/45'
+                  }`}
+                  strokeWidth={isRead ? 2.5 : 2}
+                  aria-hidden
+                />
+              ) : null}
+            </span>
+          ) : null}
+        </div>
+      </div>
+    </div>
+  );
+}

@@ -16,6 +16,11 @@ export function useEdgeBackNavigation({ baseContent, onStackChange }: UseEdgeBac
 
   useEffect(() => {
     onStackChangeRef.current?.(stack.length);
+    if (stack.length > 0) {
+      window.dispatchEvent(new CustomEvent('mobile-chat-stack-open'));
+    } else {
+      window.dispatchEvent(new CustomEvent('mobile-chat-stack-close'));
+    }
   }, [stack.length]);
 
   const pushScreen = useCallback((content: React.ReactNode, id?: string) => {

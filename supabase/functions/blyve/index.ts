@@ -1009,6 +1009,7 @@ app.get("/groups/:groupId/messages", async (c) => {
         content,
         created_at,
         updated_at,
+        reply_to_message_id,
         sender:sender_id (
           id,
           username,
@@ -1041,9 +1042,10 @@ app.post("/groups/:groupId/messages", async (c) => {
       return c.json({ error: "Unauthorized" }, 401);
     }
 
-    const { content, channel_id: channelIdBody } = await c.req.json();
+    const { content, channel_id: channelIdBody, reply_to_message_id: replyToBody } = await c.req.json();
     const cleanContent = String(content || "").trim();
     const channelId = String(channelIdBody || "").trim();
+    const replyToMessageId = replyToBody ? String(replyToBody).trim() : null;
 
     if (!cleanContent) {
       return c.json({ error: "Message content required" }, 400);
@@ -1072,6 +1074,20 @@ app.post("/groups/:groupId/messages", async (c) => {
       return c.json({ error: "Cannot send messages in a voice channel" }, 400);
     }
 
+    if (replyToMessageId) {
+      const { data: replyRow, error: replyErr } = await supabase
+        .from("group_messages")
+        .select("id")
+        .eq("id", replyToMessageId)
+        .eq("group_id", groupId)
+        .eq("channel_id", channelId)
+        .maybeSingle();
+
+      if (replyErr || !replyRow) {
+        return c.json({ error: "Invalid reply target" }, 400);
+      }
+    }
+
     const { data: message, error: insertError } = await supabase
       .from("group_messages")
       .insert({
@@ -1079,6 +1095,7 @@ app.post("/groups/:groupId/messages", async (c) => {
         channel_id: channelId,
         sender_id: user.id,
         content: cleanContent,
+        reply_to_message_id: replyToMessageId,
       })
       .select(`
         id,
@@ -1088,6 +1105,7 @@ app.post("/groups/:groupId/messages", async (c) => {
         content,
         created_at,
         updated_at,
+        reply_to_message_id,
         sender:sender_id (
           id,
           username,
@@ -1153,6 +1171,7 @@ app.put("/groups/:groupId/messages/:messageId", async (c) => {
         content,
         created_at,
         updated_at,
+        reply_to_message_id,
         sender:sender_id (
           id,
           username,

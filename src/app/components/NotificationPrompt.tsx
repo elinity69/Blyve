@@ -1,9 +1,11 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Bell, X } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { NotificationManager } from '../lib/notifications';
 
 export const NotificationPrompt = () => {
+  const { t } = useTranslation();
   const [isVisible, setIsVisible] = useState(false);
 
   useEffect(() => {
@@ -24,7 +26,7 @@ export const NotificationPrompt = () => {
   }, []);
 
   const handleEnable = async () => {
-    const granted = await NotificationManager.requestPermission();
+    await NotificationManager.requestPermission();
     localStorage.setItem('notification-asked', 'true');
     setIsVisible(false);
   };
@@ -63,10 +65,10 @@ export const NotificationPrompt = () => {
               {/* Content */}
               <div className="flex-1 min-w-0">
                 <h4 className="text-white font-bold text-base mb-1">
-                  Verpasse keine Nachrichten!
+                  {t('notifications.promptTitle')}
                 </h4>
                 <p className="text-gray-300 text-sm mb-4">
-                  Aktiviere Benachrichtigungen, um sofort informiert zu werden, wenn dir jemand schreibt.
+                  {t('notifications.promptBody')}
                 </p>
 
                 {/* Buttons */}
@@ -75,13 +77,13 @@ export const NotificationPrompt = () => {
                     onClick={handleEnable}
                     className="flex-1 bg-gradient-to-r from-orange-500 to-pink-500 text-white font-semibold py-2.5 px-4 rounded-xl hover:brightness-110 transition-all active:scale-95"
                   >
-                    Aktivieren
+                    {t('notifications.enable')}
                   </button>
                   <button
                     onClick={handleDismiss}
                     className="px-4 py-2.5 bg-white/5 hover:bg-white/10 text-gray-300 rounded-xl transition-colors"
                   >
-                    Später
+                    {t('notifications.later')}
                   </button>
                 </div>
               </div>

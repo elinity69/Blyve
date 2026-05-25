@@ -1,8 +1,9 @@
 import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Camera, Check, X } from 'lucide-react';
+import { Camera, Check, Globe, X } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useTranslation } from 'react-i18next';
+import i18n, { APP_LANGUAGES, normalizeAppLanguage, type AppLanguageCode } from '../../lib/i18n';
 import {
   normalizeUsernameInput,
   validateUsernameFormat,
@@ -34,9 +35,17 @@ export function OnboardingWizard({ userName, onComplete }: OnboardingWizardProps
 
   const [usernameStatus, setUsernameStatus] = useState<'idle' | 'checking' | 'available' | 'taken' | 'invalid'>('idle');
   const [usernameSuggestion, setUsernameSuggestion] = useState<string | null>(null);
+  const [selectedLanguage, setSelectedLanguage] = useState<AppLanguageCode>(() =>
+    normalizeAppLanguage(i18n.language)
+  );
 
-  /** 5 Seiten: Willkommen, Display Name, Username, Avatar+BIO, Legal (+ Fertig) */
+  /** 5 Seiten: Sprache, Anzeigename, Username, Avatar+BIO, Legal */
   const totalSteps = 5;
+
+  const handleLanguageSelect = (code: AppLanguageCode) => {
+    setSelectedLanguage(code);
+    void i18n.changeLanguage(code);
+  };
 
   const updateForm = (patch: Partial<typeof formData>) => {
     setFormData((prev) => ({ ...prev, ...patch }));
@@ -257,27 +266,47 @@ export function OnboardingWizard({ userName, onComplete }: OnboardingWizardProps
               exit={{ opacity: 0, x: -20 }}
               className="flex flex-col min-h-[60vh]"
             >
-              <h2 className="text-[22px] font-bold text-gray-900 dark:text-white text-center">
-                {t('onboarding.welcomeTitle')}
+              <div className="flex justify-center mb-5">
+                <div className="w-14 h-14 rounded-full bg-orange-100 dark:bg-orange-500/15 flex items-center justify-center">
+                  <Globe className="w-7 h-7 text-orange-600" />
+                </div>
+              </div>
+              <h2 className="text-[28px] font-bold text-gray-900 dark:text-white text-center mb-2">
+                {t('onboarding.languageTitle')}
               </h2>
-              <p className="text-[13px] text-gray-500 dark:text-gray-400 text-center mb-7">
-                {t('onboarding.houseRulesSubtitle')}
+              <p className="text-[15px] text-gray-500 dark:text-gray-400 text-center mb-8">
+                {t('onboarding.languageSubtitle')}
               </p>
-              <div className="space-y-3 text-left">
-                {[
-                  { title: t('onboarding.ruleBeYourselfTitle'), text: t('onboarding.ruleBeYourselfText') },
-                  { title: t('onboarding.ruleStaySafeTitle'), text: t('onboarding.ruleStaySafeText') },
-                  { title: t('onboarding.rulePlayItCoolTitle'), text: t('onboarding.rulePlayItCoolText') },
-                  { title: t('onboarding.ruleBeProactiveTitle'), text: t('onboarding.ruleBeProactiveText') },
-                ].map((item) => (
-                  <div key={item.title} className="flex gap-3">
-                    <span className="text-orange-600 font-bold text-sm">✓</span>
-                    <div>
-                      <p className="text-[14px] font-semibold text-gray-900 dark:text-white">{item.title}</p>
-                      <p className="text-[12px] text-gray-600 dark:text-gray-400 leading-relaxed">{item.text}</p>
-                    </div>
-                  </div>
-                ))}
+              <div className="space-y-3">
+                {APP_LANGUAGES.map((language) => {
+                  const isActive = selectedLanguage === language.code;
+                  return (
+                    <button
+                      key={language.code}
+                      type="button"
+                      onClick={() => handleLanguageSelect(language.code)}
+                      className={`w-full flex items-center justify-between gap-3 px-5 h-[56px] rounded-2xl border text-left transition-colors ${
+                        isActive
+                          ? 'border-orange-500 bg-orange-50 dark:bg-orange-500/10'
+                          : 'border-gray-200 dark:border-white/10 bg-white dark:bg-[#0A0A0A] hover:border-orange-300 dark:hover:border-orange-500/40'
+                      }`}
+                    >
+                      <span className="flex items-center gap-3 min-w-0">
+                        <span className="text-2xl leading-none" aria-hidden>
+                          {language.flag}
+                        </span>
+                        <span className="text-[16px] font-semibold text-gray-900 dark:text-white truncate">
+                          {language.label}
+                        </span>
+                      </span>
+                      {isActive ? (
+                        <span className="w-7 h-7 rounded-full bg-orange-600 flex items-center justify-center shrink-0">
+                          <Check className="w-4 h-4 text-white stroke-[3]" />
+                        </span>
+                      ) : null}
+                    </button>
+                  );
+                })}
               </div>
               <motion.button
                 whileHover={{ scale: 1.02 }}
@@ -286,7 +315,7 @@ export function OnboardingWizard({ userName, onComplete }: OnboardingWizardProps
                 onClick={handleNext}
                 className="w-full mt-8 h-[48px] bg-orange-600 text-white rounded-full font-semibold text-base shadow-md"
               >
-                {t('onboarding.welcomeAgree')}
+                {t('onboarding.continue')}
               </motion.button>
             </motion.div>
           )}

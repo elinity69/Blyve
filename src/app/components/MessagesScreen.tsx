@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { useQueryClient, useQuery } from '@tanstack/react-query';
 import { useEdgeBackNavigation } from '../hooks/useEdgeBackNavigation';
 import { useConversations } from '../hooks/useConversations';
 import { ChatScreen } from './ChatScreen';
@@ -11,13 +12,36 @@ import { User } from '../types';
 import { useUnread } from '../context/UnreadContext';
 import { useTranslation } from 'react-i18next';
 import { toast } from '../lib/toast';
-import { Plus, MessageCircle, Volume2, Hash, Link2, UserPlus, Pencil, Trash2, RefreshCw } from 'lucide-react';
+import { Plus, MessageCircle, Volume2, Hash, Link2, Pencil, Trash2, RefreshCw } from 'lucide-react';
 import { GroupChannelNavContext } from '../context/GroupChannelNavContext';
 import { useCall } from '../context/CallContext';
 import {
   formatGroupTypingLabel,
   subscribeGroupTypingBroadcast,
 } from '../lib/groupTypingBroadcast';
+import { NotificationBadge, NotificationBadgeInline } from './NotificationBadge';
+import {
+  ConversationActionsMenu,
+  openConversationActionsMenuFromEvent,
+  type ConversationActionTarget,
+} from './ConversationActionsMenu';
+import {
+  GroupActionsMenu,
+  openGroupActionsMenuFromEvent,
+  type GroupActionTarget,
+} from './GroupActionsMenu';
+import { useLongPress } from '../hooks/useLongPress';
+import { NotificationManager } from '../lib/notifications';
+import {
+  prefetchDmMessages,
+  prefetchGroupChannelMessages,
+  prefetchGroupChannels,
+  prefetchRecentDmMessages,
+  prefetchAllGroupChannels,
+  fetchGroupChannels,
+  groupChannelsQueryKey,
+} from '../lib/chatMessages';
+import type { Conversation } from '../hooks/useChat';
 
 function groupAccentHue(groupId: string): number {
   let h = 0;
@@ -142,6 +166,8 @@ interface GroupChannelRow {
   icon_url?: string | null;
 }
 
+const EMPTY_GROUP_CHANNELS: GroupChannelRow[] = [];
+
 export function MessagesScreen() {
   const { t, i18n } = useTranslation();
   const { unreadByConversation } = useUnread();
@@ -161,13 +187,12 @@ export function MessagesScreen() {
   const [sendingRequest, setSendingRequest] = useState(false);
   const [incomingRequests, setIncomingRequests] = useState<IncomingFriendRequest[]>([]);
   const [selectedGroup, setSelectedGroup] = useState<{ id: string; name: string; icon_url?: string | null } | null>(null);
-  const [showCreateGroupModal, setShowCreateGroupModal] = useState(false);
+  const [showGroupActionModal, setShowGroupActionModal] = useState(false);
+  const [groupActionTab, setGroupActionTab] = useState<'create' | 'join'>('create');
   const [groupUnreadById, setGroupUnreadById] = useState<Record<string, number>>({});
   const [channelUnreadById, setChannelUnreadById] = useState<Record<string, number>>({});
   const [myGroupRows, setMyGroupRows] = useState<MyGroupMembership[]>([]);
-  const [groupChannels, setGroupChannels] = useState<GroupChannelRow[]>([]);
   const [selectedChannelId, setSelectedChannelId] = useState<string | null>(null);
-  const [channelsLoading, setChannelsLoading] = useState(false);
   const [groupsLoading, setGroupsLoading] = useState(false);
   const [createGroupName, setCreateGroupName] = useState('');
   const [createGroupDescription, setCreateGroupDescription] = useState('');
@@ -178,7 +203,6 @@ export function MessagesScreen() {
   const [creatingGroup, setCreatingGroup] = useState(false);
   const [showCreateChannelModal, setShowCreateChannelModal] = useState(false);
   const [showInviteModal, setShowInviteModal] = useState(false);
-  const [showJoinInviteModal, setShowJoinInviteModal] = useState(false);
   const [newChannelName, setNewChannelName] = useState('');
   const [newChannelType, setNewChannelType] = useState<'text' | 'voice'>('text');
   const [newChannelIconFile, setNewChannelIconFile] = useState<File | null>(null);
@@ -201,8 +225,33 @@ export function MessagesScreen() {
   const [joiningViaInvite, setJoiningViaInvite] = useState(false);
   const [voicePresenceByChannel, setVoicePresenceByChannel] = useState<Record<string, VoicePresenceParticipant[]>>({});
   const [typingNamesByChannelId, setTypingNamesByChannelId] = useState<Record<string, string[]>>({});
+  const [conversationActionsMenu, setConversationActionsMenu] = useState<ConversationActionTarget | null>(null);
+  const [groupActionsMenu, setGroupActionsMenu] = useState<GroupActionTarget | null>(null);
 
   const { conversations, loading, error, reload } = useConversations();
+  const queryClient = useQueryClient();
+  const selectedGroupId = selectedGroup?.id ?? null;
+
+  const {
+    data: groupChannels = EMPTY_GROUP_CHANNELS,
+    isPending: channelsLoading,
+  } = useQuery({
+    queryKey: groupChannelsQueryKey(selectedGroupId!),
+    enabled: !!selectedGroupId,
+    queryFn: () => fetchGroupChannels(selectedGroupId!),
+    staleTime: 60_000,
+    refetchOnWindowFocus: true,
+  });
+
+  const patchGroupChannels = React.useCallback(
+    (groupId: string, updater: (prev: GroupChannelRow[]) => GroupChannelRow[]) => {
+      queryClient.setQueryData<GroupChannelRow[]>(groupChannelsQueryKey(groupId), (prev) =>
+        updater(prev ?? [])
+      );
+    },
+    [queryClient]
+  );
+
   const { enterCallPip, isCallForConversation, joinVoiceChannel, isVoiceChannelActive, activeCall, hangUp, state: callState } = useCall();
   const [typingByConversation, setTypingByConversation] = React.useState<Record<string, boolean>>({});
 
@@ -226,6 +275,22 @@ export function MessagesScreen() {
     return () => window.removeEventListener('typing-status-changed', handleTypingStatus);
   }, []);
 
+  React.useEffect(() => {
+    if (conversations.length === 0) return;
+    prefetchRecentDmMessages(
+      queryClient,
+      conversations.map((conversation) => conversation.id)
+    );
+  }, [conversations, queryClient]);
+
+  React.useEffect(() => {
+    const groupIds = myGroupRows
+      .map((row) => row.group?.id)
+      .filter((id): id is string => Boolean(id));
+    if (groupIds.length === 0) return;
+    prefetchAllGroupChannels(queryClient, groupIds);
+  }, [myGroupRows, queryClient]);
+
   const isConversationTyping = React.useCallback(
     (conversationId: string) => Boolean(typingByConversation[conversationId]),
     [typingByConversation]
@@ -241,6 +306,82 @@ export function MessagesScreen() {
     },
     [callState, enterCallPip, isCallForConversation]
   );
+
+  const openGroupActions = React.useCallback(
+    (
+      event: React.MouseEvent | React.PointerEvent,
+      group: { id: string; name: string; icon_url?: string | null }
+    ) => {
+      event.preventDefault();
+      event.stopPropagation();
+      setGroupActionsMenu(
+        openGroupActionsMenuFromEvent(event, {
+          id: group.id,
+          name: group.name,
+          icon_url: group.icon_url,
+        })
+      );
+    },
+    []
+  );
+
+  useEffect(() => {
+    NotificationManager.setActiveGroupId(selectedGroup?.id ?? null);
+  }, [selectedGroup?.id]);
+
+  const openConversationActions = React.useCallback(
+    (
+      event: React.MouseEvent | React.PointerEvent,
+      conversationId: string,
+      otherUser: ConversationActionTarget['otherUser']
+    ) => {
+      event.preventDefault();
+      event.stopPropagation();
+      setConversationActionsMenu(openConversationActionsMenuFromEvent(event, conversationId, otherUser));
+    },
+    []
+  );
+
+  const handleRemoveFriend = React.useCallback(
+    async (target: ConversationActionTarget) => {
+      const confirmed = window.confirm(
+        t('chat.deleteFriendConfirm', { name: target.otherUser.name })
+      );
+      if (!confirmed) return;
+
+      try {
+        await api.removeFriend(target.otherUser.id);
+        toast.success(t('chat.deleteFriendSuccess'));
+        if (selectedConversationId === target.conversationId) {
+          handleLeaveChat(target.conversationId);
+        }
+        await reload();
+      } catch (err: any) {
+        toast.error(
+          t('chat.deleteFriendFailedTitle'),
+          err?.message || t('chat.deleteFriendFailedTitle')
+        );
+      }
+    },
+    [handleLeaveChat, reload, selectedConversationId, t]
+  );
+
+  const handleBlockFriendFromMenu = React.useCallback(
+    async (target: ConversationActionTarget) => {
+      const confirmed = window.confirm(t('chat.blockUserConfirm'));
+      if (!confirmed) return;
+
+      try {
+        await api.blockUser(target.otherUser.id);
+        toast.success(t('chat.blockSuccess'));
+        handleLeaveChat(target.conversationId);
+        await reload();
+      } catch (err: any) {
+        toast.error(t('chat.blockFailedTitle'), err?.message || t('chat.blockFailedTitle'));
+      }
+    },
+    [handleLeaveChat, reload, t]
+  );
   const lastPushedChatIdRef = useRef<string | null>(null);
   const lastPushedGroupIdRef = useRef<string | null>(null);
   const pendingConversationIdRef = useRef<string | null>(null);
@@ -248,7 +389,6 @@ export function MessagesScreen() {
   const openConversationById = React.useCallback((conversationId: string) => {
     setSelectedGroup(null);
     setSelectedChannelId(null);
-    setGroupChannels([]);
     lastPushedGroupIdRef.current = null;
     const conv = conversations.find((c) => c.id === conversationId);
     if (!conv) {
@@ -400,7 +540,7 @@ export function MessagesScreen() {
       });
       if (groupIconInputRef.current) groupIconInputRef.current.value = '';
       await loadGroupsData();
-      setShowCreateGroupModal(false);
+      setShowGroupActionModal(false);
     } catch (err: any) {
       toast.error(t('groups.createFailedTitle'), err?.message || t('groups.createFailedBody'));
     } finally {
@@ -448,6 +588,10 @@ export function MessagesScreen() {
     () => groupChannels.filter((ch) => ch.type === 'voice'),
     [groupChannels]
   );
+  const voiceChannelIdsKey = useMemo(
+    () => voiceChannels.map((ch) => ch.id).join(','),
+    [voiceChannels]
+  );
 
   const selectedChannel = useMemo(
     () => groupChannels.find((c) => c.id === selectedChannelId) ?? null,
@@ -456,7 +600,9 @@ export function MessagesScreen() {
 
   const reloadVoicePresence = React.useCallback(async () => {
     if (!selectedGroup?.id || voiceChannels.length === 0) {
-      setVoicePresenceByChannel({});
+      setVoicePresenceByChannel((prev) =>
+        Object.keys(prev).length === 0 ? prev : {}
+      );
       return;
     }
     const next: Record<string, VoicePresenceParticipant[]> = {};
@@ -471,7 +617,7 @@ export function MessagesScreen() {
       })
     );
     setVoicePresenceByChannel(next);
-  }, [selectedGroup?.id, voiceChannels]);
+  }, [selectedGroup?.id, voiceChannelIdsKey, voiceChannels]);
 
   const handleCreateChannel = React.useCallback(async () => {
     if (!selectedGroup?.id) return;
@@ -493,7 +639,9 @@ export function MessagesScreen() {
       });
       const channel = data?.channel as GroupChannelRow | undefined;
       if (channel) {
-        setGroupChannels((prev) => [...prev, channel].sort((a, b) => a.position - b.position));
+        patchGroupChannels(selectedGroup.id, (prev) =>
+          [...prev, channel].sort((a, b) => a.position - b.position)
+        );
         if (channel.type === 'text') setSelectedChannelId(channel.id);
       }
       toast.success(t('groups.channelCreated'));
@@ -512,7 +660,7 @@ export function MessagesScreen() {
     } finally {
       setCreatingChannel(false);
     }
-  }, [newChannelIconFile, newChannelName, newChannelType, reloadVoicePresence, selectedGroup?.id, t]);
+  }, [newChannelIconFile, newChannelName, newChannelType, patchGroupChannels, reloadVoicePresence, selectedGroup?.id, t]);
 
   const handleNewChannelIconChange = React.useCallback(
     (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -614,7 +762,7 @@ export function MessagesScreen() {
       });
       const channel = data?.channel as GroupChannelRow | undefined;
       if (channel) {
-        setGroupChannels((prev) =>
+        patchGroupChannels(selectedGroup.id, (prev) =>
           prev
             .map((entry) => (entry.id === channel.id ? channel : entry))
             .sort((a, b) => a.position - b.position)
@@ -633,6 +781,7 @@ export function MessagesScreen() {
     editChannelIconFile,
     editChannelName,
     editingChannel,
+    patchGroupChannels,
     selectedGroup?.id,
     t,
   ]);
@@ -647,7 +796,9 @@ export function MessagesScreen() {
     try {
       setDeletingChannel(true);
       await api.deleteGroupChannel(selectedGroup.id, editingChannel.id);
-      setGroupChannels((prev) => prev.filter((entry) => entry.id !== editingChannel.id));
+      patchGroupChannels(selectedGroup.id, (prev) =>
+        prev.filter((entry) => entry.id !== editingChannel.id)
+      );
       if (selectedChannelId === editingChannel.id) {
         const fallback = groupChannels.find(
           (entry) => entry.id !== editingChannel.id && (entry.type ?? 'text') === 'text'
@@ -666,6 +817,7 @@ export function MessagesScreen() {
     closeEditChannelModal,
     editingChannel,
     groupChannels,
+    patchGroupChannels,
     reloadVoicePresence,
     selectedChannelId,
     selectedGroup?.id,
@@ -720,7 +872,7 @@ export function MessagesScreen() {
       const data = await api.joinGroupViaInvite(code);
       toast.success(t('groups.joined'));
       setJoinInviteInput('');
-      setShowJoinInviteModal(false);
+      setShowGroupActionModal(false);
       await loadGroupsData();
       if (data?.group?.id) {
         setSelectedGroup({ id: data.group.id, name: data.group.name, icon_url: data.group.icon_url ?? null });
@@ -814,7 +966,6 @@ export function MessagesScreen() {
       }
 
       const unread = channelUnreadById[ch.id] || 0;
-      const badge = unread > 99 ? '99+' : unread > 0 ? String(unread) : null;
       const typingNames = typingNamesByChannelId[ch.id] || [];
       const typingPreview = typingNames.length > 0 ? formatGroupTypingLabel(typingNames, t) : null;
       const isChSelected = ch.id === selectedChannelId;
@@ -822,6 +973,11 @@ export function MessagesScreen() {
         <div key={ch.id} className="group flex items-center">
           <button
             type="button"
+            onPointerDown={() => {
+              if (selectedGroup?.id) {
+                void prefetchGroupChannelMessages(queryClient, selectedGroup.id, ch.id);
+              }
+            }}
             onClick={() => setSelectedChannelId(ch.id)}
             className={`flex-1 min-w-0 text-left px-4 py-2 flex items-center justify-between gap-2 transition-colors ${
               isChSelected ? 'bg-gray-100 dark:bg-white/10' : 'hover:bg-gray-50 dark:hover:bg-gray-900/80'
@@ -838,10 +994,8 @@ export function MessagesScreen() {
               <span className="shrink-0 max-w-[45%] truncate text-[11px] italic text-[#5865f2]">
                 {typingPreview}
               </span>
-            ) : badge ? (
-              <span className="shrink-0 min-w-[1.25rem] h-5 px-1.5 bg-red-500 text-white text-xs font-bold rounded-full flex items-center justify-center">
-                {badge}
-              </span>
+            ) : unread > 0 ? (
+              <NotificationBadgeInline count={unread} />
             ) : null}
           </button>
           {editButton}
@@ -854,6 +1008,7 @@ export function MessagesScreen() {
       isSelectedGroupAdmin,
       isVoiceChannelActive,
       openEditChannelModal,
+      queryClient,
       renderChannelLeadingIcon,
       selectedChannelId,
       selectedGroup,
@@ -920,93 +1075,39 @@ export function MessagesScreen() {
 
   const refreshGroupUnreadCounts = React.useCallback(async () => {
     if (!currentUserId) return;
-    const ids = myGroupRows.map((r) => r.group?.id).filter(Boolean) as string[];
-    if (ids.length === 0) {
+    try {
+      const { groupUnreadById, channelUnreadById } = await api.getGroupUnreadCounts();
+      setGroupUnreadById(groupUnreadById);
+      setChannelUnreadById(channelUnreadById);
+    } catch (err) {
+      console.error('Failed to load group unread counts:', err);
       setGroupUnreadById({});
       setChannelUnreadById({});
-      return;
     }
-    const nextGroup: Record<string, number> = {};
-    const nextChannel: Record<string, number> = {};
-
-    await Promise.all(
-      ids.map(async (gid) => {
-        const { data: channels, error: chErr } = await supabase
-          .from('group_channels')
-          .select('id, type')
-          .eq('group_id', gid);
-
-        if (chErr || !channels?.length) {
-          nextGroup[gid] = 0;
-          return;
-        }
-
-        let sum = 0;
-        await Promise.all(
-          (channels || [])
-            .filter((ch) => (ch as { type?: string }).type !== 'voice')
-            .map(async ({ id: cid }) => {
-            const lastRead = localStorage.getItem(`blyve_group_channel_last_read_${cid}`);
-            let q = supabase
-              .from('group_messages')
-              .select('*', { count: 'exact', head: true })
-              .eq('channel_id', cid)
-              .neq('sender_id', currentUserId);
-            if (lastRead) {
-              q = q.gt('created_at', lastRead);
-            }
-            const { count, error } = await q;
-            const n = error ? 0 : count || 0;
-            nextChannel[cid] = n;
-            sum += n;
-          })
-        );
-        nextGroup[gid] = sum;
-      })
-    );
-
-    setGroupUnreadById(nextGroup);
-    setChannelUnreadById(nextChannel);
-  }, [currentUserId, myGroupRows]);
+  }, [currentUserId]);
 
   useEffect(() => {
-    if (!selectedGroup?.id) {
-      setGroupChannels([]);
+    if (!selectedGroupId) {
       setSelectedChannelId(null);
       return;
     }
 
-    setSelectedChannelId(null);
-    setGroupChannels([]);
+    if (groupChannels.length === 0) return;
 
-    let cancelled = false;
-    (async () => {
-      try {
-        setChannelsLoading(true);
-        const channelsData = await api.getGroupChannels(selectedGroup.id);
-        if (cancelled) return;
-        const list = (channelsData?.channels || []) as GroupChannelRow[];
-        setGroupChannels(list);
-        setSelectedChannelId((prev) => {
-          if (prev && list.some((c) => c.id === prev)) return prev;
-          const firstText = list.find((c) => (c.type ?? 'text') === 'text');
-          return firstText?.id ?? null;
-        });
-      } catch (err: any) {
-        if (!cancelled) {
-          toast.error(t('groups.loadChannelsFailedTitle'), err?.message || t('groups.loadChannelsFailedBody'));
-          setGroupChannels([]);
-          setSelectedChannelId(null);
-        }
-      } finally {
-        if (!cancelled) setChannelsLoading(false);
-      }
-    })();
+    setSelectedChannelId((prev) => {
+      if (prev && groupChannels.some((channel) => channel.id === prev)) return prev;
+      if (!isDesktop) return null;
+      const firstText = groupChannels.find((channel) => (channel.type ?? 'text') === 'text');
+      return firstText?.id ?? null;
+    });
+  }, [selectedGroupId, groupChannels, isDesktop]);
 
-    return () => {
-      cancelled = true;
-    };
-  }, [selectedGroup?.id, t]);
+  React.useEffect(() => {
+    if (!selectedGroupId || groupChannels.length === 0) return;
+    for (const channel of groupChannels.filter((ch) => (ch.type ?? 'text') === 'text').slice(0, 3)) {
+      void prefetchGroupChannelMessages(queryClient, selectedGroupId, channel.id);
+    }
+  }, [selectedGroupId, groupChannels, queryClient]);
 
   useEffect(() => {
     const mq = window.matchMedia('(min-width: 768px)');
@@ -1034,6 +1135,56 @@ export function MessagesScreen() {
     if (!showFriendsPanel) return;
     loadFriends();
   }, [showFriendsPanel, loadFriends]);
+
+  useEffect(() => {
+    if (!currentUserId) return;
+    void loadFriends();
+    const channel = supabase
+      .channel(`friends-incoming-${currentUserId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'friends',
+          filter: `friend_id=eq.${currentUserId}`,
+        },
+        () => {
+          void loadFriends();
+        }
+      )
+      .subscribe();
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [currentUserId, loadFriends]);
+
+  useEffect(() => {
+    if (!currentUserId || myGroupRows.length === 0) return;
+    const groupIds = myGroupRows.map((row) => row.group?.id).filter(Boolean) as string[];
+    if (groupIds.length === 0) return;
+
+    const channel = supabase
+      .channel(`group-unread-${currentUserId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'group_messages',
+        },
+        () => {
+          void refreshGroupUnreadCounts();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [currentUserId, myGroupRows, refreshGroupUnreadCounts]);
+
+  const incomingRequestCount = incomingRequests.length;
 
   useEffect(() => {
     if (!profilePreviewUserId) {
@@ -1080,8 +1231,10 @@ export function MessagesScreen() {
         setSelectedConversationId(null);
         setSelectedOtherUser(null);
         lastPushedChatIdRef.current = null;
-        setSelectedGroup(null);
-        lastPushedGroupIdRef.current = null;
+        if (lastPushedGroupIdRef.current) {
+          setSelectedChannelId(null);
+          lastPushedGroupIdRef.current = null;
+        }
       }
     }
   });
@@ -1105,7 +1258,6 @@ export function MessagesScreen() {
     lastPushedGroupIdRef.current = null;
     setSelectedGroup(null);
     setSelectedChannelId(null);
-    setGroupChannels([]);
   }, [isDesktop]);
 
   const selectGroupFromRail = React.useCallback(
@@ -1114,14 +1266,10 @@ export function MessagesScreen() {
       setSelectedConversationId(null);
       setSelectedOtherUser(null);
       if (!isDesktop) {
-        // clearStack() triggers onStackChange(0) which sets selectedGroup to null — run after that.
         clearStackRef.current();
-        window.setTimeout(() => {
-          setSelectedGroup({ id: g.id, name: g.name, icon_url: g.icon_url ?? null });
-        }, 0);
-      } else {
-        setSelectedGroup({ id: g.id, name: g.name, icon_url: g.icon_url ?? null });
+        setSelectedChannelId(null);
       }
+      setSelectedGroup({ id: g.id, name: g.name, icon_url: g.icon_url ?? null });
     },
     [isDesktop]
   );
@@ -1193,12 +1341,15 @@ export function MessagesScreen() {
         className="h-full min-h-0 w-full flex flex-row bg-white dark:bg-black md:dark:bg-[#121212] overflow-hidden pb-16 box-border"
       >
         <div
-          className="flex flex-col items-center gap-2 py-3 px-1.5 w-[4.5rem] shrink-0 bg-[#1e1f22] border-r border-black/30"
+          className="flex flex-col items-center gap-2 py-3 px-1.5 w-[4.5rem] shrink-0 overflow-visible bg-[#1e1f22] border-r border-black/30"
           aria-label={t('groups.tabGroups')}
         >
           <button
             type="button"
-            onClick={() => setShowCreateGroupModal(true)}
+            onClick={() => {
+              setGroupActionTab('create');
+              setShowGroupActionModal(true);
+            }}
             title={t('groups.railCreateTooltip')}
             className="relative w-12 h-12 shrink-0 rounded-full bg-[#313338] flex items-center justify-center text-[#23a559] border-2 border-[#313338] border-dashed border-opacity-80 hover:bg-[#23a559] hover:text-white hover:border-[#23a559] transition-colors"
             style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent', cursor: 'pointer' }}
@@ -1206,24 +1357,22 @@ export function MessagesScreen() {
             <Plus className="w-7 h-7 stroke-[2.5]" />
           </button>
 
-          <button
-            type="button"
-            onClick={selectDmHome}
-            title={t('groups.railDmTooltip')}
-            className={`relative w-12 h-12 shrink-0 flex items-center justify-center text-white transition-transform ${
-              !selectedGroup
-                ? 'bg-[#5865f2] rounded-2xl'
-                : 'bg-[#313338] rounded-full hover:rounded-2xl hover:bg-[#5865f2]'
-            }`}
-            style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent', cursor: 'pointer' }}
-          >
-            <MessageCircle className="w-6 h-6" />
-            {dmUnreadTotal > 0 ? (
-              <span className="absolute -top-1 -right-1 min-w-[1.125rem] h-[1.125rem] px-0.5 bg-red-600 text-white text-[10px] font-bold rounded-full flex items-center justify-center border-2 border-[#1e1f22]">
-                {dmUnreadTotal > 99 ? '99+' : dmUnreadTotal}
-              </span>
-            ) : null}
-          </button>
+          <div className="relative shrink-0">
+            <button
+              type="button"
+              onClick={selectDmHome}
+              title={t('groups.railDmTooltip')}
+              className={`w-12 h-12 flex items-center justify-center text-white transition-transform ${
+                !selectedGroup
+                  ? 'bg-[#5865f2] rounded-2xl'
+                  : 'bg-[#313338] rounded-full hover:rounded-2xl hover:bg-[#5865f2]'
+              }`}
+              style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent', cursor: 'pointer' }}
+            >
+              <MessageCircle className="w-6 h-6" />
+            </button>
+            <NotificationBadge count={dmUnreadTotal} />
+          </div>
 
           <div className="w-8 h-px bg-white/10 shrink-0 my-0.5" />
 
@@ -1234,40 +1383,20 @@ export function MessagesScreen() {
               .filter((r) => r.group)
               .map((row) => {
                 const g = row.group as GroupRow;
-                const hue = groupAccentHue(g.id);
                 const isActive = selectedGroup?.id === g.id;
                 const unread = groupUnreadById[g.id] || 0;
-                const badge = unread > 99 ? '99+' : unread > 0 ? String(unread) : null;
-                const initial = (g.name?.trim().charAt(0) || '?').toUpperCase();
-                const iconSrc = g.icon_url ? getOptimizedImageUrl(g.icon_url, 96) : null;
                 return (
-                  <button
+                  <GroupRailIcon
                     key={row.id}
-                    type="button"
-                    onClick={() => selectGroupFromRail(g)}
-                    title={g.name}
-                    className={`relative w-12 h-12 shrink-0 overflow-hidden flex items-center justify-center text-sm font-bold text-white transition-transform ${
-                      isActive ? 'rounded-2xl ring-2 ring-white' : 'rounded-full hover:rounded-2xl'
-                    }`}
-                    style={{
-                      background: iconSrc
-                        ? undefined
-                        : `linear-gradient(145deg, hsl(${hue}, 42%, 42%), hsl(${hue}, 45%, 32%))`,
-                      touchAction: 'manipulation',
-                      cursor: 'pointer',
+                    group={g}
+                    isActive={isActive}
+                    unread={unread}
+                    onSelect={() => selectGroupFromRail(g)}
+                    onPrefetch={() => {
+                      void prefetchGroupChannels(queryClient, g.id);
                     }}
-                  >
-                    {iconSrc ? (
-                      <img src={iconSrc} alt="" className="w-full h-full object-cover" />
-                    ) : (
-                      initial
-                    )}
-                    {badge ? (
-                      <span className="absolute -top-1 -right-1 min-w-[1.125rem] h-[1.125rem] px-0.5 bg-red-600 text-white text-[10px] font-bold rounded-full flex items-center justify-center border-2 border-[#1e1f22]">
-                        {badge}
-                      </span>
-                    ) : null}
-                  </button>
+                    onOpenActions={(event) => openGroupActions(event, g)}
+                  />
                 );
               })
           )}
@@ -1277,9 +1406,16 @@ export function MessagesScreen() {
           <div className="flex flex-col flex-1 min-w-0 min-h-0 md:max-w-[340px] md:w-[32%] md:shrink-0 border-r border-gray-200 dark:border-white/10 bg-white dark:bg-black">
             <div className="sticky top-0 z-10 bg-white/80 dark:bg-black/80 backdrop-blur-md border-b border-gray-200 dark:border-white/5 px-4 py-4 shrink-0">
               <div className="flex items-center justify-between gap-3">
-                <h1 className="text-2xl font-bold text-gray-900 dark:text-white truncate">
-                  {selectedGroup ? selectedGroup.name : t('nav.messages')}
-                </h1>
+                {selectedGroup ? (
+                  <ServerTitleButton
+                    name={selectedGroup.name}
+                    onOpenActions={(event) => openGroupActions(event, selectedGroup)}
+                  />
+                ) : (
+                  <h1 className="text-2xl font-bold text-gray-900 dark:text-white truncate">
+                    {t('nav.messages')}
+                  </h1>
+                )}
                 <div className="flex items-center gap-1.5 shrink-0">
                   {selectedGroup && isSelectedGroupAdmin ? (
                     <>
@@ -1310,21 +1446,20 @@ export function MessagesScreen() {
                       <Link2 className="w-4 h-4" />
                     </button>
                   ) : null}
-                  <button
-                    type="button"
-                    onClick={() => setShowJoinInviteModal(true)}
-                    title={t('groups.joinViaInvite')}
-                    className="p-2 rounded-lg text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-white/10"
-                  >
-                    <UserPlus className="w-4 h-4" />
-                  </button>
                   {!selectedGroup ? (
                     <button
                       onClick={() => setShowFriendsPanel((prev) => !prev)}
-                      className="px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700 transition-colors shrink-0"
+                      className="relative px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700 transition-colors shrink-0"
                       style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent', cursor: 'pointer' }}
                     >
                       {t('chat.addFriend')}
+                      {!showFriendsPanel && incomingRequestCount > 0 ? (
+                        <NotificationBadge
+                          count={incomingRequestCount}
+                          borderClassName="border-indigo-600"
+                          className="-top-2 -right-2"
+                        />
+                      ) : null}
                     </button>
                   ) : null}
                 </div>
@@ -1410,51 +1545,43 @@ export function MessagesScreen() {
                 {conversations.map((conv) => {
                   const otherUser = conv.other_user;
                   const unreadCount = unreadByConversation[conv.id] || 0;
-                  const unreadBadgeText = unreadCount > 99 ? '99+' : unreadCount > 0 ? unreadCount.toString() : null;
                   const imageUrl = otherUser.imageUrl ? getOptimizedImageUrl(otherUser.imageUrl, 200) : undefined;
                   const isSelected = conv.id === selectedConversationId;
+                  const actionUser = {
+                    id: otherUser.id,
+                    name: otherUser.name,
+                    username: otherUser.username,
+                    imageUrl,
+                  };
                   return (
-                    <button key={conv.id} onClick={() => { setSelectedGroup(null); lastPushedGroupIdRef.current = null; setSelectedConversationId(conv.id); setSelectedOtherUser({ id: otherUser.id, name: otherUser.name, display_name: otherUser.display_name, username: otherUser.username, imageUrl: imageUrl, is_online: otherUser.is_online, age: otherUser.age }); }} className={`w-full p-4 hover:bg-gray-50 dark:hover:bg-gray-900 transition-colors text-left ${isSelected ? 'bg-gray-100 dark:bg-gray-900/90' : ''}`} style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent', cursor: 'pointer' }}>
-                      <div className="flex items-center gap-3">
-                        <div className="relative">
-                          {imageUrl ? <img src={imageUrl} alt={otherUser.name} className="w-14 h-14 rounded-full object-cover" /> : <div className="w-14 h-14 rounded-full bg-gradient-to-br from-orange-400 via-pink-400 to-red-400 flex items-center justify-center text-white text-lg font-bold">{otherUser.name?.charAt(0).toUpperCase() || '?'}</div>}
-                          {otherUser.is_online && <div className="absolute bottom-0 right-0 w-4 h-4 bg-green-500 rounded-full border-2 border-white dark:border-black"></div>}
-                          {unreadBadgeText && (
-                            <div className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white text-xs font-bold rounded-full flex items-center justify-center">
-                              {unreadBadgeText}
-                            </div>
-                          )}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center justify-between mb-1">
-                            <h3 className="font-semibold text-gray-900 dark:text-white truncate">
-                              {otherUser.name}
-                              {otherUser.username ? (
-                                <span className="text-gray-500 dark:text-gray-400 font-normal"> @{otherUser.username}</span>
-                              ) : null}
-                            </h3>
-                            {conv.last_message_at && (
-                              <span className="text-xs text-gray-500 dark:text-gray-400 whitespace-nowrap ml-2">
-                                {formatLastMessageTime(conv.last_message_at)}
-                              </span>
-                            )}
-                          </div>
-                          <p
-                            className={`text-sm truncate ${
-                              isConversationTyping(conv.id)
-                                ? 'text-[#5865f2] italic'
-                                : unreadCount > 0
-                                  ? 'text-gray-900 dark:text-white font-medium'
-                                  : 'text-gray-500 dark:text-gray-400'
-                            }`}
-                          >
-                            {isConversationTyping(conv.id)
-                              ? t('chat.typingPreview')
-                              : conv.last_message || t('chat.noMessagesYet')}
-                          </p>
-                        </div>
-                      </div>
-                    </button>
+                    <ConversationListRow
+                      key={conv.id}
+                      conv={conv}
+                      otherUser={otherUser}
+                      unreadCount={unreadCount}
+                      imageUrl={imageUrl}
+                      isSelected={isSelected}
+                      isTyping={isConversationTyping(conv.id)}
+                      formatLastMessageTime={formatLastMessageTime}
+                      onOpenChat={() => {
+                        setSelectedGroup(null);
+                        lastPushedGroupIdRef.current = null;
+                        setSelectedConversationId(conv.id);
+                        setSelectedOtherUser({
+                          id: otherUser.id,
+                          name: otherUser.name,
+                          display_name: otherUser.display_name,
+                          username: otherUser.username,
+                          imageUrl,
+                          is_online: otherUser.is_online,
+                          age: otherUser.age,
+                        });
+                      }}
+                      onPrefetch={() => {
+                        void prefetchDmMessages(queryClient, conv.id);
+                      }}
+                      onOpenActions={(event) => openConversationActions(event, conv.id, actionUser)}
+                    />
                   );
                 })}
               </div>
@@ -1536,6 +1663,7 @@ export function MessagesScreen() {
               currentUserId={currentUserId}
               onBack={() => handleLeaveChat(selectedConversationId!)}
               onOpenProfilePreview={setProfilePreviewUserId}
+              onConversationUpdated={() => void reload()}
             />
           ) : (
             <div className="flex flex-1 flex-col items-center justify-center text-center px-6 text-gray-500 dark:text-gray-400">
@@ -1639,33 +1767,35 @@ export function MessagesScreen() {
           popScreenRef.current();
         }}
         onOpenProfilePreview={setProfilePreviewUserId}
+        onConversationUpdated={() => void reload()}
       />,
       `chat-${selectedConversationId}`
     );
-  }, [selectedConversationId, selectedOtherUser, currentUserId, isDesktop, selectedGroup]);
+  }, [selectedConversationId, selectedOtherUser, currentUserId, isDesktop, selectedGroup, handleLeaveChat, reload]);
 
   useEffect(() => {
     if (isDesktop) return;
     if (!selectedGroup || !selectedChannelId || !currentUserId) {
-      lastPushedGroupIdRef.current = null;
+      if (!selectedChannelId) lastPushedGroupIdRef.current = null;
       return;
     }
-    if (lastPushedGroupIdRef.current === selectedGroup.id) return;
-    lastPushedGroupIdRef.current = selectedGroup.id;
+    const pushKey = `group-${selectedGroup.id}-${selectedChannelId}`;
+    if (lastPushedGroupIdRef.current === pushKey) return;
+    lastPushedGroupIdRef.current = pushKey;
     pushScreenRef.current(
       <GroupThreadScreen
         groupId={selectedGroup.id}
         groupName={selectedGroup.name}
         currentUserId={currentUserId}
         onBack={() => {
-          setSelectedGroup(null);
+          setSelectedChannelId(null);
           lastPushedGroupIdRef.current = null;
           popScreenRef.current();
         }}
         onLeave={loadGroupsData}
         onOpened={refreshGroupUnreadCounts}
       />,
-      `group-${selectedGroup.id}`
+      pushKey
     );
   }, [selectedGroup, selectedChannelId, currentUserId, isDesktop, loadGroupsData, refreshGroupUnreadCounts]);
 
@@ -1684,10 +1814,10 @@ export function MessagesScreen() {
       <>
       {renderLayers()}
 
-      {showCreateGroupModal && (
+      {showGroupActionModal && (
         <div
           className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
-          onClick={() => setShowCreateGroupModal(false)}
+          onClick={() => setShowGroupActionModal(false)}
           role="presentation"
         >
           <div
@@ -1695,15 +1825,15 @@ export function MessagesScreen() {
             onClick={(e) => e.stopPropagation()}
             role="dialog"
             aria-modal="true"
-            aria-labelledby="create-group-title"
+            aria-labelledby="group-action-title"
           >
             <div className="flex items-center justify-between gap-3">
-              <h2 id="create-group-title" className="text-lg font-semibold text-gray-900 dark:text-white">
-                {t('groups.createTitle')}
+              <h2 id="group-action-title" className="text-lg font-semibold text-gray-900 dark:text-white">
+                {groupActionTab === 'create' ? t('groups.createTitle') : t('groups.joinViaInvite')}
               </h2>
               <button
                 type="button"
-                onClick={() => setShowCreateGroupModal(false)}
+                onClick={() => setShowGroupActionModal(false)}
                 className="px-2 py-1 rounded-lg text-sm text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-white/10"
                 style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent', cursor: 'pointer' }}
               >
@@ -1711,88 +1841,145 @@ export function MessagesScreen() {
               </button>
             </div>
 
-            <div className="space-y-3">
-              <div>
-                <label htmlFor="create-group-name" className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
-                  {t('groups.nameLabel')}
-                </label>
-                <input
-                  id="create-group-name"
-                  value={createGroupName}
-                  onChange={(e) => setCreateGroupName(e.target.value)}
-                  placeholder={t('groups.namePlaceholder')}
-                  className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-black px-3 py-2 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                />
-              </div>
-              <div className="space-y-2">
-                <p className="text-xs font-medium text-gray-600 dark:text-gray-400">{t('groups.groupIconLabel')}</p>
-                <div className="flex items-center gap-3">
-                  <div className="w-14 h-14 rounded-2xl bg-gray-100 dark:bg-white/10 flex items-center justify-center overflow-hidden shrink-0 text-lg font-bold text-gray-500 dark:text-gray-400">
-                    {createGroupIconPreview ? (
-                      <img src={createGroupIconPreview} alt="" className="w-full h-full object-cover" />
-                    ) : (
-                      (createGroupName.trim().charAt(0) || '?').toUpperCase()
-                    )}
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    <button
-                      type="button"
-                      onClick={() => groupIconInputRef.current?.click()}
-                      className="rounded-lg border border-gray-300 dark:border-gray-600 px-3 py-1.5 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-white/5"
-                    >
-                      {t('groups.groupIconPick')}
-                    </button>
-                    {createGroupIconPreview ? (
-                      <button
-                        type="button"
-                        onClick={clearCreateGroupIcon}
-                        className="rounded-lg px-3 py-1.5 text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30"
-                      >
-                        {t('groups.groupIconRemove')}
-                      </button>
-                    ) : null}
-                  </div>
-                  <input
-                    ref={groupIconInputRef}
-                    type="file"
-                    accept="image/*"
-                    className="hidden"
-                    onChange={handleCreateGroupIconChange}
-                  />
-                </div>
-              </div>
-              <div>
-                <label htmlFor="create-group-desc" className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
-                  {t('groups.descriptionLabel')}
-                </label>
-                <textarea
-                  id="create-group-desc"
-                  value={createGroupDescription}
-                  onChange={(e) => setCreateGroupDescription(e.target.value)}
-                  placeholder={t('groups.descriptionPlaceholder')}
-                  rows={3}
-                  className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-black px-3 py-2 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
-                />
-              </div>
-              <label className="flex items-center gap-2 cursor-pointer text-sm text-gray-900 dark:text-white">
-                <input
-                  type="checkbox"
-                  checked={createGroupPrivate}
-                  onChange={(e) => setCreateGroupPrivate(e.target.checked)}
-                  className="rounded border-gray-300 dark:border-gray-600"
-                />
-                {t('groups.privateLabel')}
-              </label>
+            <div className="flex gap-2 rounded-xl bg-gray-100 dark:bg-black/40 p-1">
               <button
                 type="button"
-                onClick={handleCreateGroup}
-                disabled={creatingGroup}
-                className="w-full py-2.5 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700 disabled:opacity-60"
-                style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent', cursor: 'pointer' }}
+                onClick={() => setGroupActionTab('create')}
+                className={`flex-1 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
+                  groupActionTab === 'create'
+                    ? 'bg-indigo-600 text-white shadow-sm'
+                    : 'text-gray-600 dark:text-gray-300 hover:bg-white/60 dark:hover:bg-white/5'
+                }`}
               >
-                {creatingGroup ? t('groups.creating') : t('groups.createSubmit')}
+                {t('groups.groupActionTabCreate')}
+              </button>
+              <button
+                type="button"
+                onClick={() => setGroupActionTab('join')}
+                className={`flex-1 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
+                  groupActionTab === 'join'
+                    ? 'bg-indigo-600 text-white shadow-sm'
+                    : 'text-gray-600 dark:text-gray-300 hover:bg-white/60 dark:hover:bg-white/5'
+                }`}
+              >
+                {t('groups.groupActionTabJoin')}
               </button>
             </div>
+
+            {groupActionTab === 'create' ? (
+              <div className="space-y-3">
+                <div>
+                  <label htmlFor="create-group-name" className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+                    {t('groups.nameLabel')}
+                  </label>
+                  <input
+                    id="create-group-name"
+                    value={createGroupName}
+                    onChange={(e) => setCreateGroupName(e.target.value)}
+                    placeholder={t('groups.namePlaceholder')}
+                    className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-black px-3 py-2 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <p className="text-xs font-medium text-gray-600 dark:text-gray-400">{t('groups.groupIconLabel')}</p>
+                  <div className="flex items-center gap-3">
+                    <div className="w-14 h-14 rounded-2xl bg-gray-100 dark:bg-white/10 flex items-center justify-center overflow-hidden shrink-0 text-lg font-bold text-gray-500 dark:text-gray-400">
+                      {createGroupIconPreview ? (
+                        <img src={createGroupIconPreview} alt="" className="w-full h-full object-cover" />
+                      ) : (
+                        (createGroupName.trim().charAt(0) || '?').toUpperCase()
+                      )}
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => groupIconInputRef.current?.click()}
+                        className="rounded-lg border border-gray-300 dark:border-gray-600 px-3 py-1.5 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-white/5"
+                      >
+                        {t('groups.groupIconPick')}
+                      </button>
+                      {createGroupIconPreview ? (
+                        <button
+                          type="button"
+                          onClick={clearCreateGroupIcon}
+                          className="rounded-lg px-3 py-1.5 text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30"
+                        >
+                          {t('groups.groupIconRemove')}
+                        </button>
+                      ) : null}
+                    </div>
+                    <input
+                      ref={groupIconInputRef}
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={handleCreateGroupIconChange}
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label htmlFor="create-group-desc" className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+                    {t('groups.descriptionLabel')}
+                  </label>
+                  <textarea
+                    id="create-group-desc"
+                    value={createGroupDescription}
+                    onChange={(e) => setCreateGroupDescription(e.target.value)}
+                    placeholder={t('groups.descriptionPlaceholder')}
+                    rows={3}
+                    className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-black px-3 py-2 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
+                  />
+                </div>
+                <label className="flex items-center gap-2 cursor-pointer text-sm text-gray-900 dark:text-white">
+                  <input
+                    type="checkbox"
+                    checked={createGroupPrivate}
+                    onChange={(e) => setCreateGroupPrivate(e.target.checked)}
+                    className="rounded border-gray-300 dark:border-gray-600"
+                  />
+                  {t('groups.privateLabel')}
+                </label>
+                <button
+                  type="button"
+                  onClick={handleCreateGroup}
+                  disabled={creatingGroup}
+                  className="w-full py-2.5 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700 disabled:opacity-60"
+                  style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent', cursor: 'pointer' }}
+                >
+                  {creatingGroup ? t('groups.creating') : t('groups.createSubmit')}
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <p className="text-sm text-gray-600 dark:text-gray-300">{t('groups.inviteHint')}</p>
+                <div>
+                  <label htmlFor="join-group-code" className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+                    {t('groups.inviteCodeLabel')}
+                  </label>
+                  <input
+                    id="join-group-code"
+                    value={joinInviteInput}
+                    onChange={(e) => setJoinInviteInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        void handleJoinViaInvite();
+                      }
+                    }}
+                    placeholder={t('groups.inviteCodePlaceholder')}
+                    className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-black px-3 py-2 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                </div>
+                <button
+                  type="button"
+                  disabled={joiningViaInvite || !joinInviteInput.trim()}
+                  onClick={() => void handleJoinViaInvite()}
+                  className="w-full rounded-lg bg-indigo-600 text-white py-2.5 text-sm font-medium disabled:opacity-60"
+                  style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent', cursor: 'pointer' }}
+                >
+                  {joiningViaInvite ? t('groups.joining') : t('groups.join')}
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -1958,31 +2145,207 @@ export function MessagesScreen() {
         </div>
       )}
 
-      {showJoinInviteModal && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={() => setShowJoinInviteModal(false)}>
-          <div className="w-full max-w-md rounded-2xl border border-gray-200 dark:border-white/10 bg-white dark:bg-[#1e1f22] shadow-xl p-6 space-y-4" onClick={(e) => e.stopPropagation()}>
-            <h2 className="text-lg font-semibold text-gray-900 dark:text-white">{t('groups.joinViaInvite')}</h2>
-            <input
-              value={joinInviteInput}
-              onChange={(e) => setJoinInviteInput(e.target.value)}
-              placeholder={t('groups.inviteCodePlaceholder')}
-              className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-black px-3 py-2 text-sm text-gray-900 dark:text-white"
-            />
-            <button type="button" disabled={joiningViaInvite} onClick={() => void handleJoinViaInvite()} className="w-full rounded-lg bg-indigo-600 text-white py-2 text-sm font-medium disabled:opacity-60">{joiningViaInvite ? t('groups.creating') : t('groups.join')}</button>
-          </div>
-        </div>
-      )}
-
       {profilePreviewUserId && profilePreviewData && (
         <SharedProfileView
           profile={profilePreviewData}
+          conversationId={
+            conversations.find((conv) => conv.other_user.id === profilePreviewUserId)?.id
+          }
+          onOpenConversationActions={(event, conversationId) => {
+            openConversationActions(event, conversationId, {
+              id: profilePreviewData.id,
+              name: profilePreviewData.display_name || profilePreviewData.name,
+              username: profilePreviewData.username,
+              imageUrl: profilePreviewData.avatar_url || profilePreviewData.images?.[0],
+            });
+          }}
           onClose={() => {
             setProfilePreviewUserId(null);
             setProfilePreviewData(null);
           }}
         />
       )}
+
+      {conversationActionsMenu ? (
+        <ConversationActionsMenu
+          target={conversationActionsMenu}
+          onClose={() => setConversationActionsMenu(null)}
+          onViewProfile={() => {
+            setProfilePreviewUserId(conversationActionsMenu.otherUser.id);
+          }}
+          onRemoveFriend={() => handleRemoveFriend(conversationActionsMenu)}
+          onBlockUser={() => handleBlockFriendFromMenu(conversationActionsMenu)}
+        />
+      ) : null}
+
+      {groupActionsMenu ? (
+        <GroupActionsMenu
+          target={groupActionsMenu}
+          onClose={() => setGroupActionsMenu(null)}
+        />
+      ) : null}
       </>
     </GroupChannelNavContext.Provider>
+  );
+}
+
+interface GroupRailIconProps {
+  group: GroupRow;
+  isActive: boolean;
+  unread: number;
+  onSelect: () => void;
+  onPrefetch: () => void;
+  onOpenActions: (event: React.MouseEvent | React.PointerEvent) => void;
+}
+
+function GroupRailIcon({
+  group,
+  isActive,
+  unread,
+  onSelect,
+  onPrefetch,
+  onOpenActions,
+}: GroupRailIconProps) {
+  const longPress = useLongPress(onOpenActions);
+  const hue = groupAccentHue(group.id);
+  const initial = (group.name?.trim().charAt(0) || '?').toUpperCase();
+  const iconSrc = group.icon_url ? getOptimizedImageUrl(group.icon_url, 96) : null;
+
+  return (
+    <div className="relative shrink-0">
+      <button
+        type="button"
+        onPointerDown={onPrefetch}
+        onClick={onSelect}
+        onContextMenu={onOpenActions}
+        title={group.name}
+        className={`w-12 h-12 overflow-hidden flex items-center justify-center text-sm font-bold text-white transition-transform ${
+          isActive ? 'rounded-2xl ring-2 ring-white' : 'rounded-full hover:rounded-2xl'
+        }`}
+        style={{
+          background: iconSrc
+            ? undefined
+            : `linear-gradient(145deg, hsl(${hue}, 42%, 42%), hsl(${hue}, 45%, 32%))`,
+          touchAction: 'manipulation',
+          cursor: 'pointer',
+        }}
+        {...longPress}
+      >
+        {iconSrc ? (
+          <img src={iconSrc} alt="" className="w-full h-full object-cover" />
+        ) : (
+          initial
+        )}
+      </button>
+      <NotificationBadge count={unread} />
+    </div>
+  );
+}
+
+interface ServerTitleButtonProps {
+  name: string;
+  onOpenActions: (event: React.MouseEvent | React.PointerEvent) => void;
+}
+
+function ServerTitleButton({ name, onOpenActions }: ServerTitleButtonProps) {
+  const longPress = useLongPress(onOpenActions);
+
+  return (
+    <div
+      className="min-w-0 flex-1"
+      onContextMenu={onOpenActions}
+      {...longPress}
+    >
+      <h1 className="text-2xl font-bold text-gray-900 dark:text-white truncate select-none">
+        {name}
+      </h1>
+    </div>
+  );
+}
+
+interface ConversationListRowProps {
+  conv: Conversation;
+  otherUser: Conversation['other_user'];
+  unreadCount: number;
+  imageUrl?: string;
+  isSelected: boolean;
+  isTyping: boolean;
+  formatLastMessageTime: (iso: string) => string;
+  onOpenChat: () => void;
+  onPrefetch: () => void;
+  onOpenActions: (event: React.MouseEvent | React.PointerEvent) => void;
+}
+
+function ConversationListRow({
+  conv,
+  otherUser,
+  unreadCount,
+  imageUrl,
+  isSelected,
+  isTyping,
+  formatLastMessageTime,
+  onOpenChat,
+  onPrefetch,
+  onOpenActions,
+}: ConversationListRowProps) {
+  const { t } = useTranslation();
+  const longPress = useLongPress(onOpenActions);
+
+  return (
+    <div
+      className={`w-full transition-colors ${isSelected ? 'bg-gray-100 dark:bg-gray-900/90' : 'hover:bg-gray-50 dark:hover:bg-gray-900'}`}
+    >
+      <div className="flex items-center gap-3 p-4">
+        <div
+          className="relative shrink-0 touch-manipulation"
+          onContextMenu={onOpenActions}
+          {...longPress}
+        >
+          {imageUrl ? (
+            <img src={imageUrl} alt={otherUser.name} className="w-14 h-14 rounded-full object-cover" />
+          ) : (
+            <div className="w-14 h-14 rounded-full bg-gradient-to-br from-orange-400 via-pink-400 to-red-400 flex items-center justify-center text-white text-lg font-bold">
+              {otherUser.name?.charAt(0).toUpperCase() || '?'}
+            </div>
+          )}
+          {otherUser.is_online ? (
+            <div className="absolute bottom-0 right-0 w-4 h-4 bg-green-500 rounded-full border-2 border-white dark:border-black" />
+          ) : null}
+          <NotificationBadge count={unreadCount} borderClassName="border-white dark:border-black" />
+        </div>
+        <button
+          type="button"
+          onPointerDown={onPrefetch}
+          onClick={onOpenChat}
+          className="flex-1 min-w-0 text-left"
+          style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent', cursor: 'pointer' }}
+        >
+          <div className="flex items-center justify-between mb-1">
+            <h3 className="font-semibold text-gray-900 dark:text-white truncate">
+              {otherUser.name}
+              {otherUser.username ? (
+                <span className="text-gray-500 dark:text-gray-400 font-normal"> @{otherUser.username}</span>
+              ) : null}
+            </h3>
+            {conv.last_message_at ? (
+              <span className="text-xs text-gray-500 dark:text-gray-400 whitespace-nowrap ml-2">
+                {formatLastMessageTime(conv.last_message_at)}
+              </span>
+            ) : null}
+          </div>
+          <p
+            className={`text-sm truncate ${
+              isTyping
+                ? 'text-[#5865f2] italic'
+                : unreadCount > 0
+                  ? 'text-gray-900 dark:text-white font-medium'
+                  : 'text-gray-500 dark:text-gray-400'
+            }`}
+          >
+            {isTyping ? t('chat.typingPreview') : conv.last_message || t('chat.noMessagesYet')}
+          </p>
+        </button>
+      </div>
+    </div>
   );
 }

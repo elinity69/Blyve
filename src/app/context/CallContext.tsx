@@ -3,6 +3,7 @@
   useCallback,
   useContext,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -18,9 +19,9 @@ import { type CallMediaType, type JitsiHandle } from '../lib/jitsi';
 import { isJitsiCallProvider } from '../lib/callProvider';
 import { connectLiveKitRoom, toLiveKitCallError } from '../lib/livekitCall';
 import { toJitsiCallError, type JitsiJoinCredentials } from '../lib/jitsiCall';
-import { requestMicrophoneAccess, type MicrophoneAccessResult } from '../lib/mediaPermissions';
-import { markJitsiMicGranted } from '../lib/jitsiMicStorage';
-import { startLocalAudioMonitor, type LocalAudioMonitorHandle } from '../lib/callAudioMonitor';
+import { requestMicrophoneAccess, hasMicrophonePermission, type MicrophoneAccessResult } from '../lib/mediaPermissions';
+import { markJitsiMicGranted, shouldSkipJitsiPrejoin } from '../lib/jitsiMicStorage';
+import { mergeCallParticipants, filterJoinedStageParticipants } from '../lib/callParticipants';
 import { Room } from 'livekit-client';
 
 type CallUiState = 'idle' | 'calling' | 'incoming' | 'in_call' | 'ended';
@@ -46,6 +47,14 @@ function notifyMicrophoneAccessResult(micAccess: MicrophoneAccessResult) {
   if (micAccess.reason === 'denied') {
     toast.error(i18n.t('call.microphoneRequired'), i18n.t('call.microphoneDeniedHint'));
   }
+}
+
+async function ensureMicrophoneForCall(): Promise<void> {
+  if (shouldSkipJitsiPrejoin() || (await hasMicrophonePermission())) {
+    markJitsiMicGranted();
+    return;
+  }
+  notifyMicrophoneAccessResult(await requestMicrophoneAccess());
 }
 
 interface CallParty {
@@ -269,7 +278,6 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   const dominantSpeakerClearTimeoutRef = useRef<number | null>(null);
   const pendingVolumeRef = useRef<Map<string, number>>(new Map());
   const volumeDebounceRef = useRef<Map<string, number>>(new Map());
-  const localAudioMonitorRef = useRef<LocalAudioMonitorHandle | null>(null);
   const roomRef = useRef<Room | null>(null);
   const activeCallSessionIdRef = useRef<string | null>(null);
   const endedTimeoutRef = useRef<number | null>(null);
@@ -364,8 +372,6 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     userMutedManuallyRef.current = false;
     localJitsiParticipantIdRef.current = null;
     jitsiIdToDisplayNameRef.current.clear();
-    localAudioMonitorRef.current?.dispose();
-    localAudioMonitorRef.current = null;
     localSpeakingBroadcastRef.current = false;
     for (const timeoutId of remoteSpeakingTimeoutRef.current.values()) {
       window.clearTimeout(timeoutId);
@@ -522,8 +528,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
 
   const startDirectCall = useCallback(
     async (input: StartDirectCallInput) => {
-      const micAccess = await requestMicrophoneAccess();
-      notifyMicrophoneAccessResult(micAccess);
+      await ensureMicrophoneForCall();
 
       clearEndedState();
       setIncomingCall(null);
@@ -660,8 +665,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         return;
       }
 
-      const micAccess = await requestMicrophoneAccess();
-      notifyMicrophoneAccessResult(micAccess);
+      await ensureMicrophoneForCall();
 
       clearEndedState();
       setIncomingCall(null);
@@ -759,8 +763,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     const conversationId = incomingCall.conversationId;
     const caller = incomingCall.caller;
 
-    const micAccess = await requestMicrophoneAccess();
-    notifyMicrophoneAccessResult(micAccess);
+    await ensureMicrophoneForCall();
 
     try {
       if (isJitsiCallProvider()) {
@@ -790,7 +793,11 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       incomingSessionIdRef.current = null;
       stopIncomingSound();
       pushDebug(`incoming accepted session=${sessionId}`);
-      setCallDisplayMode('pip');
+      if (conversationId && embeddedHostRef.current === conversationId) {
+        setCallDisplayMode('embedded');
+      } else {
+        setCallDisplayMode('pip');
+      }
       await connectToCallMedia(sessionId, conversationId, 'audio');
     } catch (error: unknown) {
       joinInFlightRef.current = false;
@@ -1095,6 +1102,9 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   );
 
   const handleJitsiReady = useCallback((handle: JitsiHandle) => {
+    if (jitsiHandleRef.current && jitsiHandleRef.current !== handle) {
+      jitsiHandleRef.current.dispose();
+    }
     jitsiHandleRef.current = handle;
     userMutedManuallyRef.current = false;
     handle.setUserRequestedAudioMute(false);
@@ -1272,46 +1282,38 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
 
   const handleJitsiRemoteParticipantJoined = useCallback(
     (payload: { id?: string; displayName?: string }) => {
-      if (payload.id && payload.displayName) {
-        jitsiIdToDisplayNameRef.current.set(payload.id, payload.displayName);
+      const displayName = payload.displayName?.trim();
+      if (!displayName) return;
+
+      if (
+        payload.id &&
+        localJitsiParticipantIdRef.current &&
+        payload.id === localJitsiParticipantIdRef.current
+      ) {
+        return;
+      }
+
+      const localName = localIdentity?.trim().toLowerCase();
+      if (localName && displayName.toLowerCase() === localName) {
+        return;
+      }
+
+      if (payload.id) {
+        jitsiIdToDisplayNameRef.current.set(payload.id, displayName);
       }
 
       setActiveCall((prev) => {
-        if (!prev || !payload.displayName) return prev;
+        if (!prev) return prev;
 
-        const nextParticipants = prev.participants.map((participant) => {
-          const matches =
-            participant.id === payload.id ||
-            participant.name === payload.displayName ||
-            participant.name.toLowerCase() === payload.displayName?.toLowerCase();
-          if (!matches) return participant;
-          return {
-            ...participant,
-            jitsiParticipantId: payload.id || participant.jitsiParticipantId,
-          };
-        });
-
-        const alreadyKnown = nextParticipants.some(
-          (participant) =>
-            participant.id === payload.id ||
-            participant.name === payload.displayName ||
-            participant.name.toLowerCase() === payload.displayName?.toLowerCase()
-        );
-
-        if (alreadyKnown) {
-          return { ...prev, participants: nextParticipants };
-        }
+        const incoming: CallParty = {
+          id: payload.id || displayName,
+          name: displayName,
+          jitsiParticipantId: payload.id,
+        };
 
         return {
           ...prev,
-          participants: [
-            ...nextParticipants,
-            {
-              id: payload.id || payload.displayName,
-              name: payload.displayName,
-              jitsiParticipantId: payload.id,
-            },
-          ],
+          participants: mergeCallParticipants(prev.participants, incoming),
         };
       });
 
@@ -1322,7 +1324,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         );
       }
     },
-    []
+    [localIdentity]
   );
 
   const handleJitsiRemoteMediaChanged = useCallback(
@@ -1446,71 +1448,6 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     }, 2500);
     return () => window.clearInterval(intervalId);
   }, [isCameraEnabled, isScreenShareEnabled, state]);
-
-  useEffect(() => {
-    if (state !== 'in_call' || !isJitsiCallProvider()) {
-      localAudioMonitorRef.current?.dispose();
-      localAudioMonitorRef.current = null;
-      localSpeakingBroadcastRef.current = false;
-      return;
-    }
-
-    let cancelled = false;
-    void startLocalAudioMonitor({
-      onLevel: (levelDb, speaking) => {
-        if (cancelled) return;
-        if (isMutedRef.current) {
-          if (localSpeakingBroadcastRef.current) {
-            jitsiHandleRef.current?.broadcastSpeakingState(false, levelDb);
-            localSpeakingBroadcastRef.current = false;
-          }
-          setSpeakingParticipantId((prev) => (prev === '__local__' ? null : prev));
-          return;
-        }
-
-        setSpeakingParticipantId((prev) => {
-          if (speaking) return '__local__';
-          if (prev === '__local__') return null;
-          return prev;
-        });
-
-        const now = Date.now();
-        if (speaking) {
-          if (!localSpeakingBroadcastRef.current || now - lastSpeakingBroadcastAtRef.current > 200) {
-            jitsiHandleRef.current?.broadcastSpeakingState(true, levelDb);
-            localSpeakingBroadcastRef.current = true;
-            lastSpeakingBroadcastAtRef.current = now;
-          }
-        } else if (localSpeakingBroadcastRef.current) {
-          jitsiHandleRef.current?.broadcastSpeakingState(false, levelDb);
-          localSpeakingBroadcastRef.current = false;
-        }
-      },
-    }).then((handle) => {
-      if (cancelled) {
-        handle?.dispose();
-        return;
-      }
-      localAudioMonitorRef.current?.dispose();
-      localAudioMonitorRef.current = handle;
-    });
-
-    return () => {
-      cancelled = true;
-      localAudioMonitorRef.current?.dispose();
-      localAudioMonitorRef.current = null;
-      localSpeakingBroadcastRef.current = false;
-      lastSpeakingBroadcastAtRef.current = 0;
-      if (dominantSpeakerClearTimeoutRef.current) {
-        window.clearTimeout(dominantSpeakerClearTimeoutRef.current);
-        dominantSpeakerClearTimeoutRef.current = null;
-      }
-      for (const timeoutId of remoteSpeakingTimeoutRef.current.values()) {
-        window.clearTimeout(timeoutId);
-      }
-      remoteSpeakingTimeoutRef.current.clear();
-    };
-  }, [state]);
 
   useEffect(() => {
     let mounted = true;
@@ -1801,19 +1738,43 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     ]
   );
 
+  const embeddedJitsiActive =
+    callDisplayMode === 'embedded' &&
+    embeddedCallConversationId != null &&
+    jitsiJoinRequest?.conversationId != null &&
+    embeddedCallConversationId === jitsiJoinRequest.conversationId;
+
+  const prevEmbeddedJitsiActiveRef = useRef<boolean | null>(null);
+  useLayoutEffect(() => {
+    if (prevEmbeddedJitsiActiveRef.current === null) {
+      prevEmbeddedJitsiActiveRef.current = embeddedJitsiActive;
+      return;
+    }
+    if (
+      prevEmbeddedJitsiActiveRef.current !== embeddedJitsiActive &&
+      state === 'in_call' &&
+      jitsiJoinRequest
+    ) {
+      prevEmbeddedJitsiActiveRef.current = embeddedJitsiActive;
+      jitsiHandleRef.current?.dispose();
+      jitsiHandleRef.current = null;
+      setJitsiMountKey((key) => key + 1);
+    }
+  }, [embeddedJitsiActive, jitsiJoinRequest, state]);
+
   const showGlobalCallHost =
     isJitsiCallProvider() &&
     !!jitsiJoinRequest &&
     state === 'in_call' &&
+    !embeddedJitsiActive &&
     (callDisplayMode === 'pip' ||
       callDisplayMode === 'fullscreen' ||
-      jitsiJoinRequest.conversationId == null ||
-      embeddedCallConversationId !== jitsiJoinRequest.conversationId);
+      jitsiJoinRequest.conversationId == null);
 
   const floatingStageParticipants = useMemo((): CallStageParticipant[] => {
     const remotes = activeCall?.participants ?? [];
     const localName = localIdentity || 'Du';
-    return [
+    const participants: CallStageParticipant[] = [
       {
         id: '__local__',
         name: localName,
@@ -1826,7 +1787,8 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         jitsiParticipantId: participant.jitsiParticipantId,
       })),
     ];
-  }, [activeCall?.participants, localIdentity]);
+    return filterJoinedStageParticipants(participants, remoteParticipantCount);
+  }, [activeCall?.participants, localIdentity, remoteParticipantCount]);
 
   const value = useMemo<CallContextValue>(
     () => ({
@@ -1932,6 +1894,8 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       {showGlobalCallHost ? (
         <FloatingCallWidget
           displayMode={callDisplayMode === 'fullscreen' ? 'fullscreen' : 'pip'}
+          activeCall={activeCall}
+          localIdentity={localIdentity}
           sessionId={jitsiJoinRequest!.sessionId}
           inviteToken={jitsiJoinRequest!.inviteToken}
           callType={jitsiJoinRequest!.callType}

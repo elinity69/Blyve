@@ -13,6 +13,7 @@ import {
 import { useTranslation } from 'react-i18next';
 import { mountJitsiMeetingFromServerJoin, type CallMediaType, type JitsiHandle } from '../lib/jitsi';
 import { fetchJitsiJoinCredentials, type JitsiJoinCredentials } from '../lib/jitsiCall';
+import { shouldSkipJitsiPrejoin } from '../lib/jitsiMicStorage';
 
 export type JitsiCallLayout = 'embedded' | 'standalone' | 'pip';
 
@@ -308,6 +309,7 @@ export function JitsiCallView({
           userId,
           jwt: credentials.jwt,
           jitsiAppId: credentials.jitsiAppId,
+          skipInitialGUM: shouldSkipJitsiPrejoin(),
           onConnectionEstablished: () => callbacksRef.current.onConnectionEstablished?.(),
           onReadyToClose: () => callbacksRef.current.onReadyToClose?.(),
           onAudioMuteChanged: (muted) => callbacksRef.current.onAudioMuteChanged?.(muted),
@@ -429,19 +431,6 @@ export function JitsiCallView({
               <Expand className="h-4 w-4" />
             </button>
           ) : null}
-          {isPip && effectiveMediaActive && onExpandRequest ? (
-            <button
-              type="button"
-              onClick={(event) => {
-                event.stopPropagation();
-                onExpandRequest();
-              }}
-              className="absolute right-1.5 top-1.5 z-[40] flex h-7 w-7 items-center justify-center rounded-full border border-white/10 bg-[#1e1f22]/95 text-white shadow-lg transition-colors hover:bg-[#2f3136]"
-              aria-label={t('call.expandVideo')}
-            >
-              <Expand className="h-3.5 w-3.5" />
-            </button>
-          ) : null}
           {expanded && layout === 'embedded' ? (
             <button
               type="button"
@@ -455,26 +444,26 @@ export function JitsiCallView({
               <Minimize2 className="h-4 w-4" />
             </button>
           ) : null}
-          <div
-            data-call-controls
-            className={`pointer-events-none absolute inset-x-0 z-[30] flex justify-center ${
-              isPip ? 'bottom-1.5 px-1' : 'bottom-3 px-3'
-            } ${isPip && !forceShowControls ? 'opacity-0 transition-opacity group-hover:opacity-100' : ''}`}
-          >
-            <CallControlBar
-              live={live}
-              isMuted={isMuted}
-              isCameraEnabled={isCameraEnabled}
-              isScreenShareEnabled={isScreenShareEnabled}
-              mediaActive={false}
-              onToggleMute={onToggleMute}
-              onToggleCamera={onToggleCamera}
-              onToggleScreenShare={onToggleScreenShare}
-              onHangUp={onHangUp}
-              forceShowControls={forceShowControls}
-              compact={isPip || compactControls}
-            />
-          </div>
+          {!isPip ? (
+            <div
+              data-call-controls
+              className="pointer-events-none absolute inset-x-0 bottom-3 z-[30] flex justify-center px-3"
+            >
+              <CallControlBar
+                live={live}
+                isMuted={isMuted}
+                isCameraEnabled={isCameraEnabled}
+                isScreenShareEnabled={isScreenShareEnabled}
+                mediaActive={false}
+                onToggleMute={onToggleMute}
+                onToggleCamera={onToggleCamera}
+                onToggleScreenShare={onToggleScreenShare}
+                onHangUp={onHangUp}
+                forceShowControls={forceShowControls}
+                compact={compactControls}
+              />
+            </div>
+          ) : null}
         </>
       ) : null}
     </div>

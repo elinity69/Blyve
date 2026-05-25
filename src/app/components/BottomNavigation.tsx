@@ -1,5 +1,6 @@
 import { MessageCircle, UserCircle } from 'lucide-react';
 import { motion } from 'framer-motion';
+import { NotificationBadge } from './NotificationBadge';
 import { useTranslation } from 'react-i18next';
 import { useUnread } from '../context/UnreadContext';
 import { useState, useEffect } from 'react';
@@ -24,11 +25,7 @@ export function BottomNavigation({ activeTab, onTabChange }: BottomNavigationPro
       setCurrentConversationId(null);
     };
     
-    // Check localStorage on mount
-    const storedConversationId = localStorage.getItem('currentConversationId');
-    if (storedConversationId) {
-      setCurrentConversationId(storedConversationId);
-    }
+    // Rely on live conversation-opened/closed events only (no stale localStorage).
     
     window.addEventListener('conversation-opened', handleConversationOpened as EventListener);
     window.addEventListener('conversation-closed', handleConversationClosed);
@@ -44,18 +41,15 @@ export function BottomNavigation({ activeTab, onTabChange }: BottomNavigationPro
     ? totalUnread - unreadByConversation[currentConversationId]
     : totalUnread;
   
-  // Format: show "99+" if over 99, otherwise show the actual number
-  const unreadBadgeText = displayedUnread > 99 ? '99+' : displayedUnread > 0 ? displayedUnread.toString() : null;
-  
   const tabs = [
-    { id: 'messages' as const, icon: MessageCircle, label: t('nav.messages'), badge: unreadBadgeText },
+    { id: 'messages' as const, icon: MessageCircle, label: t('nav.messages') },
     { id: 'profile' as const, icon: UserCircle, label: t('nav.profile') },
   ];
 
   return (
     <div className="fixed bottom-0 left-0 right-0 bg-white/80 dark:bg-black/80 md:dark:bg-[#121212]/80 backdrop-blur-md border-t border-white/20 dark:border-white/5 z-50 shadow-lg">
       <div className="w-full flex justify-around items-center h-16">
-        {tabs.map(({ id, icon: Icon, label, badge }) => (
+        {tabs.map(({ id, icon: Icon, label }) => (
           <motion.button
             key={id}
             onClick={() => onTabChange(id)}
@@ -91,11 +85,12 @@ export function BottomNavigation({ activeTab, onTabChange }: BottomNavigationPro
                   transition: 'transform 0.3s ease',
                 }}
               />
-              {badge && (
-                <div className="absolute -top-1 -right-1 bg-gradient-to-r from-orange-500 to-pink-500 text-white text-xs font-bold rounded-full min-w-[20px] h-5 flex items-center justify-center px-1.5 shadow-lg border-2 border-white dark:border-black">
-                  {badge}
-                </div>
-              )}
+              {id === 'messages' ? (
+                <NotificationBadge
+                  count={displayedUnread}
+                  borderClassName="border-white dark:border-black"
+                />
+              ) : null}
             </div>
             {/* Text - ABSOLUT FIXIERT */}
             <span 

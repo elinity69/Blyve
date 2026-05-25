@@ -6,6 +6,7 @@ import { useCall } from '../context/CallContext';
 import { isJitsiCallProvider } from '../lib/callProvider';
 import { getOptimizedImageUrl } from '../lib/images';
 import { shouldSkipJitsiPrejoin } from '../lib/jitsiMicStorage';
+import { dedupeCallParticipants, filterJoinedStageParticipants } from '../lib/callParticipants';
 import { checkMicrophonePermission } from '../lib/mediaPermissions';
 import { CallParticipantStage } from './CallParticipantStage';
 import { JitsiCallView } from './JitsiCallView';
@@ -30,7 +31,7 @@ function connectionLabel(state: string, t: (key: string) => string) {
 
 export function ChatCallPanel({ conversationId, currentUserId }: ChatCallPanelProps) {
   const { t } = useTranslation();
-  const { currentUserProfile, conversations } = useAppData();
+  const { currentUserProfile } = useAppData();
   const {
     state,
     activeCall,
@@ -41,6 +42,7 @@ export function ChatCallPanel({ conversationId, currentUserId }: ChatCallPanelPr
     remoteVideoActive,
     remoteScreenShareActive,
     participantVolumes,
+    remoteParticipantCount,
     setParticipantVolume,
     toggleMute,
     toggleCamera,
@@ -94,18 +96,6 @@ export function ChatCallPanel({ conversationId, currentUserId }: ChatCallPanelPr
     }
   }, [isMuted]);
 
-  const conversationPeer = useMemo(() => {
-    const conversation = conversations.find((entry) => entry.id === conversationId);
-    if (!conversation?.other_user || conversation.other_user.id === currentUserId) return null;
-    const peer = conversation.other_user;
-    const name = peer.display_name || peer.name || peer.username || 'Participant';
-    return {
-      id: peer.id,
-      name,
-      avatarUrl: peer.imageUrl ? getOptimizedImageUrl(peer.imageUrl, 240) : undefined,
-    };
-  }, [conversationId, conversations, currentUserId]);
-
   const isActiveConversationCall =
     isCallForConversation(conversationId) && (state === 'calling' || state === 'in_call');
   const isEmbeddedCallHost =
@@ -140,16 +130,7 @@ export function ChatCallPanel({ conversationId, currentUserId }: ChatCallPanelPr
       },
     ];
 
-    const remoteParticipants = [...(activeCall?.participants ?? [])];
-    if (
-      conversationPeer &&
-      !remoteParticipants.some(
-        (participant) =>
-          participant.id === conversationPeer.id || participant.name === conversationPeer.name
-      )
-    ) {
-      remoteParticipants.push(conversationPeer);
-    }
+    const remoteParticipants = dedupeCallParticipants([...(activeCall?.participants ?? [])]);
 
     for (const participant of remoteParticipants) {
       participants.push({
@@ -161,8 +142,8 @@ export function ChatCallPanel({ conversationId, currentUserId }: ChatCallPanelPr
       });
     }
 
-    return participants;
-  }, [activeCall?.participants, conversationPeer, currentUserProfile, localIdentity, t]);
+    return filterJoinedStageParticipants(participants, remoteParticipantCount);
+  }, [activeCall?.participants, currentUserProfile, localIdentity, remoteParticipantCount, t]);
 
   if (!isActiveConversationCall) return null;
 

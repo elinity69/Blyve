@@ -47,6 +47,20 @@ const isDevMode =
   (typeof process !== 'undefined' && process.env?.NODE_ENV === 'development'); // Node/Webpack
 
 const INIT_TIMEOUT_MS = isDevMode ? Infinity : 15000;
+/** Auth calls always get a timeout — getUser/getSession can deadlock without one. */
+const AUTH_TIMEOUT_MS = 15000;
+
+async function resolveAuthUser(knownUser?: User | null): Promise<User | null> {
+  if (knownUser) {
+    return knownUser;
+  }
+  const { data: { session } } = await timeoutPromise(
+    supabase.auth.getSession(),
+    AUTH_TIMEOUT_MS,
+    'Timeout: Failed to resolve auth session'
+  );
+  return session?.user ?? null;
+}
 
 // Debug-Log für Dev-Modus-Erkennung
 if (isDevMode) {
@@ -55,11 +69,11 @@ if (isDevMode) {
 
 interface AppDataContextType {
   conversations: Conversation[];
-  refreshConversations: () => Promise<void>;
+  refreshConversations: (knownUser?: User | null) => Promise<void>;
   updateConversationOptimistically: (conversationId: string, lastMessage: string, lastMessageAt: string) => void;
   isLoadingConversations: boolean;
   currentUserProfile: any | null;
-  refreshCurrentUserProfile: () => Promise<void>;
+  refreshCurrentUserProfile: (knownUser?: User | null) => Promise<void>;
   isLoadingProfile: boolean;
 }
 
@@ -83,18 +97,12 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   const [isLoadingProfile, setIsLoadingProfile] = useState(true);
 
   // Load Current User Profile
-  const refreshCurrentUserProfile = useCallback(async () => {
+  const refreshCurrentUserProfile = useCallback(async (knownUser?: User | null) => {
     try {
       console.log('🔄 AppDataContext: Loading current user profile...');
-      console.log('🔄 Debug: [refreshCurrentUserProfile] Getting user...');
-      
-      // WICHTIG: Timeout-Sicherung für getUser()
-      const getUserPromise = supabase.auth.getUser();
-      const { data: { user: sessionUser } } = await timeoutPromise(
-        getUserPromise,
-        10000, // 10 Sekunden für getUser
-        'Timeout: Failed to get user session for profile'
-      );
+      console.log('🔄 Debug: [refreshCurrentUserProfile] Resolving user...');
+
+      const sessionUser = await resolveAuthUser(knownUser ?? undefined);
       console.log('✅ Debug: [refreshCurrentUserProfile] User retrieved:', sessionUser?.id || 'null');
       
       if (!sessionUser) {
@@ -166,7 +174,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       console.error('❌ Debug: [refreshCurrentUserProfile] Error loading profile:', error);
       // Auch bei Fehler: Versuche zumindest ein minimales Profil mit Email zu erstellen
       try {
-        const { data: { user: sessionUser } } = await supabase.auth.getUser();
+        const sessionUser = await resolveAuthUser(knownUser ?? undefined);
         if (sessionUser?.email) {
           console.log('🔧 AppDataContext: Creating fallback profile with email from session');
           setCurrentUserProfile({ id: sessionUser.id, email: sessionUser.email });
@@ -185,19 +193,13 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   }, []);
 
   // Load Conversations
-  const refreshConversations = useCallback(async () => {
+  const refreshConversations = useCallback(async (knownUser?: User | null) => {
     try {
       setIsLoadingConversations(true);
       console.log('🔄 AppDataContext: Loading conversations...');
-      console.log('🔄 Debug: [refreshConversations] Getting user...');
-      
-      // WICHTIG: Timeout-Sicherung für getUser()
-      const getUserPromise = supabase.auth.getUser();
-      const { data: { user } } = await timeoutPromise(
-        getUserPromise,
-        10000, // 10 Sekunden für getUser
-        'Timeout: Failed to get user session for conversations'
-      );
+      console.log('🔄 Debug: [refreshConversations] Resolving user...');
+
+      const user = await resolveAuthUser(knownUser ?? undefined);
       console.log('✅ Debug: [refreshConversations] User retrieved:', user?.id || 'null');
       
       if (!user) {
@@ -411,11 +413,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     console.log('🔄 Debug: [loadUserData] Starting - resolving user...');
     let user = knownUser;
     if (user === undefined) {
-      const getUserPromise = supabase.auth.getUser();
-      const { data: { user: fetchedUser } } = isDevMode
-        ? await getUserPromise
-        : await timeoutPromise(getUserPromise, 10000, 'Timeout: supabase.auth.getUser()');
-      user = fetchedUser;
+      user = await resolveAuthUser();
     }
     console.log('✅ Debug: [loadUserData] User retrieved:', user?.id || 'null');
     const currentUserId = user?.id || null;
@@ -460,12 +458,12 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
         
         console.log('🔄 Debug: [loadUserData] Starting parallel data load...');
         console.log('🔄 Debug: [loadUserData] Calling refreshCurrentUserProfile...');
-        const profilePromise = refreshCurrentUserProfile().catch(err => {
+        const profilePromise = refreshCurrentUserProfile(user).catch(err => {
           console.error('❌ AppDataContext: Error loading profile:', err);
         });
         
         console.log('🔄 Debug: [loadUserData] Calling refreshConversations...');
-        const conversationsPromise = refreshConversations().catch(err => {
+        const conversationsPromise = refreshConversations(user).catch(err => {
           console.error('❌ AppDataContext: Error loading conversations:', err);
         });
         
@@ -571,18 +569,11 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
         // WICHTIG: Timeout nur in Production, im Dev-Modus deaktiviert
         const sessionPromise = supabase.auth.getSession();
         
-        // Sicherstellen, dass im Dev-Modus wirklich kein Timeout angewendet wird
-        let sessionResult;
-        if (isDevMode) {
-          console.log('🐛 Dev-Modus: getSession() ohne Timeout');
-          sessionResult = await sessionPromise;
-      } else {
-          sessionResult = await timeoutPromise(
-            sessionPromise,
-            10000, // 10 Sekunden für Session Check
-            'Timeout: Failed to get session during init'
-          );
-        }
+        const sessionResult = await timeoutPromise(
+          sessionPromise,
+          AUTH_TIMEOUT_MS,
+          'Timeout: Failed to get session during init'
+        );
         
         const { data: { session } } = sessionResult;
         
@@ -658,7 +649,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     let mounted = true;
     
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       console.log('🏁 Debug: [onAuthStateChange] Event received:', {
         event,
         userId: session?.user?.id || 'null',
@@ -688,7 +679,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
             console.log('🔄 AppDataContext: Token refreshed, updating API client...');
             api.setAccessToken(session.access_token);
           }
-        } else if (event === 'SIGNED_IN') {
+        } else if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION') {
           if (session?.user && mounted) {
             const newUserId = session.user.id;
             const isSameUser = currentUserIdRef.current === newUserId;
@@ -699,11 +690,13 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
             }
             
             // SMART CHECK: Nur komplett neu laden, wenn es ein NEUER User ist
-            if (isSameUser) {
+            if (isSameUser && isLoadingRef.current) {
+              console.log('🔄 AppDataContext: Same user, load already in progress — skipping');
+            } else if (isSameUser) {
               console.log('🔄 AppDataContext: Same user signed in (token update), skipping full reload');
             } else {
               // Neuer User - komplett neu laden (defer: vermeidet Supabase-Deadlock mit getSession)
-              console.log('✅ AppDataContext: New user signed in, loading data...');
+              console.log('✅ AppDataContext: User session ready, loading data...', event);
               currentUserIdRef.current = newUserId;
               window.setTimeout(() => {
                 if (!mounted) return;

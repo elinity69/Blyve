@@ -1,10 +1,15 @@
-import React, { useCallback, useContext, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import React, { useContext, useEffect, useLayoutEffect, useRef, useState, useCallback } from 'react';
 import { ArrowLeft, Send, Loader2 } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useTranslation } from 'react-i18next';
+import { useQuery } from '@tanstack/react-query';
 import { api } from '../lib/api';
 import { supabase } from '../lib/supabase';
 import { toast } from '../lib/toast';
+import {
+  fetchGroupChannelMessages,
+  groupMessagesQueryKey,
+} from '../lib/chatMessages';
 import { GroupChannelNavContext } from '../context/GroupChannelNavContext';
 import { useAppData } from '../context/AppDataContext';
 import { getOptimizedImageUrl } from '../lib/images';
@@ -12,6 +17,34 @@ import { useIsMdUp } from './ui/use-mobile';
 import { useGroupTyping } from '../hooks/useGroupTyping';
 import { formatGroupTypingLabel } from '../lib/groupTypingBroadcast';
 import { TypingBubble } from './TypingBubble';
+import { NotificationManager } from '../lib/notifications';
+import { MessageReplyComposerBar } from './chat/MessageReplyComposerBar';
+import { MessageReplyQuote } from './chat/MessageReplyQuote';
+import { MessageRowReplyWrapper } from './chat/MessageRowReplyWrapper';
+import {
+  buildReplyTarget,
+  resolveReplyQuote,
+  type ReplyTarget,
+} from '../lib/messageReply';
+import {
+  CHAT_MESSAGE_BUBBLE_TEXT_CLASS,
+  CHAT_MESSAGE_BUBBLE_TEXT_GROUPED_CLASS,
+  CHAT_MESSAGE_LIST_CLASS,
+  CHAT_MESSAGE_ROW_CLASS,
+  CHAT_MESSAGE_ROW_GROUPED_CLASS,
+  CHAT_MESSAGE_ROW_INNER_CLASS,
+  CHAT_MESSAGE_ROW_INNER_GROUPED_CLASS,
+} from './chat/chatMessageStyles';
+import { MessageRowAvatarSlot } from './chat/MessageRowAvatarSlot';
+import { MessageGroupHeader } from './chat/MessageGroupHeader';
+import { MessageBubble } from './chat/MessageBubble';
+import {
+  formatMessageTime,
+  getMessageGroupPosition,
+  isMessageBundled,
+  isMessageGroupEnd,
+  isMessageGroupStart,
+} from '../lib/messageGrouping';
 
 function groupAccentHue(groupId: string): number {
   let h = 0;
@@ -27,6 +60,7 @@ export interface GroupMessageRow {
   content: string;
   created_at: string;
   updated_at?: string;
+  reply_to_message_id?: string | null;
   sender?: {
     id: string;
     username?: string | null;
@@ -72,44 +106,101 @@ export function GroupThreadScreen({
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [input, setInput] = useState('');
+  const [replyTarget, setReplyTarget] = useState<ReplyTarget | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const typingIndicatorRef = useRef<HTMLDivElement>(null);
+  const [typingClearance, setTypingClearance] = useState(0);
   const onOpenedRef = useRef(onOpened);
   onOpenedRef.current = onOpened;
+  const prevChannelIdRef = useRef<string | null>(null);
+  const loadErrorToastRef = useRef<string | null>(null);
 
-  const loadMessages = useCallback(async () => {
-    if (!channelId) return;
-    const data = await api.getGroupMessages(groupId, channelId);
-    setMessages((data?.messages || []) as GroupMessageRow[]);
-  }, [groupId, channelId]);
+  const {
+    data: fetchedMessages,
+    isPending,
+    error: queryError,
+    refetch,
+  } = useQuery({
+    queryKey: groupMessagesQueryKey(groupId, channelId ?? ''),
+    enabled: !!channelId,
+    queryFn: () => fetchGroupChannelMessages(groupId, channelId!) as Promise<GroupMessageRow[]>,
+    staleTime: 60_000,
+    refetchOnWindowFocus: true,
+  });
 
   useEffect(() => {
     if (!channelId) {
+      prevChannelIdRef.current = null;
       setMessages([]);
       setLoading(false);
       return;
     }
-    let cancelled = false;
-    (async () => {
-      try {
-        setLoading(true);
-        await loadMessages();
-        if (!cancelled) {
-          localStorage.setItem(`blyve_group_channel_last_read_${channelId}`, new Date().toISOString());
-          onOpenedRef.current?.();
-        }
-      } catch (e: any) {
-        if (!cancelled) {
-          toast.error(t('groups.loadMessagesFailedTitle'), e?.message || t('groups.loadMessagesFailedBody'));
-        }
-      } finally {
-        if (!cancelled) setLoading(false);
+
+    const channelChanged = prevChannelIdRef.current !== channelId;
+    if (channelChanged) {
+      prevChannelIdRef.current = channelId;
+      setMessages([]);
+    }
+
+    if (isPending) {
+      setLoading(true);
+      return;
+    }
+
+    setLoading(false);
+
+    if (queryError) {
+      const errorKey = `${channelId}:${(queryError as Error).message}`;
+      if (loadErrorToastRef.current !== errorKey) {
+        loadErrorToastRef.current = errorKey;
+        toast.error(
+          t('groups.loadMessagesFailedTitle'),
+          (queryError as Error).message || t('groups.loadMessagesFailedBody')
+        );
       }
-    })();
-    return () => {
-      cancelled = true;
+      return;
+    }
+
+    loadErrorToastRef.current = null;
+
+    if (fetchedMessages) {
+      setMessages(fetchedMessages);
+      void api.markGroupChannelRead(channelId).then(() => {
+        onOpenedRef.current?.();
+      });
+    }
+  }, [channelId, fetchedMessages, isPending, queryError, t]);
+
+  useEffect(() => {
+    if (!channelId) return;
+
+    const refetchMessages = () => {
+      void refetch();
     };
-  }, [groupId, channelId, loadMessages, t]);
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        refetchMessages();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('focus', refetchMessages);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('focus', refetchMessages);
+    };
+  }, [channelId, refetch]);
+
+  useEffect(() => {
+    if (!channelId) return;
+    NotificationManager.setActiveGroupChannelId(channelId);
+    return () => {
+      NotificationManager.setActiveGroupChannelId(null);
+    };
+  }, [channelId]);
 
   useEffect(() => {
     if (!channelId) return;
@@ -129,8 +220,9 @@ export function GroupThreadScreen({
             if (prev.some((message) => message.id === row.id)) return prev;
             return [...prev, row];
           });
-          localStorage.setItem(`blyve_group_channel_last_read_${channelId}`, new Date().toISOString());
-          onOpenedRef.current?.();
+          void api.markGroupChannelRead(channelId).then(() => {
+            onOpenedRef.current?.();
+          });
         }
       )
       .subscribe();
@@ -139,9 +231,9 @@ export function GroupThreadScreen({
     };
   }, [channelId]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const el = scrollRef.current;
-    if (!el) return;
+    if (!el || loading) return;
     el.scrollTop = el.scrollHeight;
   }, [messages, loading]);
 
@@ -153,19 +245,27 @@ export function GroupThreadScreen({
     return () => cancelAnimationFrame(id);
   }, [channelId, isMdUp]);
 
-  const handleLeave = async () => {
-    try {
-      await api.leaveGroup(groupId);
-      toast.success(t('groups.leftGroup'));
-      await onLeave?.();
-      onBack();
-    } catch (e: any) {
-      toast.error(t('groups.leaveFailedTitle'), e?.message || t('groups.leaveFailedBody'));
-    }
-  };
+  const meDisplay = currentUserProfile?.display_name || currentUserProfile?.name || t('chat.you');
+  const meAvatarUrl =
+    currentUserProfile?.avatar_url ||
+    currentUserProfile?.images?.[0] ||
+    null;
 
-  const meDisplay = currentUserProfile?.display_name || currentUserProfile?.name || 'Du';
-  const meHandle = currentUserProfile?.username as string | undefined;
+  const getSenderLabel = useCallback(
+    (senderId: string, message?: GroupMessageRow) => {
+      if (senderId === currentUserId) return meDisplay;
+      return (
+        message?.sender?.display_name ||
+        message?.sender?.username ||
+        t('groups.unknownSender')
+      );
+    },
+    [currentUserId, meDisplay, t]
+  );
+
+  useEffect(() => {
+    setReplyTarget(null);
+  }, [channelId]);
   const isGhostMode = !!currentUserProfile?.ghost_mode;
   const { typers, sendTyping } = useGroupTyping(
     groupId,
@@ -179,6 +279,52 @@ export function GroupThreadScreen({
     t
   );
 
+  useLayoutEffect(() => {
+    const indicator = typingIndicatorRef.current;
+    const isTyping = typers.length > 0;
+
+    if (!isTyping) {
+      setTypingClearance(0);
+      return;
+    }
+
+    const measure = () => {
+      const el = typingIndicatorRef.current;
+      const height = el?.offsetHeight ?? 40;
+      setTypingClearance(height + 8);
+    };
+    measure();
+    requestAnimationFrame(measure);
+
+    let observer: ResizeObserver | undefined;
+    if (indicator) {
+      observer = new ResizeObserver(measure);
+      observer.observe(indicator);
+    }
+
+    return () => observer?.disconnect();
+  }, [typers.length, typingLabel]);
+
+  useLayoutEffect(() => {
+    if (typers.length === 0 || typingClearance <= 0) return;
+    const el = scrollRef.current;
+    if (!el) return;
+    requestAnimationFrame(() => {
+      el.scrollTop = el.scrollHeight;
+    });
+  }, [typers.length, typingClearance]);
+
+  const handleLeave = async () => {
+    try {
+      await api.leaveGroup(groupId);
+      toast.success(t('groups.leftGroup'));
+      await onLeave?.();
+      onBack();
+    } catch (e: any) {
+      toast.error(t('groups.leaveFailedTitle'), e?.message || t('groups.leaveFailedBody'));
+    }
+  };
+
   useEffect(() => {
     if (!channelId) return;
     if (input.trim().length > 0) {
@@ -191,17 +337,21 @@ export function GroupThreadScreen({
   const handleSend = async () => {
     const text = input.trim();
     if (!text || sending || !channelId) return;
+    const activeReply = replyTarget;
+    const replyToId = activeReply?.id ?? null;
     try {
       setSending(true);
       void sendTyping(false);
-      const data = await api.sendGroupMessage(groupId, text, channelId);
+      const data = await api.sendGroupMessage(groupId, text, channelId, replyToId);
       setInput('');
+      setReplyTarget(null);
       if (data?.message) {
         setMessages((prev) => [...prev, data.message as GroupMessageRow]);
       } else {
-        await loadMessages();
+        await refetch();
       }
     } catch (e: any) {
+      if (activeReply) setReplyTarget(activeReply);
       toast.error(t('groups.sendFailedTitle'), e?.message || t('groups.sendFailedBody'));
     } finally {
       setSending(false);
@@ -234,7 +384,7 @@ export function GroupThreadScreen({
       : 'en-US';
 
   return (
-    <div className="relative flex h-full min-h-0 w-full flex-col bg-white pb-16 dark:bg-black md:pb-0 md:dark:bg-[#121212]">
+    <div className="relative flex h-full min-h-0 w-full flex-col bg-white dark:bg-black md:dark:bg-[#121212]">
       {/* Header — aligned with ChatScreen */}
       <div
         className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-gray-800 bg-white dark:bg-black md:dark:bg-[#121212] shrink-0"
@@ -281,103 +431,105 @@ export function GroupThreadScreen({
       {/* Messages — same spacing / bubble style as ChatScreen */}
       <div
         ref={scrollRef}
-        className="flex-1 overflow-y-auto px-4 py-4 bg-white dark:bg-black md:dark:bg-[#121212] min-h-0"
+        className={`${CHAT_MESSAGE_LIST_CLASS} ${typingClearance > 0 ? '' : 'pb-1'}`}
         style={{
           WebkitOverflowScrolling: 'touch',
-          paddingBottom: '12px',
+          ...(typingClearance > 0 ? { paddingBottom: typingClearance } : {}),
         }}
       >
         {loading ? (
-          <div className="flex items-center justify-center h-full min-h-[200px]">
+          <div className="flex h-full min-h-[200px] items-center justify-center">
             <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
           </div>
         ) : messages.length === 0 ? (
-          <div className="flex items-center justify-center h-full min-h-[200px]">
+          <div className="flex h-full min-h-[200px] items-center justify-center">
             <p className="text-gray-500 dark:text-gray-400 text-center px-4">{t('groups.noMessagesYet')}</p>
           </div>
         ) : (
-          messages.map((m) => {
+          messages.map((m, index) => {
             const mine = m.sender_id === currentUserId;
+            const prev = index > 0 ? messages[index - 1] : null;
+            const next = index < messages.length - 1 ? messages[index + 1] : null;
+            const isGroupStart = isMessageGroupStart(m, prev);
+            const isGroupEnd = isMessageGroupEnd(m, next);
+            const isBundled = isMessageBundled(m, prev, next);
+            const groupPosition = getMessageGroupPosition(m, prev, next);
             const otherDisplay = m.sender?.display_name || m.sender?.username || t('groups.unknownSender');
-            const otherHandle = m.sender?.username;
-            const avatarUrl = m.sender?.avatar_url
-              ? getOptimizedImageUrl(m.sender.avatar_url, 80)
-              : null;
+            const senderLabel = mine ? meDisplay : otherDisplay;
+            const messageTime = formatMessageTime(
+              m.created_at,
+              timeLocale,
+              timeLocale.startsWith('en')
+            );
+            const replyQuote = resolveReplyQuote(
+              m.reply_to_message_id,
+              messages,
+              (senderId, parent) => getSenderLabel(senderId, parent),
+              t('chat.originalMessageUnavailable')
+            );
             return (
               <div
                 key={m.id}
-                style={{
-                  width: '100%',
-                  margin: '4px 0',
-                  padding: '0 12px',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  alignItems: mine ? 'flex-end' : 'flex-start',
-                }}
+                data-message-id={m.id}
+                className={isGroupStart ? CHAT_MESSAGE_ROW_CLASS : CHAT_MESSAGE_ROW_GROUPED_CLASS}
               >
-                {!mine && (
-                  <div
-                    className="max-w-[70%] text-[11px] text-gray-600 dark:text-gray-400 mb-0.5 px-1"
-                    style={{ alignSelf: 'flex-start' }}
-                  >
-                    <strong className="text-gray-800 dark:text-gray-200 font-semibold">{otherDisplay}</strong>
-                    {otherHandle ? (
-                      <span className="text-gray-500 dark:text-gray-500"> @{otherHandle}</span>
-                    ) : null}
-                  </div>
-                )}
-                {mine && (
-                  <div
-                    className="max-w-[70%] text-[11px] text-gray-600 dark:text-gray-400 mb-0.5 px-1"
-                    style={{ alignSelf: 'flex-end', textAlign: 'right' }}
-                  >
-                    <strong className="text-gray-800 dark:text-gray-200 font-semibold">{meDisplay}</strong>
-                    {meHandle ? (
-                      <span className="text-gray-500 dark:text-gray-500"> @{meHandle}</span>
-                    ) : null}
-                  </div>
-                )}
-                <div
-                  className={`max-w-[70%] flex gap-2 ${mine ? 'flex-row-reverse' : 'flex-row'}`}
+                <MessageRowReplyWrapper
+                  isMe={mine}
+                  onReply={() =>
+                    setReplyTarget(buildReplyTarget(m, getSenderLabel(m.sender_id, m)))
+                  }
                 >
-                  {!mine && (
-                    <div className="w-8 h-8 rounded-full overflow-hidden shrink-0 bg-gray-200 dark:bg-gray-700 flex items-center justify-center text-xs font-bold text-gray-600 dark:text-gray-300">
-                      {avatarUrl ? (
-                        <img src={avatarUrl} alt="" className="w-full h-full object-cover" />
-                      ) : (
-                        otherDisplay.charAt(0).toUpperCase()
-                      )}
-                    </div>
-                  )}
-                  <div
-                    className={`min-w-0 px-4 py-2 rounded-2xl ${
-                      mine
-                        ? 'bg-gradient-to-br from-orange-500 via-red-500 to-pink-500 text-white'
-                        : 'bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-white'
-                    }`}
-                  >
-                    <p className="text-sm whitespace-pre-wrap break-words">{m.content}</p>
-                    <p
-                      className={`text-xs mt-1 ${mine ? 'text-white/70' : 'text-gray-500 dark:text-gray-400'}`}
+                  <div className={`flex w-full flex-col ${mine ? 'items-end' : 'items-start'}`}>
+                    <div
+                      className={`${
+                        isBundled ? CHAT_MESSAGE_ROW_INNER_GROUPED_CLASS : CHAT_MESSAGE_ROW_INNER_CLASS
+                      } ${mine ? 'flex-row-reverse' : 'flex-row'}`}
                     >
-                      {new Date(m.created_at).toLocaleTimeString(timeLocale, {
-                        hour: '2-digit',
-                        minute: '2-digit',
-                      })}
-                    </p>
+                      <MessageRowAvatarSlot
+                        visible={isGroupEnd}
+                        imageUrl={mine ? meAvatarUrl : m.sender?.avatar_url}
+                        label={senderLabel}
+                      />
+                      <div className={`min-w-0 flex-1 flex flex-col ${mine ? 'items-end' : 'items-start'}`}>
+                        {isGroupStart && (
+                          <MessageGroupHeader
+                            name={senderLabel}
+                            align={mine ? 'end' : 'start'}
+                          />
+                        )}
+                        <MessageBubble
+                          position={groupPosition}
+                          isMe={mine}
+                          time={messageTime}
+                          isRead={false}
+                        >
+                          {replyQuote ? <MessageReplyQuote quote={replyQuote} isMe={mine} /> : null}
+                          <p
+                            className={
+                              isBundled
+                                ? CHAT_MESSAGE_BUBBLE_TEXT_GROUPED_CLASS
+                                : CHAT_MESSAGE_BUBBLE_TEXT_CLASS
+                            }
+                          >
+                            {m.content}
+                          </p>
+                        </MessageBubble>
+                      </div>
+                    </div>
                   </div>
-                </div>
+                </MessageRowReplyWrapper>
               </div>
             );
           })
         )}
       </div>
 
-      {/* Input — aligned with ChatScreen */}
-      <div className="relative z-20 shrink-0 border-t border-gray-200 bg-white px-4 py-3 dark:border-gray-800 dark:bg-black md:dark:bg-[#121212]">
+      {/* Input — in-flow at bottom; scroll area ends directly above */}
+      <div className="relative z-20 shrink-0 border-t border-gray-200 bg-white px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] dark:border-gray-800 dark:bg-black md:dark:bg-[#121212]">
         <AnimatePresence>
           {typers.length > 0 ? (
             <motion.div
+              ref={typingIndicatorRef}
               initial={{ opacity: 0, y: 4 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: 4 }}
@@ -392,6 +544,9 @@ export function GroupThreadScreen({
             </motion.div>
           ) : null}
         </AnimatePresence>
+        {replyTarget ? (
+          <MessageReplyComposerBar target={replyTarget} onCancel={() => setReplyTarget(null)} />
+        ) : null}
         <div className="flex w-full items-center gap-2">
           <input
             ref={inputRef}

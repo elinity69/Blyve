@@ -6,6 +6,7 @@ import { supabase } from '../lib/supabase';
 import { getOptimizedImageUrl } from '../lib/images';
 import { toast } from '../lib/toast';
 import { useTranslation } from 'react-i18next';
+import { resolveDarkMode, syncThemeFromProfile } from '../lib/theme';
 // NavigationStack is handled by parent - no need to import
 import { NotificationManager } from '../lib/notifications';
 import {
@@ -32,7 +33,11 @@ export function SettingsScreen({ onSignOut, onBack, previousScreen }: SettingsSc
   const [ghostMode, setGhostMode] = useState(false);
   const [updatingGhostMode, setUpdatingGhostMode] = useState(false);
   const [deletingAccount, setDeletingAccount] = useState(false);
-  const [darkMode, setDarkMode] = useState(false);
+  const [darkMode, setDarkMode] = useState(() =>
+    typeof document !== 'undefined'
+      ? document.documentElement.classList.contains('dark')
+      : true
+  );
   const [updatingDarkMode, setUpdatingDarkMode] = useState(false);
 
   // Track Dark Mode
@@ -78,7 +83,7 @@ export function SettingsScreen({ onSignOut, onBack, previousScreen }: SettingsSc
         };
         setProfile(mappedProfile);
         setGhostMode(profileData.ghost_mode || false);
-        setDarkMode(profileData.dark_mode || false);
+        setDarkMode(resolveDarkMode(profileData.dark_mode));
         
       }
     } catch (e) {
@@ -99,9 +104,7 @@ export function SettingsScreen({ onSignOut, onBack, previousScreen }: SettingsSc
 
   const handleDeleteAccount = async () => {
     if (deletingAccount) return;
-    const confirmed = window.confirm(
-      'Bist du sicher? Dieser Vorgang löscht dein Konto unwiderruflich.'
-    );
+    const confirmed = window.confirm(t('profile.deleteConfirm'));
     if (!confirmed) return;
 
     setDeletingAccount(true);
@@ -111,7 +114,7 @@ export function SettingsScreen({ onSignOut, onBack, previousScreen }: SettingsSc
       onSignOut();
     } catch (error: any) {
       console.error('Failed to delete account:', error);
-      toast.error('Fehler', error.message || 'Failed to delete account. Please try again.');
+      toast.error(t('profile.error'), error.message || t('profile.failedToDelete'));
     } finally {
       setDeletingAccount(false);
     }
@@ -141,7 +144,7 @@ export function SettingsScreen({ onSignOut, onBack, previousScreen }: SettingsSc
       setProfile({ ...profile, ghostMode: newGhostMode, ghost_mode: newGhostMode });
     } catch (error: any) {
       console.error('Failed to update ghost mode:', error);
-      toast.error('Fehler', error.message || 'Fehler beim Aktualisieren des Ghost Mode. Bitte versuche es erneut.');
+      toast.error(t('profile.error'), error.message || t('profile.failedToUpdateGhostMode'));
     } finally {
       setUpdatingGhostMode(false);
     }
@@ -278,14 +281,10 @@ export function SettingsScreen({ onSignOut, onBack, previousScreen }: SettingsSc
                         .eq('id', user.id);
                       if (error) throw error;
                       setDarkMode(newDarkMode);
-                      if (newDarkMode) {
-                        document.documentElement.classList.add('dark');
-                      } else {
-                        document.documentElement.classList.remove('dark');
-                      }
+                      syncThemeFromProfile(user.id, newDarkMode);
                     } catch (error: any) {
                       console.error('Failed to update dark mode:', error);
-                      toast.error('Fehler', error.message || 'Failed to update dark mode.');
+                      toast.error(t('profile.error'), error.message || t('profile.failedToUpdate'));
                     } finally {
                       setUpdatingDarkMode(false);
                     }

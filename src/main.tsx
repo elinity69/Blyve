@@ -3,6 +3,9 @@
   import App from "./app/App.tsx";
   import "./styles/index.css";
   import "./lib/i18n"; // Initialize i18n before App renders
+  import { applyBootTheme } from "./app/lib/theme";
+
+  applyBootTheme();
 
   createRoot(document.getElementById("root")!).render(<App />);
   // Service worker only in production — avoids stale cache + chrome-extension errors in dev
