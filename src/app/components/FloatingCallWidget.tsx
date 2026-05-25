@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Minimize2, User } from 'lucide-react';
+import { Minimize2, User, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useAppData } from '../context/AppDataContext';
 import { dedupeCallParticipants } from '../lib/callParticipants';
@@ -52,6 +52,7 @@ interface FloatingCallWidgetProps {
   onAudioMuteChanged?: (muted: boolean) => void;
   onVideoMuteChanged?: (muted: boolean) => void;
   onScreenShareChanged?: (active: boolean) => void;
+  onScreenShareError?: (code: string) => void;
   onDominantSpeakerChanged?: (participantId: string | null) => void;
   onConferenceJoined?: (payload: { id?: string; displayName?: string }) => void;
   onRemoteParticipantJoined?: (payload: { id?: string; displayName?: string }) => void;
@@ -72,6 +73,7 @@ interface FloatingCallWidgetProps {
   onToggleScreenShare: () => void;
   onMinimizeFullscreen: () => void;
   onOpenInChat: () => void;
+  onClosePip: () => void;
   onEnterFullscreen: () => void;
 }
 
@@ -159,6 +161,7 @@ export function FloatingCallWidget({
   onAudioMuteChanged,
   onVideoMuteChanged,
   onScreenShareChanged,
+  onScreenShareError,
   onDominantSpeakerChanged,
   onConferenceJoined,
   onRemoteParticipantJoined,
@@ -171,6 +174,7 @@ export function FloatingCallWidget({
   onToggleScreenShare,
   onMinimizeFullscreen,
   onOpenInChat,
+  onClosePip,
   onEnterFullscreen,
 }: FloatingCallWidgetProps) {
   const { t } = useTranslation();
@@ -194,9 +198,11 @@ export function FloatingCallWidget({
   const hasStreamRef = useRef(false);
   const onEnterFullscreenRef = useRef(onEnterFullscreen);
   const onOpenInChatRef = useRef(onOpenInChat);
+  const onClosePipRef = useRef(onClosePip);
 
   onEnterFullscreenRef.current = onEnterFullscreen;
   onOpenInChatRef.current = onOpenInChat;
+  onClosePipRef.current = onClosePip;
 
   const displayParticipants = useMemo((): CallStageParticipant[] => {
     const conversation = conversations.find((entry) => entry.id === activeCall?.conversationId);
@@ -296,11 +302,7 @@ export function FloatingCallWidget({
       if (target.closest('button, [data-call-controls]')) return;
       event.preventDefault();
       event.stopPropagation();
-      if (hasStreamRef.current) {
-        onEnterFullscreenRef.current();
-      } else {
-        onOpenInChatRef.current();
-      }
+      onOpenInChatRef.current();
     };
 
     element.addEventListener('dblclick', handleDoubleClick, true);
@@ -313,11 +315,7 @@ export function FloatingCallWidget({
       if (now - lastTap < 400) {
         lastTap = 0;
         event.preventDefault();
-        if (hasStreamRef.current) {
-          onEnterFullscreenRef.current();
-        } else {
-          onOpenInChatRef.current();
-        }
+        onOpenInChatRef.current();
         return;
       }
       lastTap = now;
@@ -332,16 +330,12 @@ export function FloatingCallWidget({
 
   const handleDoubleActivate = useCallback(
     (event: React.MouseEvent) => {
-      if ((event.target as HTMLElement).closest('button')) return;
+      if ((event.target as HTMLElement).closest('button, [data-call-controls]')) return;
       event.preventDefault();
       event.stopPropagation();
-      if (hasStream) {
-        onEnterFullscreen();
-      } else {
-        onOpenInChat();
-      }
+      onOpenInChat();
     },
-    [hasStream, onEnterFullscreen, onOpenInChat]
+    [onOpenInChat]
   );
 
   const handleDragPointerDown = (event: React.PointerEvent) => {
@@ -424,6 +418,7 @@ export function FloatingCallWidget({
       onAudioMuteChanged={onAudioMuteChanged}
       onVideoMuteChanged={onVideoMuteChanged}
       onScreenShareChanged={onScreenShareChanged}
+      onScreenShareError={onScreenShareError}
       onDominantSpeakerChanged={onDominantSpeakerChanged}
       onConferenceJoined={onConferenceJoined}
       onRemoteParticipantJoined={onRemoteParticipantJoined}
@@ -434,12 +429,13 @@ export function FloatingCallWidget({
       onToggleMute={onToggleMute}
       onToggleCamera={onToggleCamera}
       onToggleScreenShare={onToggleScreenShare}
+      compactControls
     />
   );
 
   return (
     <div
-      className={isFullscreen ? 'fixed inset-0 z-[9998]' : 'fixed z-[135] select-none'}
+      className={isFullscreen ? 'fixed inset-0 z-[9998]' : 'fixed relative z-[135] select-none'}
       style={
         isFullscreen
           ? undefined
@@ -451,7 +447,7 @@ export function FloatingCallWidget({
         className={
           isFullscreen
             ? 'h-full w-full'
-            : 'relative h-full w-full cursor-grab touch-none overflow-hidden rounded-xl border border-white/15 bg-[#0b0b0b] shadow-2xl active:cursor-grabbing'
+            : 'group/pip relative h-full w-full cursor-grab touch-none overflow-hidden rounded-xl border border-white/15 bg-[#0b0b0b] shadow-2xl active:cursor-grabbing'
         }
         onPointerDown={!isFullscreen ? handleDragPointerDown : undefined}
         onPointerMove={!isFullscreen ? handleDragPointerMove : undefined}
@@ -461,6 +457,19 @@ export function FloatingCallWidget({
       >
         {jitsiView}
       </div>
+      {!isFullscreen ? (
+        <button
+          type="button"
+          onClick={(event) => {
+            event.stopPropagation();
+            onClosePip();
+          }}
+          className="absolute right-1 top-1 z-[40] flex h-6 w-6 items-center justify-center rounded-full border border-white/10 bg-black/70 text-white shadow-lg transition-colors hover:bg-black/90"
+          aria-label={t('groups.modalClose', { defaultValue: 'Close' })}
+        >
+          <X className="h-3.5 w-3.5" />
+        </button>
+      ) : null}
       {isFullscreen ? (
         <button
           type="button"

@@ -7,12 +7,15 @@ import {
   Minimize2,
   MonitorUp,
   PhoneOff,
+  PictureInPicture2,
+  Pin,
   Video,
   VideoOff,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { mountJitsiMeetingFromServerJoin, type CallMediaType, type JitsiHandle } from '../lib/jitsi';
 import { fetchJitsiJoinCredentials, type JitsiJoinCredentials } from '../lib/jitsiCall';
+import { isScreenShareSupported } from '../lib/screenShareSupport';
 import { shouldSkipJitsiPrejoin } from '../lib/jitsiMicStorage';
 
 export type JitsiCallLayout = 'embedded' | 'standalone' | 'pip';
@@ -39,6 +42,7 @@ interface JitsiCallViewProps {
   onAudioMuteChanged?: (muted: boolean) => void;
   onVideoMuteChanged?: (muted: boolean) => void;
   onScreenShareChanged?: (active: boolean) => void;
+  onScreenShareError?: (code: string) => void;
   onDominantSpeakerChanged?: (participantId: string | null) => void;
   onConferenceJoined?: (payload: { id?: string; displayName?: string }) => void;
   onRemoteParticipantJoined?: (payload: { id?: string; displayName?: string }) => void;
@@ -61,6 +65,11 @@ interface JitsiCallViewProps {
   onToggleMute?: () => void;
   onToggleCamera?: () => void;
   onToggleScreenShare?: () => void;
+  /** Embedded: collapse call into floating PiP */
+  onMinimizeToPip?: () => void;
+  /** Embedded: pin call so it stays visible across chats */
+  onTogglePin?: () => void;
+  callPinned?: boolean;
   /** PiP: expand to fullscreen (shows button when stream active) */
   onExpandRequest?: () => void;
   /** PiP: controls visible on tap (mobile) */
@@ -94,6 +103,7 @@ export function CallControlBar({
   compact?: boolean;
 }) {
   const { t } = useTranslation();
+  const canShareScreen = isScreenShareEnabled || isScreenShareSupported();
 
   return (
     <div
@@ -131,13 +141,18 @@ export function CallControlBar({
       <button
         type="button"
         onClick={() => onToggleScreenShare?.()}
-        disabled={!live}
+        disabled={!live || !canShareScreen}
         className={`flex items-center justify-center rounded-full transition-colors ${
           compact ? 'h-7 w-7' : 'h-9 w-9'
         } ${
           isScreenShareEnabled ? 'bg-[#23a559] text-white' : 'bg-[#2f3136] text-white hover:bg-[#3a3d44]'
         } disabled:opacity-60`}
-        aria-label={t('call.title')}
+        aria-label={
+          isScreenShareEnabled ? t('call.screenShareStop') : t('call.screenShare')
+        }
+        title={
+          !canShareScreen ? t('call.screenShareUnsupported') : undefined
+        }
       >
         <MonitorUp className="h-4 w-4" />
       </button>
@@ -177,6 +192,7 @@ export function JitsiCallView({
   onAudioMuteChanged,
   onVideoMuteChanged,
   onScreenShareChanged,
+  onScreenShareError,
   onDominantSpeakerChanged,
   onConferenceJoined,
   onRemoteParticipantJoined,
@@ -191,6 +207,9 @@ export function JitsiCallView({
   onToggleMute,
   onToggleCamera,
   onToggleScreenShare,
+  onMinimizeToPip,
+  onTogglePin,
+  callPinned = false,
   onExpandRequest,
   forceShowControls = false,
   compactControls = false,
@@ -209,6 +228,7 @@ export function JitsiCallView({
     onAudioMuteChanged,
     onVideoMuteChanged,
     onScreenShareChanged,
+    onScreenShareError,
     onDominantSpeakerChanged,
     onConferenceJoined,
     onRemoteParticipantJoined,
@@ -220,6 +240,7 @@ export function JitsiCallView({
   const [joining, setJoining] = useState(true);
   const [expanded, setExpanded] = useState(false);
   const [remoteStreamActive, setRemoteStreamActive] = useState(false);
+  const [pipControlsVisible, setPipControlsVisible] = useState(false);
 
   callbacksRef.current = {
     onJoinResolved,
@@ -231,6 +252,7 @@ export function JitsiCallView({
     onAudioMuteChanged,
     onVideoMuteChanged,
     onScreenShareChanged,
+    onScreenShareError,
     onDominantSpeakerChanged,
     onConferenceJoined,
     onRemoteParticipantJoined,
@@ -251,6 +273,12 @@ export function JitsiCallView({
   useEffect(() => {
     if (layout === 'standalone') {
       setExpanded(false);
+    }
+  }, [layout]);
+
+  useEffect(() => {
+    if (layout !== 'pip') {
+      setPipControlsVisible(false);
     }
   }, [layout]);
 
@@ -315,6 +343,7 @@ export function JitsiCallView({
           onAudioMuteChanged: (muted) => callbacksRef.current.onAudioMuteChanged?.(muted),
           onVideoMuteChanged: (muted) => callbacksRef.current.onVideoMuteChanged?.(muted),
           onScreenShareChanged: (active) => callbacksRef.current.onScreenShareChanged?.(active),
+          onScreenShareError: (code) => callbacksRef.current.onScreenShareError?.(code),
           onDominantSpeakerChanged: (participantId) =>
             callbacksRef.current.onDominantSpeakerChanged?.(participantId),
           onConferenceJoined: (payload) => callbacksRef.current.onConferenceJoined?.(payload),
@@ -395,13 +424,23 @@ export function JitsiCallView({
     : 'relative h-[min(55vh,480px)] min-h-[320px] w-full shrink-0 overflow-hidden border-b border-white/10 bg-[#0b0b0b]';
 
   const shellClass = isPip
-    ? 'group relative h-full w-full overflow-hidden rounded-xl bg-[#0b0b0b]'
+    ? 'group/pip relative h-full w-full overflow-hidden rounded-xl bg-[#0b0b0b]'
     : isFullscreen
       ? 'fixed inset-0 z-[9999] bg-[#0b0b0b]'
       : panelHeightClass;
 
   return (
-    <div className={shellClass}>
+    <div
+      className={shellClass}
+      onClick={
+        isPip
+          ? (event) => {
+              if ((event.target as HTMLElement).closest('[data-call-controls], button')) return;
+              setPipControlsVisible((visible) => !visible);
+            }
+          : undefined
+      }
+    >
       {joining || !credentials ? (
         <div className={`flex h-full w-full items-center justify-center gap-3 text-white/90 ${isPip ? 'text-xs' : ''}`}>
           <Loader2 className={`animate-spin ${isPip ? 'h-4 w-4' : 'h-6 w-6'}`} />
@@ -418,6 +457,38 @@ export function JitsiCallView({
             }`}
           />
           {overlay}
+          {layout === 'embedded' && !expanded && onMinimizeToPip ? (
+            <button
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation();
+                onMinimizeToPip();
+              }}
+              className="absolute left-3 top-3 z-20 flex h-9 w-9 items-center justify-center rounded-full border border-white/10 bg-[#1e1f22]/95 text-white shadow-lg transition-colors hover:bg-[#2f3136]"
+              aria-label={t('call.minimizeToPip')}
+            >
+              <PictureInPicture2 className="h-4 w-4" />
+            </button>
+          ) : null}
+          {layout === 'embedded' && !expanded && onTogglePin ? (
+            <button
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation();
+                onTogglePin();
+              }}
+              className={`absolute top-3 z-20 flex h-9 w-9 items-center justify-center rounded-full border shadow-lg transition-colors hover:bg-[#2f3136] ${
+                onMinimizeToPip ? 'left-14' : 'left-3'
+              } ${
+                callPinned
+                  ? 'border-[#5865f2]/60 bg-[#5865f2]/90 text-white'
+                  : 'border-white/10 bg-[#1e1f22]/95 text-white'
+              }`}
+              aria-label={callPinned ? t('call.unpinCall') : t('call.pinCall')}
+            >
+              <Pin className={`h-4 w-4 ${callPinned ? 'fill-current' : ''}`} />
+            </button>
+          ) : null}
           {canExpand && !expanded ? (
             <button
               type="button"
@@ -463,7 +534,28 @@ export function JitsiCallView({
                 compact={compactControls}
               />
             </div>
-          ) : null}
+          ) : (
+            <div
+              data-call-controls
+              className={`pointer-events-none absolute inset-x-0 bottom-1 z-[30] flex justify-center px-1 transition-opacity ${
+                pipControlsVisible ? 'opacity-100' : 'opacity-0 group-hover/pip:opacity-100'
+              }`}
+            >
+              <CallControlBar
+                live={live}
+                isMuted={isMuted}
+                isCameraEnabled={isCameraEnabled}
+                isScreenShareEnabled={isScreenShareEnabled}
+                mediaActive={effectiveMediaActive}
+                onToggleMute={onToggleMute}
+                onToggleCamera={onToggleCamera}
+                onToggleScreenShare={onToggleScreenShare}
+                onHangUp={onHangUp}
+                forceShowControls={pipControlsVisible}
+                compact
+              />
+            </div>
+          )}
         </>
       ) : null}
     </div>

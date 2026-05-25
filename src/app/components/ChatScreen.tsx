@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback } from 'react';
-import { ArrowLeft, Send, Loader2, MoreVertical, Ban, Phone, X } from 'lucide-react';
+import { ArrowLeft, Loader2, MoreVertical, Ban, Phone, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useTranslation } from 'react-i18next';
 import { useChat } from '../hooks/useChat';
@@ -13,7 +13,7 @@ import { useAppData } from '../context/AppDataContext';
 import { TypingBubble } from './TypingBubble';
 import { useIsMdUp } from './ui/use-mobile';
 import { useCall } from '../context/CallContext';
-import { ChatCallPanel } from './ChatCallPanel';
+import { ChatEmbeddedCallBar } from './ChatEmbeddedCallBar';
 import { NotificationManager } from '../lib/notifications';
 import { getAppDateLocale } from '../../lib/i18n';
 import {
@@ -23,7 +23,7 @@ import {
 } from './ConversationActionsMenu';
 import { useLongPress } from '../hooks/useLongPress';
 import { MessageReplyComposerBar } from './chat/MessageReplyComposerBar';
-import { MessageReplyQuote } from './chat/MessageReplyQuote';
+import { ChatMessageComposer } from './chat/ChatMessageComposer';
 import { MessageRowReplyWrapper } from './chat/MessageRowReplyWrapper';
 import { MessageRowReplyButton } from './chat/MessageRowReplyButton';
 import {
@@ -32,23 +32,21 @@ import {
   type ReplyTarget,
 } from '../lib/messageReply';
 import {
-  CHAT_MESSAGE_BUBBLE_TEXT_CLASS,
-  CHAT_MESSAGE_BUBBLE_TEXT_GROUPED_CLASS,
   CHAT_MESSAGE_LIST_CLASS,
-  CHAT_MESSAGE_ROW_CLASS,
-  CHAT_MESSAGE_ROW_GROUPED_CLASS,
   CHAT_MESSAGE_ROW_INNER_CLASS,
   CHAT_MESSAGE_ROW_INNER_GROUPED_CLASS,
+  getChatMessageRowClass,
 } from './chat/chatMessageStyles';
 import { MessageRowAvatarSlot } from './chat/MessageRowAvatarSlot';
 import { MessageGroupHeader } from './chat/MessageGroupHeader';
-import { MessageBubble } from './chat/MessageBubble';
+import { ChatMessageBody } from './chat/ChatMessageBody';
 import {
   formatMessageTime,
   getMessageGroupPosition,
   isMessageBundled,
   isMessageGroupEnd,
   isMessageGroupStart,
+  isNewSenderGroupStart,
 } from '../lib/messageGrouping';
 import { isOutgoingMessageRead } from '../lib/messageReadReceipts';
 
@@ -87,7 +85,6 @@ export function ChatScreen({
     connectionState: callConnectionState,
   } = useCall();
   const isMdUp = useIsMdUp();
-  
   const [messageInput, setMessageInput] = useState('');
   const [replyTarget, setReplyTarget] = useState<ReplyTarget | null>(null);
   const messageInputRef = useRef<HTMLInputElement>(null);
@@ -382,6 +379,22 @@ export function ChatScreen({
     focusMessageInput();
   }, [messageInput, sending, sendMessage, focusMessageInput, replyTarget]);
 
+  const handleSendUrl = useCallback(
+    async (url: string) => {
+      if (sending || !url.trim()) return;
+
+      const replyToId = replyTarget?.id ?? null;
+      const activeReply = replyTarget;
+      setReplyTarget(null);
+      const sent = await sendMessage(url.trim(), replyToId);
+      if (!sent && activeReply) {
+        setReplyTarget(activeReply);
+      }
+      focusMessageInput();
+    },
+    [sending, sendMessage, focusMessageInput, replyTarget]
+  );
+
   const handleReportUser = () => {
     setReportTargetUserId(otherUser.id);
     setShowOptionsMenu(false);
@@ -518,7 +531,7 @@ export function ChatScreen({
           </button>
         </div>
       </div>
-      <ChatCallPanel conversationId={conversationId} currentUserId={currentUserId} />
+      <ChatEmbeddedCallBar conversationId={conversationId} currentUserId={currentUserId} />
 
       {/* Messages */}
       <div 
@@ -555,6 +568,7 @@ export function ChatScreen({
               const prev = index > 0 ? messages[index - 1] : null;
               const next = index < messages.length - 1 ? messages[index + 1] : null;
               const isGroupStart = isMessageGroupStart(msg, prev);
+              const isNewSender = isNewSenderGroupStart(msg, prev);
               const isGroupEnd = isMessageGroupEnd(msg, next);
               const isBundled = isMessageBundled(msg, prev, next);
               const groupPosition = getMessageGroupPosition(msg, prev, next);
@@ -582,7 +596,7 @@ export function ChatScreen({
                     duration: 0.25,
                     ease: [0.25, 0.1, 0.25, 1]
                   }}
-                  className={isGroupStart ? CHAT_MESSAGE_ROW_CLASS : CHAT_MESSAGE_ROW_GROUPED_CLASS}
+                  className={getChatMessageRowClass(isGroupStart, isNewSender)}
                 >
                   <MessageRowReplyWrapper
                     onReply={() =>
@@ -608,27 +622,19 @@ export function ChatScreen({
                             />
                           )}
                           <div
-                            className={`group/bubble flex w-fit items-center gap-1.5 ${
+                            className={`group/bubble flex w-fit items-start gap-1.5 ${
                               isMe ? 'flex-row-reverse' : 'flex-row'
                             }`}
                           >
-                            <MessageBubble
-                              position={groupPosition}
+                            <ChatMessageBody
+                              content={msg.content}
                               isMe={isMe}
-                              time={messageTime}
+                              isBundled={isBundled}
+                              replyQuote={replyQuote}
+                              bubblePosition={groupPosition}
+                              messageTime={messageTime}
                               isRead={isOutgoingMessageRead(msg, messages, currentUserId)}
-                            >
-                              {replyQuote ? <MessageReplyQuote quote={replyQuote} isMe={isMe} /> : null}
-                              <p
-                                className={
-                                  isBundled
-                                    ? CHAT_MESSAGE_BUBBLE_TEXT_GROUPED_CLASS
-                                    : CHAT_MESSAGE_BUBBLE_TEXT_CLASS
-                                }
-                              >
-                                {msg.content}
-                              </p>
-                            </MessageBubble>
+                            />
                             <MessageRowReplyButton
                               onReply={() =>
                                 setReplyTarget(buildReplyTarget(msg, getSenderLabel(msg.sender_id)))
@@ -653,59 +659,29 @@ export function ChatScreen({
         )}
       </div>
 
-      {/* Input — in-flow at bottom; scroll area ends directly above */}
-      <div className="relative z-20 shrink-0 border-t border-gray-200 bg-white px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] dark:border-[#1f1f1f] dark:bg-[#0d0d0d] md:dark:bg-[#0e0e0e]">
-        <AnimatePresence>
-          {isPartnerTyping && (
-            <div ref={typingIndicatorRef} className="absolute bottom-full left-4 z-30 mb-2">
-              <TypingBubble inline />
-            </div>
-          )}
-        </AnimatePresence>
-        {replyTarget ? (
-          <MessageReplyComposerBar target={replyTarget} onCancel={() => setReplyTarget(null)} />
-        ) : null}
-        <div className="flex w-full items-center gap-2">
-          <input
-            ref={messageInputRef}
-            type="text"
-            value={messageInput}
-            onChange={(e) => {
-              setMessageInput(e.target.value);
-            }}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                void handleSend();
-              }
-            }}
-            placeholder={t('chat.dmMessagePlaceholder')}
-            className="flex-1 px-4 py-2 bg-gray-100 dark:bg-[#1a1a1a] rounded-full text-gray-900 dark:text-[#dce6ef] focus:outline-none"
-            style={{
-              touchAction: 'manipulation',
-              WebkitTapHighlightColor: 'transparent',
-              fontSize: '16px'
-            }}
-            autoComplete="off"
-            autoCorrect="off"
-            autoCapitalize="off"
-          />
-          <button
-            type="button"
-            onMouseDown={(e) => e.preventDefault()}
-            onClick={() => void handleSend()}
-            disabled={!messageInput.trim() || sending}
-            className="p-3 bg-gradient-to-br from-orange-500 via-red-500 to-pink-500 rounded-full disabled:opacity-50 flex items-center justify-center"
-            style={{
-              touchAction: 'manipulation',
-              WebkitTapHighlightColor: 'transparent',
-              cursor: 'pointer'
-            }}
-          >
-            {sending ? <Loader2 className="w-5 h-5 text-white animate-spin" /> : <Send className="w-5 h-5 text-white" />}
-          </button>
-        </div>
-      </div>
+      <ChatMessageComposer
+        value={messageInput}
+        onChange={setMessageInput}
+        onSend={handleSend}
+        onSendUrl={handleSendUrl}
+        placeholder={t('chat.dmMessagePlaceholder')}
+        sending={sending}
+        inputRef={messageInputRef}
+        replyBar={
+          replyTarget ? (
+            <MessageReplyComposerBar target={replyTarget} onCancel={() => setReplyTarget(null)} />
+          ) : null
+        }
+        typingIndicator={
+          <AnimatePresence>
+            {isPartnerTyping ? (
+              <div ref={typingIndicatorRef} className="absolute bottom-full left-4 z-30 mb-2">
+                <TypingBubble inline />
+              </div>
+            ) : null}
+          </AnimatePresence>
+        }
+      />
       {showOptionsMenu && (
         <div
           ref={optionsMenuRef}

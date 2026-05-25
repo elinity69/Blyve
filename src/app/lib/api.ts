@@ -679,9 +679,34 @@ export class ApiClient {
     return this.edgeRequest(`/groups/${groupId}/leave`, { method: 'POST', body: JSON.stringify({}) });
   }
 
+  async updateGroup(
+    groupId: string,
+    payload: {
+      name?: string;
+      description?: string | null;
+      is_private?: boolean;
+      iconUrl?: string | null;
+    },
+  ) {
+    return this.edgeRequest(`/groups/${groupId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async deleteGroup(groupId: string) {
+    return this.edgeRequest(`/groups/${groupId}`, { method: 'DELETE' });
+  }
+
   async getGroupMessages(groupId: string, channelId: string) {
     const q = new URLSearchParams({ channel_id: channelId });
     return this.edgeRequest(`/groups/${groupId}/messages?${q.toString()}`, { method: 'GET' });
+  }
+
+  async getLinkPreview(url: string) {
+    const q = new URLSearchParams({ url });
+    const payload = await this.edgeRequest(`/link-preview?${q.toString()}`, { method: 'GET' });
+    return payload?.preview ?? null;
   }
 
   async sendGroupMessage(

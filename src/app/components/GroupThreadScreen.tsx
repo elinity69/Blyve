@@ -1,5 +1,5 @@
 import React, { useContext, useEffect, useLayoutEffect, useRef, useState, useCallback } from 'react';
-import { ArrowLeft, Send, Loader2 } from 'lucide-react';
+import { ArrowLeft, Loader2 } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
@@ -12,14 +12,15 @@ import {
 } from '../lib/chatMessages';
 import { GroupChannelNavContext } from '../context/GroupChannelNavContext';
 import { useAppData } from '../context/AppDataContext';
-import { getOptimizedImageUrl } from '../lib/images';
+import { useCall } from '../context/CallContext';
 import { useIsMdUp } from './ui/use-mobile';
+import { getOptimizedImageUrl } from '../lib/images';
 import { useGroupTyping } from '../hooks/useGroupTyping';
 import { formatGroupTypingLabel } from '../lib/groupTypingBroadcast';
 import { TypingBubble } from './TypingBubble';
 import { NotificationManager } from '../lib/notifications';
 import { MessageReplyComposerBar } from './chat/MessageReplyComposerBar';
-import { MessageReplyQuote } from './chat/MessageReplyQuote';
+import { ChatMessageComposer } from './chat/ChatMessageComposer';
 import { MessageRowReplyWrapper } from './chat/MessageRowReplyWrapper';
 import { MessageRowReplyButton } from './chat/MessageRowReplyButton';
 import {
@@ -28,24 +29,23 @@ import {
   type ReplyTarget,
 } from '../lib/messageReply';
 import {
-  CHAT_MESSAGE_BUBBLE_TEXT_CLASS,
-  CHAT_MESSAGE_BUBBLE_TEXT_GROUPED_CLASS,
   CHAT_MESSAGE_LIST_CLASS,
-  CHAT_MESSAGE_ROW_CLASS,
-  CHAT_MESSAGE_ROW_GROUPED_CLASS,
   CHAT_MESSAGE_ROW_INNER_CLASS,
   CHAT_MESSAGE_ROW_INNER_GROUPED_CLASS,
+  getChatMessageRowClass,
 } from './chat/chatMessageStyles';
 import { MessageRowAvatarSlot } from './chat/MessageRowAvatarSlot';
 import { MessageGroupHeader } from './chat/MessageGroupHeader';
-import { MessageBubble } from './chat/MessageBubble';
+import { ChatMessageBody } from './chat/ChatMessageBody';
 import {
   formatMessageTime,
   getMessageGroupPosition,
   isMessageBundled,
   isMessageGroupEnd,
   isMessageGroupStart,
+  isNewSenderGroupStart,
 } from '../lib/messageGrouping';
+import { ChatEmbeddedCallBar } from './ChatEmbeddedCallBar';
 
 function groupAccentHue(groupId: string): number {
   let h = 0;
@@ -97,6 +97,7 @@ export function GroupThreadScreen({
 }: GroupThreadScreenProps) {
   const { t, i18n } = useTranslation();
   const { currentUserProfile } = useAppData();
+  const { activeCall, state: callState } = useCall();
   const isMdUp = useIsMdUp();
   const ctx = useContext(GroupChannelNavContext);
   const channelId = channelIdProp ?? ctx.channelId;
@@ -364,6 +365,34 @@ export function GroupThreadScreen({
     }
   };
 
+  const handleSendUrl = async (url: string) => {
+    const text = url.trim();
+    if (!text || sending || !channelId) return;
+    const activeReply = replyTarget;
+    const replyToId = activeReply?.id ?? null;
+    try {
+      setSending(true);
+      void sendTyping(false);
+      const data = await api.sendGroupMessage(groupId, text, channelId, replyToId);
+      setReplyTarget(null);
+      if (data?.message) {
+        setMessages((prev) => [...prev, data.message as GroupMessageRow]);
+      } else {
+        await refetch();
+      }
+    } catch (e: any) {
+      if (activeReply) setReplyTarget(activeReply);
+      toast.error(t('groups.sendFailedTitle'), e?.message || t('groups.sendFailedBody'));
+    } finally {
+      setSending(false);
+      if (isMdUp) {
+        requestAnimationFrame(() => {
+          inputRef.current?.focus({ preventScroll: true });
+        });
+      }
+    }
+  };
+
   if (!channelId) {
     return (
       <div className="bg-white dark:bg-black md:dark:bg-[#121212] flex flex-col h-full w-full items-center justify-center p-6">
@@ -429,6 +458,14 @@ export function GroupThreadScreen({
         </button>
       </div>
 
+
+      <ChatEmbeddedCallBar
+        currentUserId={currentUserId}
+        voiceGroupId={
+          activeCall?.isVoiceChannel && activeCall.groupId === groupId ? groupId : undefined
+        }
+      />
+
       {/* Messages — same spacing / bubble style as ChatScreen */}
       <div
         ref={scrollRef}
@@ -452,6 +489,7 @@ export function GroupThreadScreen({
             const prev = index > 0 ? messages[index - 1] : null;
             const next = index < messages.length - 1 ? messages[index + 1] : null;
             const isGroupStart = isMessageGroupStart(m, prev);
+            const isNewSender = isNewSenderGroupStart(m, prev);
             const isGroupEnd = isMessageGroupEnd(m, next);
             const isBundled = isMessageBundled(m, prev, next);
             const groupPosition = getMessageGroupPosition(m, prev, next);
@@ -472,7 +510,7 @@ export function GroupThreadScreen({
               <div
                 key={m.id}
                 data-message-id={m.id}
-                className={isGroupStart ? CHAT_MESSAGE_ROW_CLASS : CHAT_MESSAGE_ROW_GROUPED_CLASS}
+                className={getChatMessageRowClass(isGroupStart, isNewSender)}
               >
                 <MessageRowReplyWrapper
                   onReply={() =>
@@ -498,27 +536,19 @@ export function GroupThreadScreen({
                           />
                         )}
                         <div
-                          className={`group/bubble flex w-fit items-center gap-1.5 ${
+                          className={`group/bubble flex w-fit items-start gap-1.5 ${
                             mine ? 'flex-row-reverse' : 'flex-row'
                           }`}
                         >
-                          <MessageBubble
-                            position={groupPosition}
+                          <ChatMessageBody
+                            content={m.content}
                             isMe={mine}
-                            time={messageTime}
+                            isBundled={isBundled}
+                            replyQuote={replyQuote}
+                            bubblePosition={groupPosition}
+                            messageTime={messageTime}
                             isRead={false}
-                          >
-                            {replyQuote ? <MessageReplyQuote quote={replyQuote} isMe={mine} /> : null}
-                            <p
-                              className={
-                                isBundled
-                                  ? CHAT_MESSAGE_BUBBLE_TEXT_GROUPED_CLASS
-                                  : CHAT_MESSAGE_BUBBLE_TEXT_CLASS
-                              }
-                            >
-                              {m.content}
-                            </p>
-                          </MessageBubble>
+                          />
                           <MessageRowReplyButton
                             onReply={() =>
                               setReplyTarget(buildReplyTarget(m, getSenderLabel(m.sender_id, m)))
@@ -535,64 +565,40 @@ export function GroupThreadScreen({
         )}
       </div>
 
-      {/* Input — in-flow at bottom; scroll area ends directly above */}
-      <div className="relative z-20 shrink-0 border-t border-gray-200 bg-white px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] dark:border-[#1f1f1f] dark:bg-[#0d0d0d] md:dark:bg-[#0e0e0e]">
-        <AnimatePresence>
-          {typers.length > 0 ? (
-            <motion.div
-              ref={typingIndicatorRef}
-              initial={{ opacity: 0, y: 4 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: 4 }}
-              className="absolute bottom-full left-4 z-30 mb-2 flex flex-col items-start gap-1"
-            >
-              <TypingBubble inline />
-              {typingLabel ? (
-                <p className="max-w-[min(100vw-2rem,320px)] truncate px-1 text-xs italic text-[#5865f2]">
-                  {typingLabel}
-                </p>
-              ) : null}
-            </motion.div>
-          ) : null}
-        </AnimatePresence>
-        {replyTarget ? (
-          <MessageReplyComposerBar target={replyTarget} onCancel={() => setReplyTarget(null)} />
-        ) : null}
-        <div className="flex w-full items-center gap-2">
-          <input
-            ref={inputRef}
-            type="text"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                void handleSend();
-              }
-            }}
-            placeholder={t('groups.messagePlaceholder')}
-            className="flex-1 px-4 py-2 bg-gray-100 dark:bg-[#1a1a1a] rounded-full text-gray-900 dark:text-[#dce6ef] focus:outline-none"
-            style={{
-              touchAction: 'manipulation',
-              WebkitTapHighlightColor: 'transparent',
-              fontSize: '16px',
-            }}
-            autoComplete="off"
-            autoCorrect="off"
-            autoCapitalize="off"
-          />
-          <button
-            type="button"
-            onMouseDown={(e) => e.preventDefault()}
-            onClick={() => void handleSend()}
-            disabled={sending || !input.trim()}
-            className="p-3 bg-gradient-to-br from-orange-500 via-red-500 to-pink-500 rounded-full disabled:opacity-50 flex items-center justify-center"
-            style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent', cursor: 'pointer' }}
-          >
-            {sending ? <Loader2 className="w-5 h-5 text-white animate-spin" /> : <Send className="w-5 h-5 text-white" />}
-          </button>
-        </div>
-      </div>
+      <ChatMessageComposer
+        value={input}
+        onChange={setInput}
+        onSend={handleSend}
+        onSendUrl={handleSendUrl}
+        placeholder={t('groups.messagePlaceholder')}
+        sending={sending}
+        inputRef={inputRef}
+        replyBar={
+          replyTarget ? (
+            <MessageReplyComposerBar target={replyTarget} onCancel={() => setReplyTarget(null)} />
+          ) : null
+        }
+        typingIndicator={
+          <AnimatePresence>
+            {typers.length > 0 ? (
+              <motion.div
+                ref={typingIndicatorRef}
+                initial={{ opacity: 0, y: 4 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: 4 }}
+                className="absolute bottom-full left-4 z-30 mb-2 flex flex-col items-start gap-1"
+              >
+                <TypingBubble inline />
+                {typingLabel ? (
+                  <p className="max-w-[min(100vw-2rem,320px)] truncate px-1 text-xs italic text-[#5865f2]">
+                    {typingLabel}
+                  </p>
+                ) : null}
+              </motion.div>
+            ) : null}
+          </AnimatePresence>
+        }
+      />
     </div>
   );
 }

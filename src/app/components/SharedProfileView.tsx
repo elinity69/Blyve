@@ -213,6 +213,7 @@ export function SharedProfileView({
             }}
             onScroll={handleScroll}
           >
+            <div {...profileActionHandlers}>
             <div
               className={`relative w-full shrink-0 overflow-hidden ${isDesktop ? 'h-[400px]' : 'h-[45vh]'}`}
               style={{
@@ -220,7 +221,6 @@ export function SharedProfileView({
                 userSelect: 'none',
                 WebkitUserSelect: 'none',
               }}
-              {...profileActionHandlers}
             >
               {!isDesktop ? (
                 <div className="absolute left-1/2 top-2 z-30 h-1.5 w-12 -translate-x-1/2 rounded-full bg-gray-300 dark:bg-gray-700" />
@@ -316,6 +316,7 @@ export function SharedProfileView({
               )}
 
               {bottomAccessory}
+            </div>
             </div>
           </div>
         </motion.div>

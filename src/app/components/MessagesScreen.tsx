@@ -4,6 +4,7 @@ import { useEdgeBackNavigation } from '../hooks/useEdgeBackNavigation';
 import { useConversations } from '../hooks/useConversations';
 import { ChatScreen } from './ChatScreen';
 import { GroupThreadScreen } from './GroupThreadScreen';
+import { GroupVoiceChannelScreen } from './GroupVoiceChannelScreen';
 import { SharedProfileView } from './SharedProfileView';
 import { supabase } from '../lib/supabase';
 import { api } from '../lib/api';
@@ -227,6 +228,17 @@ export function MessagesScreen() {
   const [typingNamesByChannelId, setTypingNamesByChannelId] = useState<Record<string, string[]>>({});
   const [conversationActionsMenu, setConversationActionsMenu] = useState<ConversationActionTarget | null>(null);
   const [groupActionsMenu, setGroupActionsMenu] = useState<GroupActionTarget | null>(null);
+  const [showEditGroupModal, setShowEditGroupModal] = useState(false);
+  const [editingGroupId, setEditingGroupId] = useState<string | null>(null);
+  const [editGroupName, setEditGroupName] = useState('');
+  const [editGroupDescription, setEditGroupDescription] = useState('');
+  const [editGroupPrivate, setEditGroupPrivate] = useState(false);
+  const [editGroupIconFile, setEditGroupIconFile] = useState<File | null>(null);
+  const [editGroupIconPreview, setEditGroupIconPreview] = useState<string | null>(null);
+  const [editGroupIconCleared, setEditGroupIconCleared] = useState(false);
+  const editGroupIconInputRef = useRef<HTMLInputElement>(null);
+  const [updatingGroup, setUpdatingGroup] = useState(false);
+  const [inviteTargetGroupId, setInviteTargetGroupId] = useState<string | null>(null);
 
   const { conversations, loading, error, reload } = useConversations();
   const queryClient = useQueryClient();
@@ -252,7 +264,18 @@ export function MessagesScreen() {
     [queryClient]
   );
 
-  const { enterCallPip, isCallForConversation, joinVoiceChannel, isVoiceChannelActive, activeCall, hangUp, state: callState } = useCall();
+  const {
+    enterCallPip,
+    isCallForConversation,
+    joinVoiceChannel,
+    isVoiceChannelActive,
+    activeCall,
+    hangUp,
+    state: callState,
+    openCallInGroupPanel,
+    callDisplayMode,
+    callPinned,
+  } = useCall();
   const [typingByConversation, setTypingByConversation] = React.useState<Record<string, boolean>>({});
 
   React.useEffect(() => {
@@ -297,32 +320,30 @@ export function MessagesScreen() {
   );
   const handleLeaveChat = React.useCallback(
     (conversationId: string) => {
-      if (callState === 'in_call' && isCallForConversation(conversationId)) {
+      if (
+        callState === 'in_call' &&
+        isCallForConversation(conversationId) &&
+        !callPinned
+      ) {
         enterCallPip();
       }
       setSelectedConversationId(null);
       setSelectedOtherUser(null);
       lastPushedChatIdRef.current = null;
     },
-    [callState, enterCallPip, isCallForConversation]
+    [callPinned, callState, enterCallPip, isCallForConversation]
   );
 
   const openGroupActions = React.useCallback(
-    (
-      event: React.MouseEvent | React.PointerEvent,
-      group: { id: string; name: string; icon_url?: string | null }
-    ) => {
+    (event: React.MouseEvent | React.PointerEvent, group: GroupRow) => {
       event.preventDefault();
       event.stopPropagation();
+      const row = myGroupRows.find((entry) => entry.group?.id === group.id);
       setGroupActionsMenu(
-        openGroupActionsMenuFromEvent(event, {
-          id: group.id,
-          name: group.name,
-          icon_url: group.icon_url,
-        })
+        openGroupActionsMenuFromEvent(event, group, row?.role === 'admin')
       );
     },
-    []
+    [myGroupRows]
   );
 
   useEffect(() => {
@@ -384,6 +405,7 @@ export function MessagesScreen() {
   );
   const lastPushedChatIdRef = useRef<string | null>(null);
   const lastPushedGroupIdRef = useRef<string | null>(null);
+  const lastPushedVoiceKeyRef = useRef<string | null>(null);
   const pendingConversationIdRef = useRef<string | null>(null);
 
   const openConversationById = React.useCallback((conversationId: string) => {
@@ -579,6 +601,164 @@ export function MessagesScreen() {
     const row = myGroupRows.find((entry) => entry.group?.id === selectedGroup.id);
     return row?.role === 'admin';
   }, [myGroupRows, selectedGroup?.id]);
+
+  const inviteGroupAdmin = useMemo(() => {
+    const groupId = inviteTargetGroupId ?? selectedGroup?.id;
+    if (!groupId) return false;
+    const row = myGroupRows.find((entry) => entry.group?.id === groupId);
+    return row?.role === 'admin';
+  }, [inviteTargetGroupId, myGroupRows, selectedGroup?.id]);
+
+  const openEditGroupModal = React.useCallback((target: GroupActionTarget) => {
+    setEditingGroupId(target.groupId);
+    setEditGroupName(target.groupName);
+    setEditGroupDescription(target.description?.trim() ?? '');
+    setEditGroupPrivate(Boolean(target.isPrivate));
+    setEditGroupIconFile(null);
+    setEditGroupIconCleared(false);
+    setEditGroupIconPreview(
+      target.iconUrl ? getOptimizedImageUrl(target.iconUrl, 200) : null
+    );
+    if (editGroupIconInputRef.current) editGroupIconInputRef.current.value = '';
+    setShowEditGroupModal(true);
+  }, []);
+
+  const closeEditGroupModal = React.useCallback(() => {
+    setShowEditGroupModal(false);
+    setEditingGroupId(null);
+    setEditGroupName('');
+    setEditGroupDescription('');
+    setEditGroupPrivate(false);
+    setEditGroupIconFile(null);
+    setEditGroupIconCleared(false);
+    setEditGroupIconPreview((prev) => {
+      if (prev?.startsWith('blob:')) URL.revokeObjectURL(prev);
+      return null;
+    });
+    if (editGroupIconInputRef.current) editGroupIconInputRef.current.value = '';
+  }, []);
+
+  const handleEditGroupIconChange = React.useCallback(
+    (event: React.ChangeEvent<HTMLInputElement>) => {
+      const file = event.target.files?.[0];
+      if (!file) return;
+      if (!file.type.startsWith('image/')) {
+        toast.error(t('groups.updateGroupFailedTitle'), t('groups.groupIconInvalid'));
+        return;
+      }
+      setEditGroupIconFile(file);
+      setEditGroupIconCleared(false);
+      setEditGroupIconPreview((prev) => {
+        if (prev?.startsWith('blob:')) URL.revokeObjectURL(prev);
+        return URL.createObjectURL(file);
+      });
+    },
+    [t]
+  );
+
+  const clearEditGroupIcon = React.useCallback(() => {
+    setEditGroupIconFile(null);
+    setEditGroupIconCleared(true);
+    setEditGroupIconPreview((prev) => {
+      if (prev?.startsWith('blob:')) URL.revokeObjectURL(prev);
+      return null;
+    });
+    if (editGroupIconInputRef.current) editGroupIconInputRef.current.value = '';
+  }, []);
+
+  const handleUpdateGroup = React.useCallback(async () => {
+    if (!editingGroupId) return;
+    const name = editGroupName.trim();
+    if (name.length < 2) {
+      toast.error(t('groups.updateGroupFailedTitle'), t('groups.namePlaceholder'));
+      return;
+    }
+    try {
+      setUpdatingGroup(true);
+      let iconUrl: string | null | undefined;
+      if (editGroupIconFile) {
+        iconUrl = await api.uploadGroupIcon(editGroupIconFile);
+      } else if (editGroupIconCleared) {
+        iconUrl = null;
+      }
+      const data = await api.updateGroup(editingGroupId, {
+        name,
+        description: editGroupDescription.trim() || null,
+        is_private: editGroupPrivate,
+        ...(iconUrl !== undefined ? { iconUrl } : {}),
+      });
+      const updated = data?.group as GroupRow | undefined;
+      toast.success(t('groups.groupUpdated'));
+      if (selectedGroup?.id === editingGroupId) {
+        setSelectedGroup({
+          id: editingGroupId,
+          name: updated?.name ?? name,
+          icon_url: updated?.icon_url ?? (iconUrl === null ? null : selectedGroup.icon_url),
+        });
+      }
+      await loadGroupsData();
+      closeEditGroupModal();
+    } catch (err: any) {
+      toast.error(t('groups.updateGroupFailedTitle'), err?.message || t('groups.updateGroupFailedBody'));
+    } finally {
+      setUpdatingGroup(false);
+    }
+  }, [
+    closeEditGroupModal,
+    editGroupDescription,
+    editGroupIconCleared,
+    editGroupIconFile,
+    editGroupName,
+    editGroupPrivate,
+    editingGroupId,
+    loadGroupsData,
+    selectedGroup,
+    t,
+  ]);
+
+  const handleLeaveGroupFromMenu = React.useCallback(
+    async (target: GroupActionTarget) => {
+      if (!window.confirm(t('groups.leaveConfirm', { name: target.groupName }))) return;
+      try {
+        await api.leaveGroup(target.groupId);
+        toast.success(t('groups.leftGroup'));
+        if (selectedGroup?.id === target.groupId) {
+          setSelectedGroup(null);
+          setSelectedChannelId(null);
+          lastPushedGroupIdRef.current = null;
+        }
+        await loadGroupsData();
+      } catch (err: any) {
+        toast.error(t('groups.leaveFailedTitle'), err?.message || t('groups.leaveFailedBody'));
+      }
+    },
+    [loadGroupsData, selectedGroup?.id, t]
+  );
+
+  const handleDeleteGroupFromMenu = React.useCallback(
+    async (target: GroupActionTarget) => {
+      if (!window.confirm(t('groups.deleteGroupConfirm', { name: target.groupName }))) return;
+      try {
+        await api.deleteGroup(target.groupId);
+        toast.success(t('groups.groupDeleted'));
+        if (selectedGroup?.id === target.groupId) {
+          setSelectedGroup(null);
+          setSelectedChannelId(null);
+          lastPushedGroupIdRef.current = null;
+        }
+        queryClient.removeQueries({ queryKey: groupChannelsQueryKey(target.groupId) });
+        await loadGroupsData();
+      } catch (err: any) {
+        toast.error(t('groups.deleteGroupFailedTitle'), err?.message || t('groups.deleteGroupFailedBody'));
+      }
+    },
+    [loadGroupsData, queryClient, selectedGroup?.id, t]
+  );
+
+  const openGroupInviteModal = React.useCallback((groupId?: string) => {
+    setInviteTargetGroupId(groupId ?? null);
+    setShowInviteModal(true);
+  }, []);
 
   const textChannels = useMemo(
     () => groupChannels.filter((ch) => (ch.type ?? 'text') === 'text'),
@@ -825,10 +1005,11 @@ export function MessagesScreen() {
   ]);
 
   const loadGroupInvite = React.useCallback(async () => {
-    if (!selectedGroup?.id) return;
+    const groupId = inviteTargetGroupId ?? selectedGroup?.id;
+    if (!groupId) return;
     try {
       setInviteLoading(true);
-      const data = await api.getGroupInvite(selectedGroup.id);
+      const data = await api.getGroupInvite(groupId);
       setGroupInvite({
         code: String(data?.inviteCode || ''),
         url: data?.inviteUrl ? String(data.inviteUrl) : undefined,
@@ -839,14 +1020,15 @@ export function MessagesScreen() {
     } finally {
       setInviteLoading(false);
     }
-  }, [selectedGroup?.id, t]);
+  }, [inviteTargetGroupId, selectedGroup?.id, t]);
 
   const handleRefreshInvite = React.useCallback(async () => {
-    if (!selectedGroup?.id || !isSelectedGroupAdmin) return;
+    const groupId = inviteTargetGroupId ?? selectedGroup?.id;
+    if (!groupId || !inviteGroupAdmin) return;
     if (!window.confirm(t('groups.refreshInviteConfirm'))) return;
     try {
       setRefreshingInvite(true);
-      const data = await api.refreshGroupInvite(selectedGroup.id);
+      const data = await api.refreshGroupInvite(groupId);
       setGroupInvite({
         code: String(data?.inviteCode || ''),
         url: data?.inviteUrl ? String(data.inviteUrl) : undefined,
@@ -857,12 +1039,13 @@ export function MessagesScreen() {
     } finally {
       setRefreshingInvite(false);
     }
-  }, [isSelectedGroupAdmin, selectedGroup?.id, t]);
+  }, [inviteGroupAdmin, inviteTargetGroupId, selectedGroup?.id, t]);
 
   useEffect(() => {
-    if (!showInviteModal || !selectedGroup?.id) return;
+    const groupId = inviteTargetGroupId ?? selectedGroup?.id;
+    if (!showInviteModal || !groupId) return;
     void loadGroupInvite();
-  }, [loadGroupInvite, selectedGroup?.id, showInviteModal]);
+  }, [inviteTargetGroupId, loadGroupInvite, selectedGroup?.id, showInviteModal]);
 
   const handleJoinViaInvite = React.useCallback(async () => {
     const code = joinInviteInput.trim();
@@ -888,7 +1071,7 @@ export function MessagesScreen() {
     async (channel: GroupChannelRow) => {
       if (!selectedGroup) return;
       if (isVoiceChannelActive(selectedGroup.id, channel.id)) {
-        enterCallPip();
+        openCallInGroupPanel();
         return;
       }
       try {
@@ -899,11 +1082,19 @@ export function MessagesScreen() {
           groupName: selectedGroup.name,
         });
         await reloadVoicePresence();
+        openCallInGroupPanel();
       } catch (err: any) {
         toast.error(t('groups.voiceJoinFailedTitle'), err?.message || t('groups.voiceJoinFailedBody'));
       }
     },
-    [enterCallPip, isVoiceChannelActive, joinVoiceChannel, reloadVoicePresence, selectedGroup, t]
+    [
+      isVoiceChannelActive,
+      joinVoiceChannel,
+      openCallInGroupPanel,
+      reloadVoicePresence,
+      selectedGroup,
+      t,
+    ]
   );
 
   const renderChannelLeadingIcon = React.useCallback(
@@ -1429,7 +1620,7 @@ export function MessagesScreen() {
                       </button>
                       <button
                         type="button"
-                        onClick={() => setShowInviteModal(true)}
+                        onClick={() => openGroupInviteModal()}
                         title={t('groups.serverInvite')}
                         className="p-2 rounded-lg text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-white/10"
                       >
@@ -1439,7 +1630,7 @@ export function MessagesScreen() {
                   ) : selectedGroup ? (
                     <button
                       type="button"
-                      onClick={() => setShowInviteModal(true)}
+                      onClick={() => openGroupInviteModal()}
                       title={t('groups.serverInvite')}
                       className="p-2 rounded-lg text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-white/10"
                     >
@@ -1648,6 +1839,25 @@ export function MessagesScreen() {
               onLeave={loadGroupsData}
               onOpened={refreshGroupUnreadCounts}
             />
+          ) : selectedGroup &&
+            currentUserId &&
+            callState === 'in_call' &&
+            callDisplayMode === 'embedded' &&
+            activeCall?.isVoiceChannel &&
+            activeCall.groupId === selectedGroup.id &&
+            activeCall.channelId ? (
+            <GroupVoiceChannelScreen
+              groupId={selectedGroup.id}
+              groupName={selectedGroup.name}
+              channelId={activeCall.channelId}
+              channelName={activeCall.channelName ?? t('groups.voiceChannelsHeading')}
+              groupIconUrl={selectedGroup.icon_url}
+              currentUserId={currentUserId}
+              onBack={() => {
+                setSelectedGroup(null);
+                lastPushedVoiceKeyRef.current = null;
+              }}
+            />
           ) : selectedGroup && currentUserId && channelsLoading ? (
             <div className="flex flex-1 flex-col items-center justify-center">
               <div className="w-10 h-10 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
@@ -1708,6 +1918,9 @@ export function MessagesScreen() {
     channelUnreadById,
     isSelectedGroupAdmin,
     renderChannelRow,
+    activeCall,
+    callState,
+    callDisplayMode,
   ]);
 
   useEffect(() => {
@@ -1798,6 +2011,59 @@ export function MessagesScreen() {
       pushKey
     );
   }, [selectedGroup, selectedChannelId, currentUserId, isDesktop, loadGroupsData, refreshGroupUnreadCounts]);
+
+  useEffect(() => {
+    const handleNavigateToGroupVoice = (event: Event) => {
+      const { groupId, channelId, channelName, groupName } = (
+        event as CustomEvent<{
+          groupId: string;
+          channelId: string;
+          channelName?: string | null;
+          groupName?: string | null;
+        }>
+      ).detail;
+      if (!groupId || !channelId) return;
+
+      const row = myGroupRows.find((entry) => entry.group?.id === groupId);
+      const resolvedGroupName = groupName || row?.group?.name || '';
+      const resolvedGroupIcon = row?.group?.icon_url ?? null;
+      setSelectedGroup({
+        id: groupId,
+        name: resolvedGroupName,
+        icon_url: resolvedGroupIcon,
+      });
+
+      if (isDesktop || !currentUserId) return;
+
+      const pushKey = `voice-${groupId}-${channelId}`;
+      if (lastPushedVoiceKeyRef.current === pushKey) return;
+      lastPushedVoiceKeyRef.current = pushKey;
+      pushScreenRef.current(
+        <GroupVoiceChannelScreen
+          groupId={groupId}
+          groupName={resolvedGroupName}
+          channelId={channelId}
+          channelName={channelName ?? t('groups.voiceChannelsHeading')}
+          groupIconUrl={resolvedGroupIcon}
+          currentUserId={currentUserId}
+          onBack={() => {
+            lastPushedVoiceKeyRef.current = null;
+            popScreenRef.current();
+          }}
+          onMinimizeToPip={() => {
+            lastPushedVoiceKeyRef.current = null;
+            popScreenRef.current();
+          }}
+        />,
+        pushKey
+      );
+    };
+
+    window.addEventListener('navigate-to-group-voice', handleNavigateToGroupVoice as EventListener);
+    return () => {
+      window.removeEventListener('navigate-to-group-voice', handleNavigateToGroupVoice as EventListener);
+    };
+  }, [currentUserId, isDesktop, myGroupRows, t]);
 
   const groupChannelNavValue = React.useMemo(
     () => ({
@@ -2112,8 +2378,114 @@ export function MessagesScreen() {
         </div>
       ) : null}
 
-      {showInviteModal && selectedGroup && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={() => setShowInviteModal(false)}>
+      {showEditGroupModal && editingGroupId ? (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+          onClick={closeEditGroupModal}
+        >
+          <div
+            className="w-full max-w-md max-h-[90vh] overflow-y-auto rounded-2xl border border-gray-200 dark:border-white/10 bg-white dark:bg-[#1e1f22] shadow-xl p-6 space-y-4"
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+          >
+            <div className="flex items-center justify-between gap-3">
+              <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
+                {t('groups.editServerTitle')}
+              </h2>
+              <button
+                type="button"
+                onClick={closeEditGroupModal}
+                className="px-2 py-1 rounded-lg text-sm text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-white/10"
+              >
+                {t('groups.modalClose')}
+              </button>
+            </div>
+            <div>
+              <label htmlFor="edit-group-name" className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+                {t('groups.nameLabel')}
+              </label>
+              <input
+                id="edit-group-name"
+                value={editGroupName}
+                onChange={(e) => setEditGroupName(e.target.value)}
+                placeholder={t('groups.namePlaceholder')}
+                className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-black px-3 py-2 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              />
+            </div>
+            <div className="space-y-2">
+              <p className="text-xs font-medium text-gray-600 dark:text-gray-400">{t('groups.groupIconLabel')}</p>
+              <div className="flex items-center gap-3">
+                <div className="w-14 h-14 rounded-2xl bg-gray-100 dark:bg-white/10 flex items-center justify-center overflow-hidden shrink-0 text-lg font-bold text-gray-500 dark:text-gray-400">
+                  {editGroupIconPreview ? (
+                    <img src={editGroupIconPreview} alt="" className="w-full h-full object-cover" />
+                  ) : (
+                    (editGroupName.trim().charAt(0) || '?').toUpperCase()
+                  )}
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => editGroupIconInputRef.current?.click()}
+                    className="rounded-lg border border-gray-300 dark:border-gray-600 px-3 py-1.5 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-white/5"
+                  >
+                    {t('groups.groupIconPick')}
+                  </button>
+                  {editGroupIconPreview ? (
+                    <button
+                      type="button"
+                      onClick={clearEditGroupIcon}
+                      className="rounded-lg px-3 py-1.5 text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30"
+                    >
+                      {t('groups.groupIconRemove')}
+                    </button>
+                  ) : null}
+                </div>
+                <input
+                  ref={editGroupIconInputRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={handleEditGroupIconChange}
+                />
+              </div>
+            </div>
+            <div>
+              <label htmlFor="edit-group-desc" className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+                {t('groups.descriptionLabel')}
+              </label>
+              <textarea
+                id="edit-group-desc"
+                value={editGroupDescription}
+                onChange={(e) => setEditGroupDescription(e.target.value)}
+                placeholder={t('groups.descriptionPlaceholder')}
+                rows={3}
+                className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-black px-3 py-2 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
+              />
+            </div>
+            <label className="flex items-center gap-2 cursor-pointer text-sm text-gray-900 dark:text-white">
+              <input
+                type="checkbox"
+                checked={editGroupPrivate}
+                onChange={(e) => setEditGroupPrivate(e.target.checked)}
+                className="rounded border-gray-300 dark:border-gray-600"
+              />
+              {t('groups.privateLabel')}
+            </label>
+            <button
+              type="button"
+              disabled={updatingGroup}
+              onClick={() => void handleUpdateGroup()}
+              className="w-full rounded-lg bg-indigo-600 text-white py-2 text-sm font-medium disabled:opacity-60"
+            >
+              {updatingGroup ? t('groups.saving') : t('groups.saveServer')}
+            </button>
+          </div>
+        </div>
+      ) : null}
+
+      {showInviteModal && (inviteTargetGroupId ?? selectedGroup) ? (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={() => { setShowInviteModal(false); setInviteTargetGroupId(null); }}>
           <div className="w-full max-w-md rounded-2xl border border-gray-200 dark:border-white/10 bg-white dark:bg-[#1e1f22] shadow-xl p-6 space-y-4" onClick={(e) => e.stopPropagation()}>
             <h2 className="text-lg font-semibold text-gray-900 dark:text-white">{t('groups.inviteTitle')}</h2>
             <p className="text-sm text-gray-500 dark:text-gray-400">{t('groups.invitePermanentHint')}</p>
@@ -2130,7 +2502,7 @@ export function MessagesScreen() {
             ) : (
               <p className="text-sm text-gray-500 dark:text-gray-400">{t('groups.inviteFailedBody')}</p>
             )}
-            {isSelectedGroupAdmin ? (
+            {inviteGroupAdmin ? (
               <button
                 type="button"
                 disabled={refreshingInvite || inviteLoading}
@@ -2143,7 +2515,7 @@ export function MessagesScreen() {
             ) : null}
           </div>
         </div>
-      )}
+      ) : null}
 
       {profilePreviewUserId && profilePreviewData && (
         <SharedProfileView
@@ -2182,6 +2554,18 @@ export function MessagesScreen() {
         <GroupActionsMenu
           target={groupActionsMenu}
           onClose={() => setGroupActionsMenu(null)}
+          onEdit={
+            groupActionsMenu.isAdmin
+              ? () => openEditGroupModal(groupActionsMenu)
+              : undefined
+          }
+          onInvite={() => openGroupInviteModal(groupActionsMenu.groupId)}
+          onLeave={() => handleLeaveGroupFromMenu(groupActionsMenu)}
+          onDelete={
+            groupActionsMenu.isAdmin
+              ? () => handleDeleteGroupFromMenu(groupActionsMenu)
+              : undefined
+          }
         />
       ) : null}
       </>
@@ -2295,12 +2679,12 @@ function ConversationListRow({
     <div
       className={`w-full transition-colors ${isSelected ? 'bg-gray-100 dark:bg-gray-900/90' : 'hover:bg-gray-50 dark:hover:bg-gray-900'}`}
     >
-      <div className="flex items-center gap-3 p-4">
-        <div
-          className="relative shrink-0 touch-manipulation"
-          onContextMenu={onOpenActions}
-          {...longPress}
-        >
+      <div
+        className="flex items-center gap-3 p-4"
+        onContextMenu={onOpenActions}
+        {...longPress}
+      >
+        <div className="relative shrink-0 touch-manipulation">
           {imageUrl ? (
             <img src={imageUrl} alt={otherUser.name} className="w-14 h-14 rounded-full object-cover" />
           ) : (

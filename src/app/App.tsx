@@ -22,7 +22,6 @@ import { useTypingRealtime } from './hooks/useTypingRealtime';
 import { NotificationPrompt } from './components/NotificationPrompt';
 import { UnreadProvider } from './context/UnreadContext';
 import { CallProvider, useCall } from './context/CallContext';
-import { IncomingCallPopup } from './components/IncomingCallPopup';
 import { CallJoinScreen } from './components/CallJoinScreen';
 import { parseCallJoinParams } from './lib/callJoinRoute';
 import i18n from '../lib/i18n';
@@ -878,10 +877,5 @@ function UnreadProviderWrapper({ children }: { children: ReactNode }) {
 }
 
 function AppProviders({ children }: { children: ReactNode }) {
-  return (
-    <CallProvider>
-      {children}
-      <IncomingCallPopup />
-    </CallProvider>
-  );
+  return <CallProvider>{children}</CallProvider>;
 }

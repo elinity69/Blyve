@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { VolumeX, Volume2 } from 'lucide-react';
+import { Link2, LogOut, Pencil, Trash2, Volume2, VolumeX } from 'lucide-react';
 import { NotificationManager } from '../lib/notifications';
 import { toast } from '../lib/toast';
 import { getOptimizedImageUrl } from '../lib/images';
@@ -9,6 +9,9 @@ export type GroupActionTarget = {
   groupId: string;
   groupName: string;
   iconUrl?: string | null;
+  description?: string | null;
+  isPrivate?: boolean;
+  isAdmin: boolean;
   x: number;
   y: number;
 };
@@ -16,9 +19,20 @@ export type GroupActionTarget = {
 interface GroupActionsMenuProps {
   target: GroupActionTarget;
   onClose: () => void;
+  onEdit?: () => void;
+  onInvite?: () => void;
+  onLeave?: () => void | Promise<void>;
+  onDelete?: () => void | Promise<void>;
 }
 
-export function GroupActionsMenu({ target, onClose }: GroupActionsMenuProps) {
+export function GroupActionsMenu({
+  target,
+  onClose,
+  onEdit,
+  onInvite,
+  onLeave,
+  onDelete,
+}: GroupActionsMenuProps) {
   const { t } = useTranslation();
   const menuRef = useRef<HTMLDivElement>(null);
   const [position, setPosition] = useState({ x: target.x, y: target.y });
@@ -72,6 +86,69 @@ export function GroupActionsMenu({ target, onClose }: GroupActionsMenuProps) {
     onClose();
   };
 
+  const items = [
+    {
+      key: 'mute',
+      label: mutedInServer
+        ? t('groups.unmuteNotificationsInServer')
+        : t('groups.muteNotificationsInServer'),
+      icon: mutedInServer ? Volume2 : VolumeX,
+      onClick: handleToggleMute,
+    },
+    target.isAdmin && onEdit
+      ? {
+          key: 'edit',
+          label: t('groups.editServer'),
+          icon: Pencil,
+          onClick: () => {
+            onEdit();
+            onClose();
+          },
+        }
+      : null,
+    onInvite
+      ? {
+          key: 'invite',
+          label: t('groups.serverInvite'),
+          icon: Link2,
+          onClick: () => {
+            onInvite();
+            onClose();
+          },
+        }
+      : null,
+    onLeave
+      ? {
+          key: 'leave',
+          label: t('groups.leave'),
+          icon: LogOut,
+          onClick: () => {
+            void onLeave();
+            onClose();
+          },
+          destructive: true,
+        }
+      : null,
+    target.isAdmin && onDelete
+      ? {
+          key: 'delete',
+          label: t('groups.deleteServer'),
+          icon: Trash2,
+          onClick: () => {
+            void onDelete();
+            onClose();
+          },
+          destructive: true,
+        }
+      : null,
+  ].filter(Boolean) as Array<{
+    key: string;
+    label: string;
+    icon: typeof VolumeX;
+    onClick: () => void;
+    destructive?: boolean;
+  }>;
+
   const iconSrc = target.iconUrl ? getOptimizedImageUrl(target.iconUrl, 96) : null;
   const initial = (target.groupName.trim().charAt(0) || '?').toUpperCase();
 
@@ -98,19 +175,22 @@ export function GroupActionsMenu({ target, onClose }: GroupActionsMenuProps) {
         </div>
       </div>
       <div className="py-1">
-        <button
-          type="button"
-          role="menuitem"
-          onClick={handleToggleMute}
-          className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm text-gray-800 hover:bg-gray-50 dark:text-gray-100 dark:hover:bg-white/5 transition-colors"
-        >
-          {mutedInServer ? <Volume2 className="w-4 h-4 shrink-0" /> : <VolumeX className="w-4 h-4 shrink-0" />}
-          <span>
-            {mutedInServer
-              ? t('groups.unmuteNotificationsInServer')
-              : t('groups.muteNotificationsInServer')}
-          </span>
-        </button>
+        {items.map(({ key, label, icon: Icon, onClick, destructive }) => (
+          <button
+            key={key}
+            type="button"
+            role="menuitem"
+            onClick={onClick}
+            className={`flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm transition-colors ${
+              destructive
+                ? 'text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/30'
+                : 'text-gray-800 hover:bg-gray-50 dark:text-gray-100 dark:hover:bg-white/5'
+            }`}
+          >
+            <Icon className="w-4 h-4 shrink-0" />
+            <span>{label}</span>
+          </button>
+        ))}
       </div>
     </div>
   );
@@ -118,7 +198,14 @@ export function GroupActionsMenu({ target, onClose }: GroupActionsMenuProps) {
 
 export function openGroupActionsMenuFromEvent(
   event: React.MouseEvent | React.PointerEvent,
-  group: { id: string; name: string; icon_url?: string | null }
+  group: {
+    id: string;
+    name: string;
+    icon_url?: string | null;
+    description?: string | null;
+    is_private?: boolean;
+  },
+  isAdmin: boolean,
 ): GroupActionTarget {
   const clientX = 'clientX' in event ? event.clientX : 0;
   const clientY = 'clientY' in event ? event.clientY : 0;
@@ -126,6 +213,9 @@ export function openGroupActionsMenuFromEvent(
     groupId: group.id,
     groupName: group.name,
     iconUrl: group.icon_url,
+    description: group.description,
+    isPrivate: group.is_private,
+    isAdmin,
     x: clientX,
     y: clientY,
   };

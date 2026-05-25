@@ -1,5 +1,5 @@
 import React, { useEffect, useLayoutEffect, useMemo, useState } from 'react';
-import { Mic, PhoneOff, X } from 'lucide-react';
+import { Mic, PhoneOff } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useAppData } from '../context/AppDataContext';
 import { useCall } from '../context/CallContext';
@@ -11,8 +11,9 @@ import { checkMicrophonePermission } from '../lib/mediaPermissions';
 import { CallParticipantStage } from './CallParticipantStage';
 import { JitsiCallView } from './JitsiCallView';
 
-interface ChatCallPanelProps {
-  conversationId: string;
+interface GroupVoiceCallPanelProps {
+  groupId: string;
+  channelId: string;
   currentUserId: string;
 }
 
@@ -29,7 +30,7 @@ function connectionLabel(state: string, t: (key: string) => string) {
   }
 }
 
-export function ChatCallPanel({ conversationId, currentUserId }: ChatCallPanelProps) {
+export function GroupVoiceCallPanel({ groupId, channelId, currentUserId }: GroupVoiceCallPanelProps) {
   const { t } = useTranslation();
   const { currentUserProfile } = useAppData();
   const {
@@ -48,14 +49,15 @@ export function ChatCallPanel({ conversationId, currentUserId }: ChatCallPanelPr
     toggleCamera,
     toggleScreenShare,
     hangUp,
-    isCallForConversation,
+    isVoiceChannelActive,
     errorMessage,
     canRetryConnection,
     retryAttempt,
     isAutoRetrying,
     retryConnection,
-    registerEmbeddedCallHost,
-    embeddedCallConversationId,
+    registerEmbeddedVoiceHost,
+    embeddedVoiceGroupId,
+    embeddedVoiceChannelId,
     callDisplayMode,
     setCallDisplayMode,
     expandCallToFullscreen,
@@ -99,20 +101,21 @@ export function ChatCallPanel({ conversationId, currentUserId }: ChatCallPanelPr
     }
   }, [isMuted]);
 
-  const isActiveConversationCall =
-    isCallForConversation(conversationId) && (state === 'calling' || state === 'in_call');
-  const isEmbeddedCallHost =
-    embeddedCallConversationId === conversationId && callDisplayMode === 'embedded';
+  const isActiveVoiceCall = isVoiceChannelActive(groupId, channelId);
+  const isEmbeddedVoiceHost =
+    embeddedVoiceGroupId === groupId &&
+    embeddedVoiceChannelId === channelId &&
+    callDisplayMode === 'embedded';
 
   useLayoutEffect(() => {
     if (callPinned) return undefined;
-    if (isActiveConversationCall && state === 'in_call') {
-      registerEmbeddedCallHost(conversationId);
-      return () => registerEmbeddedCallHost(null);
+    if (isActiveVoiceCall && state === 'in_call') {
+      registerEmbeddedVoiceHost(groupId, channelId);
+      return () => registerEmbeddedVoiceHost(null, null);
     }
-    registerEmbeddedCallHost(null);
+    registerEmbeddedVoiceHost(null, null);
     return undefined;
-  }, [callPinned, conversationId, isActiveConversationCall, registerEmbeddedCallHost, state]);
+  }, [callPinned, channelId, groupId, isActiveVoiceCall, registerEmbeddedVoiceHost, state]);
 
   const stageParticipants = useMemo(() => {
     const localName =
@@ -149,18 +152,14 @@ export function ChatCallPanel({ conversationId, currentUserId }: ChatCallPanelPr
     return filterJoinedStageParticipants(participants, remoteParticipantCount);
   }, [activeCall?.participants, currentUserProfile, localIdentity, remoteParticipantCount, t]);
 
-  if (!isActiveConversationCall) return null;
+  if (!isActiveVoiceCall) return null;
 
   if (callPinned) return null;
 
   if (callDisplayMode === 'pip' && state === 'in_call') return null;
 
   const subtitle =
-    state === 'calling'
-      ? t('call.waitingForParticipant')
-      : state === 'in_call'
-        ? connectionLabel(connectionState, t)
-        : t('call.waitingForParticipant');
+    state === 'in_call' ? connectionLabel(connectionState, t) : t('call.connectionConnecting');
 
   const showVideoSurface =
     isCameraEnabled ||
@@ -182,7 +181,7 @@ export function ChatCallPanel({ conversationId, currentUserId }: ChatCallPanelPr
 
   return (
     <div className="relative shrink-0">
-      {state === 'in_call' && isJitsiCallProvider() && jitsiSession && isEmbeddedCallHost ? (
+      {state === 'in_call' && isJitsiCallProvider() && jitsiSession && isEmbeddedVoiceHost ? (
         <JitsiCallView
           key={`${jitsiSession.sessionId}:${jitsiMountKey}`}
           sessionId={jitsiSession.sessionId}
@@ -201,8 +200,14 @@ export function ChatCallPanel({ conversationId, currentUserId }: ChatCallPanelPr
           onRemoteStreamActiveChange={setRemoteStreamDetected}
           onExpandedChange={(expanded) => {
             if (expanded) expandCallToFullscreen();
-            else if (embeddedCallConversationId === conversationId) setCallDisplayMode('embedded');
-            else setCallDisplayMode('pip');
+            else if (
+              embeddedVoiceGroupId === groupId &&
+              embeddedVoiceChannelId === channelId
+            ) {
+              setCallDisplayMode('embedded');
+            } else {
+              enterCallPip();
+            }
           }}
           onJoinResolved={jitsiHandlers.onJoinResolved}
           onJoinError={jitsiHandlers.onJoinError}
@@ -253,9 +258,7 @@ export function ChatCallPanel({ conversationId, currentUserId }: ChatCallPanelPr
             <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-full bg-[#5865f2]/20">
               <PhoneOff className="h-6 w-6 text-[#5865f2]" />
             </div>
-            <p className="text-sm font-semibold text-white">
-              {state === 'calling' ? t('call.calling') : t('call.inCall')}
-            </p>
+            <p className="text-sm font-semibold text-white">{t('groups.voiceChannelsHeading')}</p>
             <p className="mt-1 text-xs text-white/70">{subtitle}</p>
           </div>
         </div>
@@ -303,19 +306,6 @@ export function ChatCallPanel({ conversationId, currentUserId }: ChatCallPanelPr
               {t('call.enableMicrophone')}
             </button>
           </div>
-        </div>
-      ) : null}
-
-      {state === 'calling' ? (
-        <div className="absolute inset-x-0 bottom-3 z-20 flex justify-center px-3">
-          <button
-            type="button"
-            onClick={() => void hangUp()}
-            className="flex items-center gap-2 rounded-full border border-white/10 bg-[#1e1f22]/95 px-4 py-2 text-sm text-white shadow-lg hover:bg-[#2f3136]"
-          >
-            <X className="h-4 w-4" />
-            {t('call.decline')}
-          </button>
         </div>
       ) : null}
     </div>

@@ -226,6 +226,7 @@ export async function mintJitsiJwt(
           recording: "false",
           transcription: "false",
           "outbound-call": "false",
+          "screen-sharing": "true",
         },
         room: { regex: false },
       },

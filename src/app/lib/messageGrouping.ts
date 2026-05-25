@@ -19,6 +19,14 @@ export function isMessageGroupStart(
   return gap > GROUP_TIME_GAP_MS;
 }
 
+/** True when this row starts a block from a different sender than the previous message. */
+export function isNewSenderGroupStart(
+  current: GroupableMessage,
+  prev: GroupableMessage | null
+): boolean {
+  return !!prev && prev.sender_id !== current.sender_id;
+}
+
 export function isMessageGroupEnd(
   current: GroupableMessage,
   next: GroupableMessage | null

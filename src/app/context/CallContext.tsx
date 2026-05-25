@@ -1,5 +1,7 @@
 ﻿import React, {
+  Suspense,
   createContext,
+  lazy,
   useCallback,
   useContext,
   useEffect,
@@ -14,6 +16,12 @@ import { getOptimizedImageUrl } from '../lib/images';
 import { toast } from '../lib/toast';
 import i18n from '../../lib/i18n';
 import { FloatingCallWidget } from '../components/FloatingCallWidget';
+
+const IncomingCallPopup = lazy(() =>
+  import('../components/IncomingCallPopup').then((module) => ({
+    default: module.IncomingCallPopup,
+  }))
+);
 import type { CallStageParticipant } from '../components/CallParticipantStage';
 import { type CallMediaType, type JitsiHandle } from '../lib/jitsi';
 import { isJitsiCallProvider } from '../lib/callProvider';
@@ -21,7 +29,8 @@ import { connectLiveKitRoom, toLiveKitCallError } from '../lib/livekitCall';
 import { toJitsiCallError, type JitsiJoinCredentials } from '../lib/jitsiCall';
 import { requestMicrophoneAccess, hasMicrophonePermission, type MicrophoneAccessResult } from '../lib/mediaPermissions';
 import { markJitsiMicGranted, shouldSkipJitsiPrejoin } from '../lib/jitsiMicStorage';
-import { mergeCallParticipants, filterJoinedStageParticipants } from '../lib/callParticipants';
+import { isScreenShareSupported } from '../lib/screenShareSupport';
+import { filterJoinedStageParticipants, mergeCallParticipants } from '../lib/callParticipants';
 import { Room } from 'livekit-client';
 
 type CallUiState = 'idle' | 'calling' | 'incoming' | 'in_call' | 'ended';
@@ -137,6 +146,7 @@ interface CallContextValue {
     onAudioMuteChanged: (muted: boolean) => void;
     onVideoMuteChanged: (muted: boolean) => void;
     onScreenShareChanged: (active: boolean) => void;
+    onScreenShareError: (code: string) => void;
     onDominantSpeakerChanged: (participantId: string | null) => void;
     onConferenceJoined: (payload: { id?: string; displayName?: string }) => void;
     onRemoteParticipantJoined: (payload: { id?: string; displayName?: string }) => void;
@@ -154,12 +164,21 @@ interface CallContextValue {
   };
   setParticipantVolume: (participantId: string, volume: number) => void;
   setCallDisplayMode: (mode: CallDisplayMode) => void;
-  enterCallPip: () => void;
+  enterCallPip: (force?: boolean) => void;
   expandCallToFullscreen: () => void;
   minimizeCallFromFullscreen: () => void;
   openCallInChat: () => void;
+  openCallInGroupPanel: () => void;
+  openCallInPanel: () => void;
   registerEmbeddedCallHost: (conversationId: string | null) => void;
+  registerEmbeddedVoiceHost: (groupId: string | null, channelId: string | null) => void;
   embeddedCallConversationId: string | null;
+  embeddedVoiceGroupId: string | null;
+  embeddedVoiceChannelId: string | null;
+  callPinned: boolean;
+  pinnedCallHostActive: boolean;
+  toggleCallPinned: () => void;
+  registerPinnedCallHost: (active: boolean) => void;
   startDirectCall: (input: StartDirectCallInput) => Promise<void>;
   joinVoiceChannel: (input: JoinVoiceChannelInput) => Promise<void>;
   leaveVoiceChannel: () => Promise<void>;
@@ -168,7 +187,7 @@ interface CallContextValue {
   hangUp: () => Promise<void>;
   toggleMute: () => Promise<void>;
   toggleCamera: () => Promise<void>;
-  toggleScreenShare: () => Promise<void>;
+  toggleScreenShare: () => void;
   retryConnection: () => Promise<void>;
   joinCallViaInvite: (sessionId: string, inviteToken: string) => Promise<void>;
   clearEndedState: () => void;
@@ -261,8 +280,15 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   const [debugTrail, setDebugTrail] = useState<string[]>([]);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [embeddedCallConversationId, setEmbeddedCallConversationId] = useState<string | null>(null);
+  const [embeddedVoiceGroupId, setEmbeddedVoiceGroupId] = useState<string | null>(null);
+  const [embeddedVoiceChannelId, setEmbeddedVoiceChannelId] = useState<string | null>(null);
+  const [callPinned, setCallPinned] = useState(false);
+  const [pinnedCallHostActive, setPinnedCallHostActive] = useState(false);
   const [speakingParticipantId, setSpeakingParticipantId] = useState<string | null>(null);
   const embeddedHostRef = useRef<string | null>(null);
+  const embeddedVoiceHostRef = useRef<{ groupId: string; channelId: string } | null>(null);
+  const pinnedHostRef = useRef(false);
+  const callPinnedRef = useRef(false);
 
   const jitsiHandleRef = useRef<JitsiHandle | null>(null);
   const jitsiActiveSessionRef = useRef<string | null>(null);
@@ -316,6 +342,10 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     setSelfRole('unknown');
     setLocalIdentity(null);
     setRemoteParticipantCount(0);
+    setCallPinned(false);
+    setPinnedCallHostActive(false);
+    pinnedHostRef.current = false;
+    callPinnedRef.current = false;
     setState('idle');
     pushDebug('state -> idle');
   }, [pushDebug]);
@@ -367,6 +397,10 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     setRemoteVideoActive(false);
     setRemoteScreenShareActive(false);
     setCallDisplayMode('pip');
+    setCallPinned(false);
+    setPinnedCallHostActive(false);
+    pinnedHostRef.current = false;
+    callPinnedRef.current = false;
     setParticipantVolumes({});
     setSpeakingParticipantId(null);
     userMutedManuallyRef.current = false;
@@ -692,7 +726,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         if (!sessionId) throw new Error('Voice session id missing');
 
         setSelfRole('participant');
-        setCallDisplayMode('pip');
+        setCallDisplayMode('embedded');
         setActiveCall({
           callSessionId: sessionId,
           groupId: input.groupId,
@@ -733,9 +767,76 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     );
   }, []);
 
-  const enterCallPip = useCallback(() => {
+  const enterCallPip = useCallback((force = false) => {
+    if (callPinnedRef.current && !force) return;
     setCallDisplayMode('pip');
   }, []);
+
+  const toggleCallPinned = useCallback(() => {
+    const next = !callPinnedRef.current;
+    callPinnedRef.current = next;
+    setCallPinned(next);
+    if (next && state === 'in_call') {
+      embeddedHostRef.current = null;
+      embeddedVoiceHostRef.current = null;
+      setEmbeddedCallConversationId(null);
+      setEmbeddedVoiceGroupId(null);
+      setEmbeddedVoiceChannelId(null);
+      pinnedHostRef.current = true;
+      setPinnedCallHostActive(true);
+      setCallDisplayMode('embedded');
+      return;
+    }
+    if (!next && state === 'in_call') {
+      pinnedHostRef.current = false;
+      setPinnedCallHostActive(false);
+    }
+  }, [state]);
+
+  useEffect(() => {
+    callPinnedRef.current = callPinned;
+  }, [callPinned]);
+
+  useLayoutEffect(() => {
+    if (callPinned && state === 'in_call' && callDisplayMode === 'pip') {
+      setCallDisplayMode('embedded');
+    }
+  }, [callDisplayMode, callPinned, state]);
+
+  useEffect(() => {
+    if (
+      callPinnedRef.current ||
+      callPinned ||
+      state !== 'in_call' ||
+      callDisplayMode !== 'embedded'
+    ) {
+      return;
+    }
+
+    const hasNativeDm =
+      !!activeCall?.conversationId &&
+      embeddedCallConversationId === activeCall.conversationId;
+    const hasNativeVoice =
+      !!activeCall?.isVoiceChannel &&
+      embeddedVoiceGroupId === activeCall.groupId &&
+      embeddedVoiceChannelId === activeCall.channelId;
+
+    if (!hasNativeDm && !hasNativeVoice && !pinnedCallHostActive) {
+      setCallDisplayMode('pip');
+    }
+  }, [
+    activeCall?.channelId,
+    activeCall?.conversationId,
+    activeCall?.groupId,
+    activeCall?.isVoiceChannel,
+    callDisplayMode,
+    callPinned,
+    embeddedCallConversationId,
+    embeddedVoiceChannelId,
+    embeddedVoiceGroupId,
+    pinnedCallHostActive,
+    state,
+  ]);
 
   const expandCallToFullscreen = useCallback(() => {
     setCallDisplayMode('fullscreen');
@@ -744,10 +845,44 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   const minimizeCallFromFullscreen = useCallback(() => {
     if (embeddedCallConversationId === activeCall?.conversationId) {
       setCallDisplayMode('embedded');
+    } else if (
+      callPinned ||
+      pinnedCallHostActive ||
+      (activeCall?.isVoiceChannel &&
+        embeddedVoiceGroupId === activeCall.groupId &&
+        embeddedVoiceChannelId === activeCall.channelId)
+    ) {
+      setCallDisplayMode('embedded');
     } else {
       setCallDisplayMode('pip');
     }
-  }, [activeCall?.conversationId, embeddedCallConversationId]);
+  }, [
+    activeCall?.channelId,
+    activeCall?.conversationId,
+    activeCall?.groupId,
+    activeCall?.isVoiceChannel,
+    callPinned,
+    embeddedCallConversationId,
+    embeddedVoiceChannelId,
+    embeddedVoiceGroupId,
+    pinnedCallHostActive,
+  ]);
+
+  const navigateToGroupVoice = useCallback(
+    (
+      groupId: string,
+      channelId: string,
+      channelName?: string | null,
+      groupName?: string | null
+    ) => {
+      window.dispatchEvent(
+        new CustomEvent('navigate-to-group-voice', {
+          detail: { groupId, channelId, channelName, groupName },
+        })
+      );
+    },
+    []
+  );
 
   const openCallInChat = useCallback(() => {
     const conversationId = activeCall?.conversationId;
@@ -755,6 +890,38 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     navigateToConversation(conversationId);
     setCallDisplayMode('embedded');
   }, [activeCall?.conversationId, navigateToConversation]);
+
+  const openCallInGroupPanel = useCallback(() => {
+    const groupId = activeCall?.groupId;
+    const channelId = activeCall?.channelId;
+    if (!activeCall?.isVoiceChannel || !groupId || !channelId) return;
+    navigateToGroupVoice(
+      groupId,
+      channelId,
+      activeCall.channelName,
+      activeCall.groupName
+    );
+    setCallDisplayMode('embedded');
+  }, [
+    activeCall?.channelId,
+    activeCall?.channelName,
+    activeCall?.groupId,
+    activeCall?.groupName,
+    activeCall?.isVoiceChannel,
+    navigateToGroupVoice,
+  ]);
+
+  const openCallInPanel = useCallback(() => {
+    if (callPinnedRef.current) {
+      setCallDisplayMode('embedded');
+      return;
+    }
+    if (activeCall?.isVoiceChannel) {
+      openCallInGroupPanel();
+      return;
+    }
+    openCallInChat();
+  }, [activeCall?.isVoiceChannel, openCallInChat, openCallInGroupPanel]);
 
   const acceptIncomingCall = useCallback(async () => {
     if (!incomingCall) return;
@@ -977,22 +1144,28 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     }
   }, [isCameraEnabled]);
 
-  const toggleScreenShare = useCallback(async () => {
+  const toggleScreenShare = useCallback(() => {
     if (isJitsiCallProvider()) {
       const handle = jitsiHandleRef.current;
       if (!handle) return;
+      if (!isScreenShareEnabled && !isScreenShareSupported()) {
+        toast.error(i18n.t('call.screenShareUnsupported'));
+        return;
+      }
       handle.toggleScreenShare();
       return;
     }
     const room = roomRef.current;
     if (!room) return;
     const nextEnabled = !isScreenShareEnabled;
-    try {
-      await room.localParticipant.setScreenShareEnabled(nextEnabled);
-      setIsScreenShareEnabled(nextEnabled);
-    } catch (error: unknown) {
-      setErrorMessage(String((error as Error)?.message || 'Screen share permission denied'));
-    }
+    void room.localParticipant
+      .setScreenShareEnabled(nextEnabled)
+      .then(() => {
+        setIsScreenShareEnabled(nextEnabled);
+      })
+      .catch((error: unknown) => {
+        setErrorMessage(String((error as Error)?.message || 'Screen share permission denied'));
+      });
   }, [isScreenShareEnabled]);
 
   const joinCallViaInvite = useCallback(
@@ -1168,6 +1341,18 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     setIsScreenShareEnabled(active);
     isScreenShareEnabledRef.current = active;
     jitsiHandleRef.current?.broadcastMediaState(isCameraEnabledRef.current, active);
+  }, []);
+
+  const handleJitsiScreenShareError = useCallback((code: string) => {
+    if (code === 'SCREEN_SHARE_UNSUPPORTED') {
+      toast.error(i18n.t('call.screenShareUnsupported'));
+      return;
+    }
+    if (code === 'SCREEN_SHARE_DENIED') {
+      toast.error(i18n.t('call.screenShareDenied'));
+      return;
+    }
+    toast.error(i18n.t('call.screenShareFailed'));
   }, []);
 
   const resolveSpeakingParticipantId = useCallback(
@@ -1407,6 +1592,8 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   );
 
   const registerEmbeddedCallHost = useCallback((conversationId: string | null) => {
+    if (callPinnedRef.current) return;
+
     embeddedHostRef.current = conversationId;
     setEmbeddedCallConversationId(conversationId);
     if (
@@ -1414,13 +1601,61 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       activeCall?.conversationId === conversationId &&
       state === 'in_call'
     ) {
-      setCallDisplayMode((mode) => (mode === 'fullscreen' ? mode : 'embedded'));
+      setCallDisplayMode((mode) => (mode === 'pip' || mode === 'fullscreen' ? mode : 'embedded'));
       return;
     }
-    if (!conversationId && state === 'in_call') {
+    if (
+      !conversationId &&
+      state === 'in_call' &&
+      !activeCall?.isVoiceChannel &&
+      !callPinnedRef.current
+    ) {
       setCallDisplayMode((mode) => (mode === 'fullscreen' ? mode : 'pip'));
     }
-  }, [activeCall?.conversationId, state]);
+  }, [activeCall?.conversationId, activeCall?.isVoiceChannel, state]);
+
+  const registerEmbeddedVoiceHost = useCallback(
+    (groupId: string | null, channelId: string | null) => {
+      if (callPinnedRef.current) return;
+
+      embeddedVoiceHostRef.current =
+        groupId && channelId ? { groupId, channelId } : null;
+      setEmbeddedVoiceGroupId(groupId);
+      setEmbeddedVoiceChannelId(channelId);
+      if (
+        groupId &&
+        channelId &&
+        activeCall?.isVoiceChannel &&
+        activeCall.groupId === groupId &&
+        activeCall.channelId === channelId &&
+        state === 'in_call'
+      ) {
+        setCallDisplayMode((mode) => (mode === 'pip' || mode === 'fullscreen' ? mode : 'embedded'));
+        return;
+      }
+      if (
+        (!groupId || !channelId) &&
+        state === 'in_call' &&
+        activeCall?.isVoiceChannel &&
+        !callPinnedRef.current
+      ) {
+        setCallDisplayMode((mode) => (mode === 'fullscreen' ? mode : 'pip'));
+      }
+    },
+    [activeCall?.channelId, activeCall?.groupId, activeCall?.isVoiceChannel, state]
+  );
+
+  const registerPinnedCallHost = useCallback(
+    (active: boolean) => {
+      if (!active && callPinnedRef.current) return;
+      pinnedHostRef.current = active;
+      setPinnedCallHostActive(active);
+      if (active && state === 'in_call' && callPinnedRef.current) {
+        setCallDisplayMode('embedded');
+      }
+    },
+    [state]
+  );
 
   useEffect(() => {
     isMutedRef.current = isMuted;
@@ -1715,6 +1950,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         jitsiHandleRef.current?.broadcastMediaState(camera, isScreenShareEnabledRef.current);
       },
       onScreenShareChanged: handleJitsiScreenShareChanged,
+      onScreenShareError: handleJitsiScreenShareError,
       onDominantSpeakerChanged: handleJitsiDominantSpeakerChanged,
       onConferenceJoined: handleJitsiConferenceJoined,
       onRemoteParticipantJoined: handleJitsiRemoteParticipantJoined,
@@ -1735,14 +1971,35 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       handleJitsiRemoteParticipantJoined,
       handleJitsiRemoteSpeakingChanged,
       handleJitsiScreenShareChanged,
+      handleJitsiScreenShareError,
     ]
   );
 
-  const embeddedJitsiActive =
+  const embeddedDmJitsiActive =
+    !callPinned &&
     callDisplayMode === 'embedded' &&
     embeddedCallConversationId != null &&
     jitsiJoinRequest?.conversationId != null &&
     embeddedCallConversationId === jitsiJoinRequest.conversationId;
+
+  const embeddedVoiceJitsiActive =
+    !callPinned &&
+    callDisplayMode === 'embedded' &&
+    embeddedVoiceGroupId != null &&
+    embeddedVoiceChannelId != null &&
+    activeCall?.isVoiceChannel === true &&
+    activeCall.groupId === embeddedVoiceGroupId &&
+    activeCall.channelId === embeddedVoiceChannelId &&
+    jitsiJoinRequest?.conversationId == null;
+
+  const embeddedPinnedJitsiActive =
+    callPinned &&
+    callDisplayMode === 'embedded' &&
+    state === 'in_call' &&
+    !!jitsiJoinRequest;
+
+  const embeddedJitsiActive =
+    embeddedDmJitsiActive || embeddedVoiceJitsiActive || embeddedPinnedJitsiActive;
 
   const prevEmbeddedJitsiActiveRef = useRef<boolean | null>(null);
   useLayoutEffect(() => {
@@ -1766,10 +2023,9 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     isJitsiCallProvider() &&
     !!jitsiJoinRequest &&
     state === 'in_call' &&
+    !callPinned &&
     !embeddedJitsiActive &&
-    (callDisplayMode === 'pip' ||
-      callDisplayMode === 'fullscreen' ||
-      jitsiJoinRequest.conversationId == null);
+    (callDisplayMode === 'pip' || callDisplayMode === 'fullscreen');
 
   const floatingStageParticipants = useMemo((): CallStageParticipant[] => {
     const remotes = activeCall?.participants ?? [];
@@ -1822,8 +2078,17 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       expandCallToFullscreen,
       minimizeCallFromFullscreen,
       openCallInChat,
+      openCallInGroupPanel,
+      openCallInPanel,
       registerEmbeddedCallHost,
+      registerEmbeddedVoiceHost,
       embeddedCallConversationId,
+      embeddedVoiceGroupId,
+      embeddedVoiceChannelId,
+      callPinned,
+      pinnedCallHostActive,
+      toggleCallPinned,
+      registerPinnedCallHost,
       startDirectCall,
       joinVoiceChannel,
       leaveVoiceChannel,
@@ -1869,8 +2134,17 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       expandCallToFullscreen,
       minimizeCallFromFullscreen,
       openCallInChat,
+      openCallInGroupPanel,
+      openCallInPanel,
       registerEmbeddedCallHost,
+      registerEmbeddedVoiceHost,
       embeddedCallConversationId,
+      embeddedVoiceGroupId,
+      embeddedVoiceChannelId,
+      callPinned,
+      pinnedCallHostActive,
+      toggleCallPinned,
+      registerPinnedCallHost,
       startDirectCall,
       joinVoiceChannel,
       leaveVoiceChannel,
@@ -1891,6 +2165,9 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   return (
     <CallContext.Provider value={value}>
       {children}
+      <Suspense fallback={null}>
+        <IncomingCallPopup />
+      </Suspense>
       {showGlobalCallHost ? (
         <FloatingCallWidget
           displayMode={callDisplayMode === 'fullscreen' ? 'fullscreen' : 'pip'}
@@ -1920,6 +2197,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
           onAudioMuteChanged={jitsiHandlers.onAudioMuteChanged}
           onVideoMuteChanged={jitsiHandlers.onVideoMuteChanged}
           onScreenShareChanged={jitsiHandlers.onScreenShareChanged}
+          onScreenShareError={jitsiHandlers.onScreenShareError}
           onDominantSpeakerChanged={jitsiHandlers.onDominantSpeakerChanged}
           onConferenceJoined={jitsiHandlers.onConferenceJoined}
           onRemoteParticipantJoined={jitsiHandlers.onRemoteParticipantJoined}
@@ -1929,9 +2207,10 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
           onHangUp={() => void hangUp()}
           onToggleMute={() => void toggleMute()}
           onToggleCamera={() => void toggleCamera()}
-          onToggleScreenShare={() => void toggleScreenShare()}
+          onToggleScreenShare={toggleScreenShare}
           onMinimizeFullscreen={minimizeCallFromFullscreen}
-          onOpenInChat={openCallInChat}
+          onOpenInChat={openCallInPanel}
+          onClosePip={openCallInPanel}
           onEnterFullscreen={expandCallToFullscreen}
         />
       ) : null}

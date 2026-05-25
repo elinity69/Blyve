@@ -1,5 +1,6 @@
 import { assertServerAuthorizedRoom } from './jitsiCall';
 import { markJitsiMicGranted } from './jitsiMicStorage';
+import { isMobileWebBrowser, isScreenShareSupported } from './screenShareSupport';
 import { BLYVE_MEDIA_MESSAGE, BLYVE_SPEAKING_MESSAGE, parseBlyveMediaMessage, parseBlyveSpeakingMessage } from './callAudioLevels';
 
 export interface JitsiRemoteMediaState {
@@ -44,6 +45,7 @@ export interface JitsiMountOptions {
   onAuthError?: (message: string) => void;
   /** When true, Jitsi won't request mic again (preflight already granted). */
   skipInitialGUM?: boolean;
+  onScreenShareError?: (message: string) => void;
 }
 
 export interface JitsiHandle {
@@ -51,6 +53,7 @@ export interface JitsiHandle {
   toggleAudio: () => void;
   toggleVideo: () => void;
   toggleScreenShare: () => void;
+  isScreenSharing: () => boolean;
   isAudioMuted: () => boolean;
   isVideoMuted: () => boolean;
   ensureAudioUnmuted: () => void;
@@ -81,6 +84,7 @@ declare global {
         videoMuted?: boolean;
       }>;
       getContentSharingParticipants?: () => Promise<string[]>;
+      getIFrame?: () => HTMLIFrameElement;
     };
   }
 }
@@ -168,7 +172,19 @@ function patchJitsiIframePermissions(container: HTMLElement, domain?: string) {
     if (iframe.allow !== cleaned) {
       iframe.allow = cleaned;
     }
+    iframe.setAttribute('allowfullscreen', 'true');
   });
+}
+
+function ensureJitsiIframeScreenSharePermissions(api: { getIFrame?: () => HTMLIFrameElement }, domain?: string) {
+  const iframe = api.getIFrame?.();
+  if (!iframe) return;
+  const fallbackAllow = buildJitsiIframeAllow(domain);
+  const cleaned = sanitizeAllowTokens(iframe.allow || '', fallbackAllow);
+  if (iframe.allow !== cleaned) {
+    iframe.allow = cleaned;
+  }
+  iframe.setAttribute('allowfullscreen', 'true');
 }
 
 function observeJitsiIframePermissions(container: HTMLElement, domain?: string) {
@@ -354,6 +370,22 @@ export async function mountJitsiMeetingFromServerJoin(
         disableTopPanel: true,
         disableResizable: true,
       },
+      disableScreensharing: false,
+      desktopSharingChromeMethod: 'inline',
+      desktopSharingSources: isMobileWebBrowser()
+        ? ['screen']
+        : ['screen', 'window', 'tab'],
+      desktopSharingFrameRate: {
+        min: 5,
+        max: isMobileWebBrowser() ? 24 : 30,
+      },
+      ...(isMobileWebBrowser()
+        ? {
+            p2p: {
+              mobileScreenshareCodec: 'VP8',
+            },
+          }
+        : {}),
     },
     interfaceConfigOverwrite: {
       TOOLBAR_BUTTONS: [],
@@ -374,6 +406,7 @@ export async function mountJitsiMeetingFromServerJoin(
   window.setTimeout(() => patchJitsiIframePermissions(container, resolvedDomain), 0);
 
   let localParticipantId: string | null = null;
+  let localScreenSharing = false;
   let remoteMediaPollId: number | null = null;
   let lastRemoteMedia: JitsiRemoteMediaState = {
     remoteVideoActive: false,
@@ -715,6 +748,9 @@ export async function mountJitsiMeetingFromServerJoin(
     const participantId =
       readJitsiParticipantId(payload) ?? payload?.participantId ?? null;
     options.onScreenShareChanged?.(active && (!participantId || participantId === localParticipantId));
+    if (!participantId || participantId === localParticipantId) {
+      localScreenSharing = active;
+    }
     if (participantId && participantId !== localParticipantId && active) {
       activeRemoteSharerIds = [participantId];
       emitRemoteMedia({
@@ -771,7 +807,23 @@ export async function mountJitsiMeetingFromServerJoin(
       setAudioMuted(!api.isAudioMuted());
     },
     toggleVideo: () => api.executeCommand('toggleVideo'),
-    toggleScreenShare: () => api.executeCommand('toggleShareScreen'),
+    toggleScreenShare: () => {
+      if (!localScreenSharing && !isScreenShareSupported()) {
+        options.onScreenShareError?.('SCREEN_SHARE_UNSUPPORTED');
+        return;
+      }
+
+      ensureJitsiIframeScreenSharePermissions(api, resolvedDomain);
+
+      try {
+        api.executeCommand('toggleShareScreen');
+      } catch (error) {
+        options.onScreenShareError?.(
+          String((error as Error)?.message || 'SCREEN_SHARE_FAILED'),
+        );
+      }
+    },
+    isScreenSharing: () => localScreenSharing,
     isAudioMuted: () => api.isAudioMuted(),
     isVideoMuted: () => api.isVideoMuted(),
     ensureAudioUnmuted,

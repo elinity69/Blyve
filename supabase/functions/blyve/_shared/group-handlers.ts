@@ -268,6 +268,76 @@ export async function handleUpdateGroupChannel(
   return ok({ channel });
 }
 
+export async function handleUpdateGroup(
+  supabase: SupabaseClient,
+  user: User,
+  groupId: string,
+  body: Record<string, unknown>,
+): Promise<GroupHandlerResult> {
+  if (!isUuid(groupId)) return fail(400, "Invalid group id");
+  const denied = await assertGroupAdmin(supabase, groupId, user.id);
+  if (denied) return denied;
+
+  const updates: Record<string, unknown> = {
+    updated_at: new Date().toISOString(),
+  };
+
+  if (body.name != null) {
+    const cleanName = String(body.name).trim();
+    if (cleanName.length < 2 || cleanName.length > 60) {
+      return fail(400, "Group name must be between 2 and 60 characters");
+    }
+    updates.name = cleanName;
+  }
+
+  if (body.description !== undefined) {
+    const cleanDescription =
+      body.description == null ? null : String(body.description).trim();
+    if (cleanDescription && cleanDescription.length > 500) {
+      return fail(400, "Description too long");
+    }
+    updates.description = cleanDescription;
+  }
+
+  if (body.is_private !== undefined) {
+    updates.is_private = !!body.is_private;
+  }
+
+  if (body.iconUrl !== undefined || body.icon_url !== undefined) {
+    const iconResult = parseOptionalIconUrl(body);
+    if (iconResult.error) return iconResult.error;
+    updates.icon_url = iconResult.iconUrl ?? null;
+  }
+
+  if (Object.keys(updates).length <= 1) return fail(400, "Nothing to update");
+
+  const { data: group, error: updErr } = await supabase
+    .from("groups")
+    .update(updates)
+    .eq("id", groupId)
+    .select("*")
+    .maybeSingle();
+  if (updErr) return fail(500, updErr.message);
+  if (!group) return fail(404, "Group not found");
+
+  return ok({ group });
+}
+
+export async function handleDeleteGroup(
+  supabase: SupabaseClient,
+  user: User,
+  groupId: string,
+): Promise<GroupHandlerResult> {
+  if (!isUuid(groupId)) return fail(400, "Invalid group id");
+  const denied = await assertGroupAdmin(supabase, groupId, user.id);
+  if (denied) return denied;
+
+  const { error: delErr } = await supabase.from("groups").delete().eq("id", groupId);
+  if (delErr) return fail(500, delErr.message);
+
+  return ok({ deleted: true, groupId });
+}
+
 export async function handleDeleteGroupChannel(
   supabase: SupabaseClient,
   user: User,

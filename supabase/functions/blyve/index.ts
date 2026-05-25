@@ -16,6 +16,8 @@ import { logger } from "npm:hono/logger";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 // @ts-ignore - Deno npm: imports are valid at runtime
 import type { Context } from "npm:hono";
+// @ts-ignore - Deno jsr: imports are valid at runtime
+import { handleLinkPreview } from "./_shared/link-preview-handlers.ts";
 
 // HINWEIS: seedData wurde entfernt, damit keine Fake-User mehr erstellt werden!
 // Daten: profiles, conversations, messages, friends, groups (nur Kommunikation).
@@ -87,6 +89,8 @@ app.options("/*", (c) => {
 app.get("/health", (c) => {
   return c.json({ status: "ok" });
 });
+
+app.get("/link-preview", handleLinkPreview);
 
 // ==================== AUTH ROUTES ====================
 
@@ -679,6 +683,7 @@ app.get("/groups/:groupId/channels", async (c) => {
 // @ts-ignore Deno relative import
 import {
   handleCreateGroupChannel,
+  handleDeleteGroup,
   handleDeleteGroupChannel,
   handleGetGroupInvite,
   handleGetVoiceChannelState,
@@ -686,6 +691,7 @@ import {
   handleJoinVoiceChannel,
   handleLeaveVoiceChannel,
   handleRefreshGroupInvite,
+  handleUpdateGroup,
   handleUpdateGroupChannel,
 } from "./_shared/group-handlers.ts";
 
@@ -970,6 +976,35 @@ app.post("/groups/:groupId/leave", async (c) => {
   } catch (error) {
     console.error("POST /groups/:groupId/leave failed:", error);
     return c.json({ error: "Failed to leave group" }, 500);
+  }
+});
+
+app.patch("/groups/:groupId", async (c) => {
+  try {
+    const supabase = getSupabase(c);
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    if (authError || !user) return c.json({ error: "Unauthorized" }, 401);
+    const groupId = c.req.param("groupId");
+    const body = await c.req.json().catch(() => ({}));
+    const result = await handleUpdateGroup(supabase, user, groupId, body);
+    return c.json(result.body, result.status);
+  } catch (error) {
+    console.error("PATCH /groups/:groupId failed:", error);
+    return c.json({ error: "Failed to update group" }, 500);
+  }
+});
+
+app.delete("/groups/:groupId", async (c) => {
+  try {
+    const supabase = getSupabase(c);
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    if (authError || !user) return c.json({ error: "Unauthorized" }, 401);
+    const groupId = c.req.param("groupId");
+    const result = await handleDeleteGroup(supabase, user, groupId);
+    return c.json(result.body, result.status);
+  } catch (error) {
+    console.error("DELETE /groups/:groupId failed:", error);
+    return c.json({ error: "Failed to delete group" }, 500);
   }
 });
 

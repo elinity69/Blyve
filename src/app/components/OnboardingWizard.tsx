@@ -125,12 +125,6 @@ export function OnboardingWizard({ userName, onComplete }: OnboardingWizardProps
         return;
       }
     }
-    if (currentStep === 3) {
-      if (!profileImage) {
-        setError(t('onboarding.errorPhotoRequired'));
-        return;
-      }
-    }
     setCurrentStep((prev) => Math.min(prev + 1, totalSteps - 1));
   };
 
@@ -421,10 +415,11 @@ export function OnboardingWizard({ userName, onComplete }: OnboardingWizardProps
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
-                className="mb-6 h-10 px-4 bg-orange-600 text-white rounded-full text-sm font-semibold"
+                className="mb-2 h-10 px-4 bg-orange-600 text-white rounded-full text-sm font-semibold"
               >
                 {t('onboarding.uploadPhoto')}
               </button>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mb-6">{t('onboarding.photoOptionalHint')}</p>
 
               <p className="text-[14px] font-semibold text-gray-700 dark:text-gray-300 mb-2">{t('onboarding.bioTitle')}</p>
               <textarea
