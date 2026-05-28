@@ -2640,6 +2640,7 @@ function GroupRailIcon({
   onOpenActions,
 }: GroupRailIconProps) {
   const longPress = useLongPress(onOpenActions);
+  const { onPointerDown: onLongPressPointerDown, ...longPressHandlers } = longPress;
   const hue = groupAccentHue(group.id);
   const initial = (group.name?.trim().charAt(0) || '?').toUpperCase();
   const iconSrc = group.icon_url ? getOptimizedImageUrl(group.icon_url, 96) : null;
@@ -2648,7 +2649,10 @@ function GroupRailIcon({
     <div className="relative shrink-0">
       <button
         type="button"
-        onPointerDown={onPrefetch}
+        onPointerDown={(event) => {
+          onPrefetch();
+          onLongPressPointerDown(event);
+        }}
         onClick={onSelect}
         onContextMenu={onOpenActions}
         title={group.name}
@@ -2662,7 +2666,7 @@ function GroupRailIcon({
           touchAction: 'manipulation',
           cursor: 'pointer',
         }}
-        {...longPress}
+        {...longPressHandlers}
       >
         {iconSrc ? (
           <img src={iconSrc} alt="" className="w-full h-full object-cover" />
