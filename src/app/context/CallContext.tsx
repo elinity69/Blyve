@@ -25,13 +25,11 @@ const IncomingCallPopup = lazy(() =>
 import type { CallStageParticipant } from '../components/CallParticipantStage';
 import { type CallMediaType, type JitsiHandle } from '../lib/jitsi';
 import { isJitsiCallProvider } from '../lib/callProvider';
-import { connectLiveKitRoom, toLiveKitCallError } from '../lib/livekitCall';
 import { toJitsiCallError, type JitsiJoinCredentials } from '../lib/jitsiCall';
 import { requestMicrophoneAccess, hasMicrophonePermission, type MicrophoneAccessResult } from '../lib/mediaPermissions';
 import { markJitsiMicGranted, shouldSkipJitsiPrejoin } from '../lib/jitsiMicStorage';
 import { isScreenShareSupported } from '../lib/screenShareSupport';
 import { filterJoinedStageParticipants, mergeCallParticipants } from '../lib/callParticipants';
-import { Room } from 'livekit-client';
 
 type CallUiState = 'idle' | 'calling' | 'incoming' | 'in_call' | 'ended';
 export type CallDisplayMode = 'embedded' | 'pip' | 'fullscreen';
@@ -218,10 +216,7 @@ function createTone(frequency = 700, durationMs = 180, volume = 0.02) {
 }
 
 function toUserFacingCallError(error: unknown): string {
-  if (isJitsiCallProvider()) {
-    return toJitsiCallError(error);
-  }
-  return toLiveKitCallError(error);
+  return toJitsiCallError(error);
 }
 
 function mediaCaptureSupported() {
@@ -304,7 +299,6 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   const dominantSpeakerClearTimeoutRef = useRef<number | null>(null);
   const pendingVolumeRef = useRef<Map<string, number>>(new Map());
   const volumeDebounceRef = useRef<Map<string, number>>(new Map());
-  const roomRef = useRef<Room | null>(null);
   const activeCallSessionIdRef = useRef<string | null>(null);
   const endedTimeoutRef = useRef<number | null>(null);
   const participantChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
@@ -365,17 +359,6 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     jitsiHandleRef.current = null;
     jitsiActiveSessionRef.current = null;
     setJitsiJoinRequest(null);
-
-    const room = roomRef.current;
-    if (room) {
-      try {
-        await room.disconnect();
-      } catch (error) {
-        console.warn('Call room disconnect failed:', error);
-      }
-      room.removeAllListeners();
-    }
-    roomRef.current = null;
 
     setConnectionState('disconnected');
     setIsMuted(false);
@@ -507,57 +490,11 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     [pushDebug, resetMedia, stopIncomingSound, stopOutgoingSound]
   );
 
-  const connectToLiveKit = useCallback(
-    async (callSessionId: string, conversationId?: string | null) => {
-      if (joinInFlightRef.current) {
-        pushDebug(`join skipped (in-flight) session=${callSessionId}`);
-        return;
-      }
-      joinInFlightRef.current = true;
-      try {
-        await resetMedia();
-        const { room, serverUrl, localIdentity: identity, remoteCount } = await connectLiveKitRoom(callSessionId);
-        roomRef.current = room;
-        setConnectionState(room.state);
-        room.on('connectionStateChanged', (next) => {
-          setConnectionState(next);
-          setCanRetryConnection(next === 'reconnecting' || next === 'disconnected');
-          if (next === 'connected') {
-            setErrorMessage(null);
-            setRetryAttempt(0);
-          }
-        });
-        room.on('participantConnected', () => setRemoteParticipantCount(room.remoteParticipants.size));
-        room.on('participantDisconnected', () => setRemoteParticipantCount(room.remoteParticipants.size));
-
-        activeCallSessionIdRef.current = callSessionId;
-        setLocalIdentity(identity);
-        setRemoteParticipantCount(remoteCount);
-        setActiveCall((prev) =>
-          prev
-            ? { ...prev, callSessionId, conversationId: conversationId ?? prev.conversationId, callType: prev.callType || 'audio' }
-            : { callSessionId, conversationId: conversationId ?? null, callType: 'audio', participants: [] }
-        );
-        stopIncomingSound();
-        stopOutgoingSound();
-        pushDebug(`livekit joined session=${callSessionId} url=${serverUrl}`);
-        setState('in_call');
-      } finally {
-        joinInFlightRef.current = false;
-      }
-    },
-    [pushDebug, resetMedia, stopIncomingSound, stopOutgoingSound]
-  );
-
   const connectToCallMedia = useCallback(
     async (callSessionId: string, conversationId?: string | null, callType: CallMediaType = 'audio') => {
-      if (isJitsiCallProvider()) {
-        await connectToJitsi(callSessionId, conversationId, callType);
-      } else {
-        await connectToLiveKit(callSessionId, conversationId);
-      }
+      await connectToJitsi(callSessionId, conversationId, callType);
     },
-    [connectToJitsi, connectToLiveKit]
+    [connectToJitsi]
   );
 
   const startDirectCall = useCallback(
@@ -581,7 +518,6 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       });
 
       try {
-        if (isJitsiCallProvider()) {
           const createPayload = {
             callType: 'audio' as const,
             contextType: 'direct' as const,
@@ -627,43 +563,10 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
               moveToEnded();
             }
           }, RINGING_TIMEOUT_MS);
-        } else {
-          const createResponse = await api.createCall({
-            callType: 'audio',
-            contextType: 'direct',
-            conversationId: input.conversationId,
-            participantIds: [input.otherUserId],
-          });
-          const callSessionId = createResponse?.call_session_id || createResponse?.callSessionId;
-          if (!callSessionId) throw new Error('Call session id missing in create response');
-          activeCallSessionIdRef.current = callSessionId;
-          pushDebug(`livekit outgoing created session=${callSessionId}`);
-          setActiveCall((prev) => (prev ? { ...prev, callSessionId } : prev));
-          await connectToLiveKit(callSessionId, input.conversationId);
-
-          outgoingCallTimeoutRef.current = window.setTimeout(async () => {
-            if (activeCallSessionIdRef.current !== callSessionId) return;
-            try {
-              await api.endCall(callSessionId);
-            } catch {
-              // best effort
-            } finally {
-              await resetMedia();
-              setIncomingCall(null);
-              incomingSessionIdRef.current = null;
-              setActiveCall(null);
-              activeCallSessionIdRef.current = null;
-              stopIncomingSound();
-              stopOutgoingSound();
-              setErrorMessage(i18n.t('call.noAnswerEnded'));
-              moveToEnded();
-            }
-          }, RINGING_TIMEOUT_MS);
-        }
       } catch (error: unknown) {
         joinInFlightRef.current = false;
         const staleSessionId = activeCallSessionIdRef.current;
-        if (staleSessionId && isJitsiCallProvider()) {
+        if (staleSessionId) {
           try {
             await api.endCallSession(staleSessionId);
           } catch {
@@ -682,7 +585,6 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     },
     [
       clearEndedState,
-      connectToLiveKit,
       moveToEnded,
       pushDebug,
       resetMedia,
@@ -694,11 +596,6 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
 
   const joinVoiceChannel = useCallback(
     async (input: JoinVoiceChannelInput) => {
-      if (!isJitsiCallProvider()) {
-        toast.error('Voice channels', 'Voice channels require Jitsi.');
-        return;
-      }
-
       await ensureMicrophoneForCall();
 
       clearEndedState();
@@ -933,15 +830,11 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     await ensureMicrophoneForCall();
 
     try {
-      if (isJitsiCallProvider()) {
-        try {
-          await api.acceptCall(sessionId, 'accept');
-        } catch (error) {
-          if (!isStaleAcceptCallError(error)) throw error;
-          pushDebug(`accept ignored stale state session=${sessionId}`);
-        }
-      } else {
-        await api.respondToCall(sessionId, 'accept');
+      try {
+        await api.acceptCall(sessionId, 'accept');
+      } catch (error) {
+        if (!isStaleAcceptCallError(error)) throw error;
+        pushDebug(`accept ignored stale state session=${sessionId}`);
       }
       setSelfRole('participant');
       setActiveCall({
@@ -983,11 +876,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   const declineIncomingCall = useCallback(async () => {
     if (!incomingCall) return;
     try {
-      if (isJitsiCallProvider()) {
-        await api.acceptCall(incomingCall.callSessionId, 'decline');
-      } else {
-        await api.respondToCall(incomingCall.callSessionId, 'decline');
-      }
+      await api.acceptCall(incomingCall.callSessionId, 'decline');
     } catch (error) {
       console.warn('Decline call failed:', error);
     } finally {
@@ -1031,8 +920,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     if (selfRole === 'host') {
       try {
         if (sessionId) {
-          if (isJitsiCallProvider()) await api.endCallSession(sessionId);
-          else await api.endCall(sessionId);
+          await api.endCallSession(sessionId);
         }
       } catch (error) {
         console.warn('End call failed:', error);
@@ -1050,14 +938,6 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         moveToEnded();
       }
       return;
-    }
-
-    if (sessionId && !isJitsiCallProvider()) {
-      try {
-        await api.leaveCallSession(sessionId);
-      } catch (error) {
-        console.warn('Leave call (ignored):', error);
-      }
     }
 
     await resetMedia();
@@ -1104,75 +984,34 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   }, [activeCall, moveToEnded, resetMedia, stopIncomingSound, stopOutgoingSound]);
 
   const toggleMute = useCallback(async () => {
-    if (isJitsiCallProvider()) {
-      const handle = jitsiHandleRef.current;
-      if (!handle) return;
-      const nextMuted = !handle.isAudioMuted();
-      userMutedManuallyRef.current = nextMuted;
-      handle.setUserRequestedAudioMute(nextMuted);
-      handle.setAudioMuted(nextMuted);
-      setIsMuted(nextMuted);
-      return;
-    }
-    const room = roomRef.current;
-    if (!room) return;
-    const nextMuted = !isMuted;
-    try {
-      await room.localParticipant.setMicrophoneEnabled(!nextMuted);
-      setIsMuted(nextMuted);
-    } catch (error: unknown) {
-      setErrorMessage(String((error as Error)?.message || 'Microphone permission denied'));
-    }
+    const handle = jitsiHandleRef.current;
+    if (!handle) return;
+    const nextMuted = !handle.isAudioMuted();
+    userMutedManuallyRef.current = nextMuted;
+    handle.setUserRequestedAudioMute(nextMuted);
+    handle.setAudioMuted(nextMuted);
+    setIsMuted(nextMuted);
   }, [isMuted]);
 
   const toggleCamera = useCallback(async () => {
-    if (isJitsiCallProvider()) {
-      const handle = jitsiHandleRef.current;
-      if (!handle) return;
-      handle.toggleVideo();
-      setIsCameraEnabled(!handle.isVideoMuted());
-      return;
-    }
-    const room = roomRef.current;
-    if (!room) return;
-    const nextEnabled = !isCameraEnabled;
-    try {
-      await room.localParticipant.setCameraEnabled(nextEnabled);
-      setIsCameraEnabled(nextEnabled);
-    } catch (error: unknown) {
-      setErrorMessage(String((error as Error)?.message || 'Camera permission denied'));
-    }
+    const handle = jitsiHandleRef.current;
+    if (!handle) return;
+    handle.toggleVideo();
+    setIsCameraEnabled(!handle.isVideoMuted());
   }, [isCameraEnabled]);
 
   const toggleScreenShare = useCallback(() => {
-    if (isJitsiCallProvider()) {
-      const handle = jitsiHandleRef.current;
-      if (!handle) return;
-      if (!isScreenShareEnabled && !isScreenShareSupported()) {
-        toast.error(i18n.t('call.screenShareUnsupported'));
-        return;
-      }
-      handle.toggleScreenShare();
+    const handle = jitsiHandleRef.current;
+    if (!handle) return;
+    if (!isScreenShareEnabled && !isScreenShareSupported()) {
+      toast.error(i18n.t('call.screenShareUnsupported'));
       return;
     }
-    const room = roomRef.current;
-    if (!room) return;
-    const nextEnabled = !isScreenShareEnabled;
-    void room.localParticipant
-      .setScreenShareEnabled(nextEnabled)
-      .then(() => {
-        setIsScreenShareEnabled(nextEnabled);
-      })
-      .catch((error: unknown) => {
-        setErrorMessage(String((error as Error)?.message || 'Screen share permission denied'));
-      });
+    handle.toggleScreenShare();
   }, [isScreenShareEnabled]);
 
   const joinCallViaInvite = useCallback(
     async (sessionId: string, inviteToken: string) => {
-      if (!isJitsiCallProvider()) {
-        throw new Error('Invite links are only supported for Jitsi calls');
-      }
       clearEndedState();
       setErrorMessage(null);
       setSelfRole('participant');
@@ -1188,13 +1027,9 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       setIsAutoRetrying(false);
       setErrorMessage(null);
       pushDebug(`manual retry session=${sessionId}`);
-      if (isJitsiCallProvider()) {
-        setConnectionState('connecting');
-        setCanRetryConnection(false);
-        setJitsiMountKey((prev) => prev + 1);
-        return;
-      }
-      await connectToCallMedia(sessionId, activeCall?.conversationId, activeCall?.callType || 'audio');
+      setConnectionState('connecting');
+      setCanRetryConnection(false);
+      setJitsiMountKey((prev) => prev + 1);
     } catch (error: unknown) {
       setCanRetryConnection(true);
       setErrorMessage(toUserFacingCallError(error));
@@ -1202,9 +1037,6 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     }
   }, [
     activeCall?.callSessionId,
-    activeCall?.conversationId,
-    activeCall?.callType,
-    connectToCallMedia,
     pushDebug,
   ]);
 
@@ -1249,8 +1081,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         )
       ) {
         try {
-          if (isJitsiCallProvider()) await api.acceptCall(callSessionId, 'missed');
-          else await api.respondToCall(callSessionId, 'missed');
+          await api.acceptCall(callSessionId, 'missed');
         } catch {
           // best effort
         }

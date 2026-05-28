@@ -2,7 +2,6 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Phone, Loader2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useCall } from '../context/CallContext';
-import { isJitsiCallProvider } from '../lib/callProvider';
 import { type CallJoinParams, clearCallJoinUrl } from '../lib/callJoinRoute';
 import { toJitsiCallError } from '../lib/jitsiCall';
 
@@ -22,10 +21,6 @@ export function CallJoinScreen({ params, onDone }: CallJoinScreenProps) {
   const attemptedRef = useRef(false);
 
   const attemptJoin = useCallback(async () => {
-    if (!isJitsiCallProvider()) {
-      setLocalError(t('call.joinViaInviteProviderRequired'));
-      return;
-    }
     setJoining(true);
     setLocalError(null);
     try {

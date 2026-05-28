@@ -1,16 +1,10 @@
-export type CallMediaProvider = 'livekit' | 'jitsi';
+export type CallMediaProvider = 'jitsi';
 
-/** Default jitsi — set VITE_CALL_PROVIDER=livekit to use LiveKit again. */
+/** Jitsi-only call media provider. */
 export function getCallMediaProvider(): CallMediaProvider {
-  const raw = import.meta.env.VITE_CALL_PROVIDER?.trim().toLowerCase();
-  if (raw === 'livekit') return 'livekit';
   return 'jitsi';
 }
 
 export function isJitsiCallProvider(): boolean {
-  return getCallMediaProvider() === 'jitsi';
-}
-
-export function isLiveKitCallProvider(): boolean {
-  return getCallMediaProvider() === 'livekit';
+  return true;
 }

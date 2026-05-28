@@ -108,15 +108,6 @@ export class ApiClient {
     });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) {
-      const rawError = String(payload?.error || '');
-      if (
-        response.status === 503 &&
-        rawError.toLowerCase().includes('livekit is not configured')
-      ) {
-        throw new Error(
-          'LiveKit backend config is missing. Set LIVEKIT_URL, LIVEKIT_API_KEY, and LIVEKIT_API_SECRET in Supabase function secrets.'
-        );
-      }
       throw new Error(payload?.error || `Request failed (${response.status})`);
     }
     return payload;
@@ -757,20 +748,6 @@ export class ApiClient {
     return payload;
   }
 
-  /** LiveKit token via smart-action (default action=livekit). */
-  async getLivekitToken(payload: { identity: string; room: string; name?: string }) {
-    const token = await this.getAccessToken();
-    if (!token) throw new Error('Not authenticated');
-    const { data, error } = await supabase.functions.invoke('smart-action', {
-      body: { action: 'livekit', ...payload },
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (error) {
-      throw new Error(error.message || 'Failed to get LiveKit token');
-    }
-    return data;
-  }
-
   /** Jitsi join via smart-action (alternative to joinCall). room_name is server-side only. */
   async getJitsiJoinViaSmartAction(sessionId: string, inviteToken?: string) {
     const token = await this.getAccessToken();
@@ -808,20 +785,6 @@ export class ApiClient {
       }
       throw primaryError;
     }
-  }
-
-  /** LiveKit path — unchanged blyve /calls/create */
-  async createCall(payload: {
-    callType: 'audio' | 'video' | 'screen';
-    contextType: 'direct' | 'group';
-    conversationId?: string | null;
-    groupId?: string | null;
-    participantIds: string[];
-  }) {
-    return this.edgeRequest('/calls/create', {
-      method: 'POST',
-      body: JSON.stringify(payload),
-    });
   }
 
   /** Jitsi path — blyve /calls/jitsi/create with standalone fallback */
@@ -875,16 +838,6 @@ export class ApiClient {
   }
 
   /** LiveKit path — blyve /calls/:id/respond */
-  async respondToCall(
-    callSessionId: string,
-    action: 'accept' | 'decline' | 'missed' | 'leave'
-  ) {
-    return this.edgeRequest(`/calls/${callSessionId}/respond`, {
-      method: 'POST',
-      body: JSON.stringify({ action }),
-    });
-  }
-
   /** Jitsi end — blyve /calls/jitsi/:id/end with standalone fallback */
   async endCallSession(sessionId: string) {
     return this.jitsiEdgeRequest(`/calls/jitsi/${sessionId}/end`, {
@@ -894,13 +847,6 @@ export class ApiClient {
   }
 
   /** LiveKit end — blyve /calls/:id/end */
-  async endCall(callSessionId: string) {
-    return this.edgeRequest(`/calls/${callSessionId}/end`, {
-      method: 'POST',
-      body: JSON.stringify({}),
-    });
-  }
-
   async leaveCallSession(callSessionId: string) {
     try {
       return await this.edgeRequest(`/calls/${callSessionId}/leave`, {
