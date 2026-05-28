@@ -115,9 +115,9 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       const profilePromise = Promise.resolve(
         supabase
           .from('profiles')
-          .select('*')
+          .select('id, name, email, avatar_url, display_name, username, bio, images, dark_mode, ghost_mode, onboarding_complete')
           .eq('id', sessionUser.id)
-          .single()
+          .maybeSingle()
       );
       
       const result = await timeoutPromise(
@@ -213,9 +213,10 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       const convsPromise = Promise.resolve(
         supabase
           .from('conversations')
-          .select('*')
+          .select('id,user1_id,user2_id,created_at,updated_at,last_message,last_message_at')
           .or(`user1_id.eq.${user.id},user2_id.eq.${user.id}`)
           .order('updated_at', { ascending: false, nullsFirst: false })
+          .limit(200)
       );
       
       const convsResult = await timeoutPromise(

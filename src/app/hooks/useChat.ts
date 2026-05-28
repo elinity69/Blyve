@@ -255,7 +255,7 @@ export function useChat(conversationId: string | null, onMessageSent?: (conversa
 
         const { data: newMessage, error: fetchError } = await supabase
           .from('messages')
-          .select('*')
+          .select('id, conversation_id, sender_id, content, created_at, is_read, read_at, reply_to_message_id')
           .eq('id', result.message_id)
           .single();
 

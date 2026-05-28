@@ -14,6 +14,19 @@ interface ChannelEntry {
 const channels = new Map<string, ChannelEntry>();
 const PARTNER_IDLE_MS = 3500;
 
+function destroyChannel(conversationId: string) {
+  const entry = channels.get(conversationId);
+  if (!entry) return;
+
+  if (entry.partnerTimeoutId) {
+    window.clearTimeout(entry.partnerTimeoutId);
+    entry.partnerTimeoutId = null;
+  }
+
+  supabase.removeChannel(entry.channel);
+  channels.delete(conversationId);
+}
+
 function notify(conversationId: string, isTyping: boolean) {
   const entry = channels.get(conversationId);
   if (!entry || entry.partnerTyping === isTyping) return;
@@ -103,6 +116,9 @@ export function subscribeTypingBroadcast(
 
   return () => {
     entry.listeners.delete(listener);
+    if (entry.listeners.size === 0) {
+      destroyChannel(conversationId);
+    }
   };
 }
 

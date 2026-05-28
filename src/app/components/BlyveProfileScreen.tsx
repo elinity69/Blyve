@@ -55,7 +55,7 @@ export function BlyveProfileScreen({
 
       const { data: supabaseProfile, error } = await supabase
         .from('profiles')
-        .select('*')
+        .select('id, name, email, avatar_url, display_name, username, bio, images')
         .eq('id', user.id)
         .single();
 

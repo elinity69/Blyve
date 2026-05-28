@@ -108,6 +108,21 @@ function setTyper(
   removeTyper(groupId, channelId, userId);
 }
 
+function destroyChannel(groupId: string, channelId: string) {
+  const key = channelKey(groupId, channelId);
+  const entry = channels.get(key);
+  if (!entry) return;
+
+  for (const state of entry.typers.values()) {
+    if (state.timeoutId) {
+      window.clearTimeout(state.timeoutId);
+    }
+  }
+  entry.typers.clear();
+  supabase.removeChannel(entry.channel);
+  channels.delete(key);
+}
+
 function ensureChannel(groupId: string, channelId: string): ChannelEntry {
   const key = channelKey(groupId, channelId);
   const existing = channels.get(key);
@@ -165,6 +180,9 @@ export function subscribeGroupTypingBroadcast(
 
   return () => {
     entry.listeners.delete(listener);
+    if (entry.listeners.size === 0) {
+      destroyChannel(groupId, channelId);
+    }
   };
 }
 

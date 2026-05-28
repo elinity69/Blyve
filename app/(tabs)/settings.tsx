@@ -25,7 +25,11 @@ export default function SettingsScreen() {
       } = await supabase.auth.getUser();
       if (!user) return;
 
-      const { data, error } = await supabase.from('profiles').select('*').eq('id', user.id).single();
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('id, name, display_name, email, avatar_url, images, bio, username, ghost_mode, dark_mode')
+        .eq('id', user.id)
+        .maybeSingle();
 
       if (error) throw error;
       setProfile(data);

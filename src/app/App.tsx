@@ -188,7 +188,7 @@ function AppContent({ onUserIdChange }: AppContentProps = {}) {
         // FIX: Verwende maybeSingle() statt single() - verhindert Crash bei neuen Usern
         const { data: profile, error: profileError } = await supabase
           .from('profiles')
-          .select('*')
+          .select('id, name, email, avatar_url, display_name, username, bio, dark_mode, onboarding_complete')
           .eq('id', user.id)
           .maybeSingle();
 
@@ -353,7 +353,7 @@ function AppContent({ onUserIdChange }: AppContentProps = {}) {
       // FIX: Verwende maybeSingle() statt single() - verhindert Crash bei neuen Usern
       const { data: profile, error: profileError } = await supabase
         .from('profiles')
-        .select('*')
+        .select('id, name, email, avatar_url, display_name, username, bio, dark_mode, onboarding_complete')
         .eq('id', user.id)
         .maybeSingle();
 
@@ -433,7 +433,7 @@ function AppContent({ onUserIdChange }: AppContentProps = {}) {
         // FIX: Verwende maybeSingle() - Profil sollte existieren, aber sicherheitshalber
         const { data: profile, error: profileError } = await supabase
           .from('profiles')
-          .select('*')
+          .select('id, name, email, avatar_url, display_name, username, bio, dark_mode, onboarding_complete')
           .eq('id', user.id)
           .maybeSingle();
         

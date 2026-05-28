@@ -223,7 +223,7 @@ export class ApiClient {
       }
       const { data: profile, error } = await supabase
         .from('profiles')
-        .select('*')
+        .select('id, name, email, avatar_url, display_name, username, bio, images, ghost_mode, onboarding_complete')
         .eq('id', user.id)
         .maybeSingle();
       if (error) {
@@ -429,7 +429,7 @@ export class ApiClient {
 
       const { data: messages, error } = await supabase
         .from('messages')
-        .select('*')
+        .select('id, conversation_id, sender_id, content, created_at, is_read, read_at, reply_to_message_id')
         .eq('conversation_id', conversation.id)
         .order('created_at', { ascending: true });
 

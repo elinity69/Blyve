@@ -29,7 +29,7 @@ export default function ProfileScreen() {
 
       const { data, error } = await supabase
         .from('profiles')
-        .select('*')
+        .select('id, name, display_name, email, avatar_url, images, bio, username')
         .eq('id', user.id)
         .single();
 

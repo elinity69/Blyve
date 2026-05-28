@@ -18,9 +18,10 @@ export function useConversations() {
       // 1. Load Conversations
       const { data: convsData, error: convsError } = await supabase
         .from('conversations')
-        .select('*')
+        .select('id,user1_id,user2_id,created_at,updated_at,last_message,last_message_at')
         .or(`user1_id.eq.${user.id},user2_id.eq.${user.id}`)
-        .order('updated_at', { ascending: false, nullsFirst: false });
+        .order('updated_at', { ascending: false, nullsFirst: false })
+        .limit(200);
 
       if (convsError) throw convsError;
 

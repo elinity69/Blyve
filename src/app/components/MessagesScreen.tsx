@@ -1387,7 +1387,7 @@ export function MessagesScreen() {
         try {
         const { data: profileData, error: profileError } = await supabase
           .from('profiles')
-          .select('*')
+          .select('id, name, display_name, username, bio, avatar_url, images')
           .eq('id', profilePreviewUserId)
           .single();
 

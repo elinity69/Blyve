@@ -24,7 +24,9 @@ export function useTypingRealtime(currentUserId: string | null) {
       const { data } = await supabase
         .from('conversations')
         .select('id')
-        .or(`user1_id.eq.${currentUserId},user2_id.eq.${currentUserId}`);
+        .or(`user1_id.eq.${currentUserId},user2_id.eq.${currentUserId}`)
+        .order('updated_at', { ascending: false })
+        .limit(200);
 
       if (cancelled) return;
 

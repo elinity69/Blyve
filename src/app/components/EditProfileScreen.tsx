@@ -80,7 +80,7 @@ export function EditProfileScreen({ onBack, onSave, previousScreen }: EditProfil
       // Use maybeSingle() instead of single() to handle 406 errors gracefully
       const { data: supabaseProfile, error } = await supabase
         .from('profiles')
-        .select('*')
+        .select('id, name, display_name, username, bio, avatar_url, images, pronouns, gender, favorite_food')
         .eq('id', user.id)
         .maybeSingle();
 

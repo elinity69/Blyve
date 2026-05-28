@@ -32,7 +32,8 @@ export const UnreadProvider = ({
       const { data: conversations } = await supabase
         .from('conversations')
         .select('id')
-        .or(`user1_id.eq.${currentUserId},user2_id.eq.${currentUserId}`);
+        .or(`user1_id.eq.${currentUserId},user2_id.eq.${currentUserId}`)
+        .limit(200);
 
       if (!conversations || conversations.length === 0) {
         setTotalUnread(0);

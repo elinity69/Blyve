@@ -68,7 +68,7 @@ export function SettingsScreen({ onSignOut, onBack, previousScreen }: SettingsSc
       // 1. Hole Profil direkt aus der DB
       const { data: profileData, error } = await supabase
         .from('profiles')
-        .select('*')
+        .select('id, name, display_name, email, avatar_url, images, bio, username, ghost_mode, dark_mode, created_at')
         .eq('id', user.id)
         .single();
 
