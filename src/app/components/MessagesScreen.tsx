@@ -1917,6 +1917,7 @@ export function MessagesScreen() {
             </div>
           ) : !selectedGroup && selectedConversationId && selectedOtherUser && currentUserId ? (
             <ChatScreen
+              key={selectedConversationId}
               conversationId={selectedConversationId}
               otherUser={{ ...selectedOtherUser, age: selectedOtherUser.age }}
               currentUserId={currentUserId}
@@ -2021,6 +2022,7 @@ export function MessagesScreen() {
     lastPushedChatIdRef.current = selectedConversationId;
     pushScreenRef.current(
       <ChatScreen
+        key={selectedConversationId}
         conversationId={selectedConversationId}
         otherUser={{ ...selectedOtherUser, age: selectedOtherUser.age }}
         currentUserId={currentUserId}

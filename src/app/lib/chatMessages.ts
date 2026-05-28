@@ -18,6 +18,21 @@ const MESSAGE_COLUMNS =
 export const dmMessagesQueryKey = (conversationId: string) =>
   ['messages', conversationId] as const;
 
+export function applyReadStateToDmMessages(
+  messages: Message[],
+  conversationId: string,
+  readerUserId: string,
+  readAt: string
+): Message[] {
+  return messages.map((message) =>
+    message.conversation_id === conversationId &&
+    message.sender_id !== readerUserId &&
+    !message.is_read
+      ? { ...message, is_read: true, read_at: readAt }
+      : message
+  );
+}
+
 export async function fetchDmMessages(
   conversationId: string,
   pageSize = DM_MESSAGES_PAGE_SIZE

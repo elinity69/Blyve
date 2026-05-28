@@ -6,11 +6,10 @@ import { api } from '../lib/api';
 import { useAppData } from '../context/AppDataContext';
 import { RealtimeChannel } from '@supabase/supabase-js';
 import { dispatchConversationPreviewUpdate, dispatchUnreadRefreshRequest } from '../lib/messageEvents';
+import { NotificationManager } from '../lib/notifications';
+import { getUnreadBatchKey, isMessageReadReceiptUpdate } from '../lib/messageReadReceipts';
 import {
-  hasUnreadMessagesFromOthers,
-  isMessageReadReceiptUpdate,
-} from '../lib/messageReadReceipts';
-import {
+  applyReadStateToDmMessages,
   DM_MESSAGES_PAGE_SIZE,
   dmMessagesQueryKey,
   fetchDmMessages,
@@ -48,13 +47,6 @@ export interface Conversation {
   has_messages: boolean;
 }
 
-function mergeMessages(base: Message[], extras: Message[]): Message[] {
-  const map = new Map<string, Message>();
-  base.forEach((m) => map.set(m.id, m));
-  extras.forEach((m) => map.set(m.id, m));
-  return Array.from(map.values()).sort((a, b) => a.created_at.localeCompare(b.created_at));
-}
-
 function isAbortError(err: unknown): boolean {
   const msg = String((err as { message?: string })?.message ?? err ?? '');
   return msg.includes('AbortError') || msg.includes('aborted');
@@ -71,10 +63,15 @@ export function useChat(conversationId: string | null, onMessageSent?: (conversa
   const currentUserIdRef = useRef<string | null>(null);
   const messagesRef = useRef<Message[]>([]);
   const markAsReadInFlightRef = useRef(false);
+  const lastPatchedUnreadKeyRef = useRef('');
+  const initialMarkDoneRef = useRef<string | null>(null);
+  const ghostModeRef = useRef(false);
   const prevConversationIdRef = useRef<string | null>(null);
   const queryClient = useQueryClient();
   const { currentUserProfile } = useAppData();
   const pageSize = DM_MESSAGES_PAGE_SIZE;
+
+  ghostModeRef.current = !!currentUserProfile?.ghost_mode;
 
   messagesRef.current = messages;
 
@@ -107,13 +104,11 @@ export function useChat(conversationId: string | null, onMessageSent?: (conversa
     const userId = currentUserIdRef.current ?? getCachedUser()?.id;
     if (!userId) return;
 
-    if (!hasUnreadMessagesFromOthers(messagesRef.current, userId)) {
-      return;
-    }
+    if (ghostModeRef.current) return;
 
-    if (currentUserProfile?.ghost_mode) {
-      return;
-    }
+    const unreadKey = getUnreadBatchKey(messagesRef.current, userId);
+    if (!unreadKey) return;
+    if (lastPatchedUnreadKeyRef.current === unreadKey) return;
 
     markAsReadInFlightRef.current = true;
 
@@ -121,10 +116,12 @@ export function useChat(conversationId: string | null, onMessageSent?: (conversa
       const user = await resolveAuthUser();
       if (!user) return;
 
+      const readAt = new Date().toISOString();
+
       const { error: updateError } = await supabase
         .from('messages')
         .update({
-          read_at: new Date().toISOString(),
+          read_at: readAt,
           is_read: true,
         })
         .eq('conversation_id', conversationId)
@@ -142,18 +139,16 @@ export function useChat(conversationId: string | null, onMessageSent?: (conversa
         throw updateError;
       }
 
-      const readAt = new Date().toISOString();
-      setMessages((prev) =>
-        prev.map((m) =>
-          m.conversation_id === conversationId &&
-          m.sender_id !== user.id &&
-          !m.is_read
-            ? { ...m, is_read: true, read_at: readAt }
-            : m
-        )
-      );
+      lastPatchedUnreadKeyRef.current = unreadKey;
 
-      dispatchUnreadRefreshRequest();
+      setMessages((prev) => applyReadStateToDmMessages(prev, conversationId, user.id, readAt));
+
+      queryClient.setQueryData<Message[]>(dmMessagesQueryKey(conversationId), (cached) => {
+        if (!cached?.length) return cached;
+        return applyReadStateToDmMessages(cached, conversationId, user.id, readAt);
+      });
+
+      dispatchUnreadRefreshRequest({ exceptConversationId: conversationId });
     } catch (err) {
       if (!isAbortError(err)) {
         console.error('Error marking messages as read:', err);
@@ -161,7 +156,7 @@ export function useChat(conversationId: string | null, onMessageSent?: (conversa
     } finally {
       markAsReadInFlightRef.current = false;
     }
-  }, [conversationId, currentUserProfile?.ghost_mode]);
+  }, [conversationId, queryClient]);
 
   const markAsReadRef = useRef(markAsRead);
   markAsReadRef.current = markAsRead;
@@ -179,6 +174,8 @@ export function useChat(conversationId: string | null, onMessageSent?: (conversa
     const conversationChanged = prevConversationIdRef.current !== conversationId;
     if (conversationChanged) {
       prevConversationIdRef.current = conversationId;
+      lastPatchedUnreadKeyRef.current = '';
+      initialMarkDoneRef.current = null;
       setMessages([]);
       setHasMore(true);
       setLoadingMore(false);
@@ -200,25 +197,26 @@ export function useChat(conversationId: string | null, onMessageSent?: (conversa
     setError(null);
 
     if (fetchedMessages) {
-      setMessages((prev) =>
-        conversationChanged
-          ? (fetchedMessages as Message[])
-          : mergeMessages(fetchedMessages as Message[], prev)
-      );
+      setMessages((prev) => {
+        if (conversationChanged) {
+          return fetchedMessages as Message[];
+        }
+        if (prev.length === 0) {
+          return fetchedMessages as Message[];
+        }
+        return prev;
+      });
       setHasMore(fetchedMessages.length === pageSize);
     }
   }, [conversationId, fetchedMessages, isPending, isFetched, queryError, pageSize]);
 
-  // Mark read when opening a conversation or after the initial message page loads.
+  // One initial mark-as-read per conversation after the first page is in local state.
   useEffect(() => {
-    if (!conversationId) return;
+    if (!conversationId || isPending || !isFetched) return;
+    if (initialMarkDoneRef.current === conversationId) return;
+    initialMarkDoneRef.current = conversationId;
     void markAsReadRef.current();
-  }, [conversationId]);
-
-  useEffect(() => {
-    if (!conversationId || isPending || !fetchedMessages?.length) return;
-    void markAsReadRef.current();
-  }, [conversationId, isPending, fetchedMessages]);
+  }, [conversationId, isPending, isFetched]);
 
   // Realtime subscription — only tied to conversationId.
   useEffect(() => {
@@ -252,8 +250,9 @@ export function useChat(conversationId: string | null, onMessageSent?: (conversa
           );
 
           if (newMessage.sender_id !== currentUserIdRef.current) {
+            lastPatchedUnreadKeyRef.current = '';
             void markAsReadRef.current();
-            dispatchUnreadRefreshRequest();
+            dispatchUnreadRefreshRequest({ exceptConversationId: conversationId });
           }
         }
       )
@@ -266,6 +265,28 @@ export function useChat(conversationId: string | null, onMessageSent?: (conversa
           filter: `conversation_id=eq.${conversationId}`,
         },
         (payload) => {
+          if (
+            isMessageReadReceiptUpdate(
+              payload.old as Record<string, unknown> | undefined,
+              payload.new as Record<string, unknown> | undefined
+            )
+          ) {
+            const updatedMessage = payload.new as Message;
+            setMessages((prev) =>
+              prev.map((m) => (m.id === updatedMessage.id ? updatedMessage : m))
+            );
+            queryClient.setQueryData<Message[]>(
+              dmMessagesQueryKey(conversationId),
+              (cached) => {
+                if (!cached?.length) return cached;
+                return cached.map((m) =>
+                  m.id === updatedMessage.id ? updatedMessage : m
+                );
+              }
+            );
+            return;
+          }
+
           const updatedMessage = payload.new as Message;
           setMessages((prev) =>
             prev.map((m) => (m.id === updatedMessage.id ? updatedMessage : m))

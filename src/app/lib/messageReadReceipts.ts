@@ -26,14 +26,32 @@ export function isMessageReadReceiptUpdate(
   return oldRow.is_read !== newRow.is_read || oldRow.read_at !== newRow.read_at;
 }
 
+export function getUnreadMessageIdsFromOthers(
+  messages: ReadReceiptMessage[],
+  currentUserId: string | null | undefined
+): string[] {
+  if (!currentUserId) return [];
+  return messages
+    .filter(
+      (message) =>
+        message.sender_id !== currentUserId && !message.is_read && !message.read_at
+    )
+    .map((message) => message.id)
+    .sort();
+}
+
+export function getUnreadBatchKey(
+  messages: ReadReceiptMessage[],
+  currentUserId: string | null | undefined
+): string {
+  return getUnreadMessageIdsFromOthers(messages, currentUserId).join(',');
+}
+
 export function hasUnreadMessagesFromOthers(
   messages: ReadReceiptMessage[],
   currentUserId: string | null | undefined
 ): boolean {
-  if (!currentUserId) return false;
-  return messages.some(
-    (message) => message.sender_id !== currentUserId && !message.is_read && !message.read_at
-  );
+  return getUnreadMessageIdsFromOthers(messages, currentUserId).length > 0;
 }
 
 /** If the last own message is read, all earlier own messages count as read too. */
