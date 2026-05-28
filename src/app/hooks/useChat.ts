@@ -1,10 +1,10 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
+import { getCachedUser, subscribeAuth } from '../lib/authSession';
 import { api } from '../lib/api';
 import { RealtimeChannel } from '@supabase/supabase-js';
-import { dispatchConversationPreviewUpdate } from '../lib/messageEvents';
-import { useUnread } from '../context/UnreadContext';
+import { dispatchConversationPreviewUpdate, dispatchUnreadRefreshRequest } from '../lib/messageEvents';
 import {
   DM_MESSAGES_PAGE_SIZE,
   dmMessagesQueryKey,
@@ -56,7 +56,6 @@ function isAbortError(err: unknown): boolean {
 }
 
 export function useChat(conversationId: string | null, onMessageSent?: (conversationId: string, lastMessage: string, lastMessageAt: string) => void) {
-  const { refreshUnreadCount } = useUnread();
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -70,18 +69,10 @@ export function useChat(conversationId: string | null, onMessageSent?: (conversa
   const pageSize = DM_MESSAGES_PAGE_SIZE;
 
   useEffect(() => {
-    let cancelled = false;
-    void supabase.auth.getUser().then(({ data: { user } }) => {
-      if (cancelled) return;
-      currentUserIdRef.current = user?.id ?? null;
-    });
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    currentUserIdRef.current = getCachedUser()?.id ?? null;
+    return subscribeAuth((_event, session) => {
       currentUserIdRef.current = session?.user?.id ?? null;
     });
-    return () => {
-      cancelled = true;
-      subscription.unsubscribe();
-    };
   }, []);
 
   const {
@@ -175,7 +166,7 @@ export function useChat(conversationId: string | null, onMessageSent?: (conversa
             newMessage.created_at
           );
           if (newMessage.sender_id !== currentUserIdRef.current) {
-            void refreshUnreadCount();
+            dispatchUnreadRefreshRequest();
           }
         }
       )
@@ -204,37 +195,7 @@ export function useChat(conversationId: string | null, onMessageSent?: (conversa
         channelRef.current = null;
       }
     };
-  }, [conversationId, refreshUnreadCount]);
-
-  // Refetch after inactivity / tab focus / auth token refresh.
-  useEffect(() => {
-    if (!conversationId) return;
-
-    const refetchMessages = () => {
-      void refetch();
-    };
-
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
-        refetchMessages();
-      }
-    };
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      if (session?.user && event === 'SIGNED_IN') {
-        refetchMessages();
-      }
-    });
-
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    window.addEventListener('focus', refetchMessages);
-
-    return () => {
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-      window.removeEventListener('focus', refetchMessages);
-      subscription.unsubscribe();
-    };
-  }, [conversationId, refetch]);
+  }, [conversationId]);
 
   const sendMessage = useCallback(
     async (content: string, replyToMessageId?: string | null): Promise<Message | null> => {
@@ -354,7 +315,7 @@ export function useChat(conversationId: string | null, onMessageSent?: (conversa
         )
       );
 
-      void refreshUnreadCount();
+      dispatchUnreadRefreshRequest();
       void queryClient.invalidateQueries({
         queryKey: dmMessagesQueryKey(conversationId),
         refetchType: 'active',
@@ -364,7 +325,7 @@ export function useChat(conversationId: string | null, onMessageSent?: (conversa
         console.error('Error marking messages as read:', err);
       }
     }
-  }, [conversationId, queryClient, refreshUnreadCount]);
+  }, [conversationId, queryClient]);
 
   const loadOlderMessages = useCallback(async (): Promise<Message[]> => {
     if (!conversationId || loadingMore || !hasMore) return [];

@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '../lib/supabase';
+import { initAuthSession, resolveAuthUser } from '../lib/authSession';
 import { RealtimeChannel } from '@supabase/supabase-js';
 import { Conversation } from './useChat';
 
@@ -13,7 +14,7 @@ export function useConversations() {
   const loadConversations = useCallback(async () => {
     try {
       setError(null);
-      const { data: { user } } = await supabase.auth.getUser();
+      const user = await resolveAuthUser();
       if (!user) throw new Error('Not authenticated');
 
       // 1. Load Conversations
@@ -59,22 +60,46 @@ export function useConversations() {
       const blockedIds = new Set<string>();
       blockedData?.forEach((b) => { blockedIds.add(b.blocker_id); blockedIds.add(b.blocked_user_id); });
 
-      // 4. Process Conversations
+      const visibleConvs = (convsData || []).filter((conv) => {
+        const otherUserId = conv.user1_id === user.id ? conv.user2_id : conv.user1_id;
+        return !blockedIds.has(otherUserId);
+      });
+
+      const otherUserIds = [
+        ...new Set(
+          visibleConvs.map((conv) =>
+            conv.user1_id === user.id ? conv.user2_id : conv.user1_id
+          )
+        ),
+      ];
+
+      const profileMap = new Map<string, {
+        id: string;
+        name: string | null;
+        display_name: string | null;
+        username: string | null;
+        images: string[] | null;
+        ghost_mode: boolean | null;
+        age: number | null;
+        avatar_url: string | null;
+      }>();
+
+      if (otherUserIds.length > 0) {
+        const { data: profiles } = await supabase
+          .from('profiles')
+          .select('id, name, display_name, username, images, ghost_mode, age, avatar_url')
+          .in('id', otherUserIds);
+        for (const profile of profiles || []) {
+          profileMap.set(profile.id, profile);
+        }
+      }
+
       const enrichedConversations = await Promise.all(
-        (convsData || []).map(async (conv) => {
+        visibleConvs.map(async (conv) => {
           const otherUserId = conv.user1_id === user.id ? conv.user2_id : conv.user1_id;
-          if (blockedIds.has(otherUserId)) return null;
-
-          const { data: profile } = await supabase
-            .from('profiles')
-            .select('id, name, display_name, username, images, ghost_mode, age, avatar_url')
-            .eq('id', otherUserId)
-            .single();
-
-          // CLIENT-SIDE UNREAD CALCULATION (Navbar Logic)
+          const profile = profileMap.get(otherUserId);
           const lastViewedAt = viewsMap.get(conv.id);
 
-          // Count messages newer than my last view
           let unreadCount = 0;
           if (conv.last_message) {
             const query = supabase
@@ -83,11 +108,9 @@ export function useConversations() {
               .eq('conversation_id', conv.id)
               .neq('sender_id', user.id);
 
-            // If I have viewed it, only count newer messages
             if (lastViewedAt) {
               query.gt('created_at', lastViewedAt);
             }
-            // If never viewed, count all (default behavior of query)
 
             const { count } = await query;
             unreadCount = count || 0;
@@ -128,53 +151,125 @@ export function useConversations() {
     }
   }, []);
 
+  const applyConversationPreview = useCallback(
+    (conversationId: string, content: string, created_at: string) => {
+      setConversations((prev) => {
+        if (!prev.some((c) => c.id === conversationId)) return prev;
+
+        const updated = prev.map((conv) => {
+          if (conv.id !== conversationId) return conv;
+          const currentLast = new Date(conv.last_message_at || 0).getTime();
+          const newTime = new Date(created_at).getTime();
+          if (newTime <= currentLast) return conv;
+          return {
+            ...conv,
+            last_message: content || 'New message',
+            last_message_at: created_at,
+            updated_at: created_at,
+            has_messages: true,
+          };
+        });
+
+        return [...updated].sort((a, b) => {
+          const dateA = new Date(a.last_message_at || a.updated_at || 0).getTime();
+          const dateB = new Date(b.last_message_at || b.updated_at || 0).getTime();
+          return dateB - dateA;
+        });
+      });
+    },
+    []
+  );
+
   const scheduleReload = useCallback(() => {
     if (reloadTimeoutRef.current) return;
 
     reloadTimeoutRef.current = window.setTimeout(() => {
       reloadTimeoutRef.current = null;
       void loadConversations();
-    }, 250);
+    }, 500);
   }, [loadConversations]);
 
   useEffect(() => {
-    loadConversations();
+    void loadConversations();
     let channel: RealtimeChannel | null = null;
 
-    supabase.auth.getUser().then(({ data: { user } }) => {
+    const setupPreviewChannel = async () => {
+      const session = await initAuthSession();
+      const user = session?.user;
       if (!user) return;
 
-      const setupPreviewChannel = async () => {
-        channel = supabase
-          .channel(`preview_list_${user.id}`)
-          // Conversation updates (trigger keeps last_message in sync server-side)
-          .on(
-            'postgres_changes',
-            { event: 'UPDATE', schema: 'public', table: 'conversations' },
-            () => scheduleReload()
-          )
-          // Read status changes: reload to keep unread badges in sync
-          .on(
-            'postgres_changes',
-            {
-              event: '*',
-              schema: 'public',
-              table: 'conversation_views',
-              filter: `user_id=eq.${user.id}`,
-            },
-            () => scheduleReload()
-          )
-          .subscribe((status) => {
-            console.log(`📡 Conversation preview channel: ${status}`);
-          });
+      channel = supabase
+        .channel(`preview_list_${user.id}`)
+        .on(
+          'postgres_changes',
+          {
+            event: 'UPDATE',
+            schema: 'public',
+            table: 'conversations',
+            filter: `user1_id=eq.${user.id}`,
+          },
+          (payload) => {
+            const updated = payload.new as {
+              id?: string;
+              last_message?: string;
+              last_message_at?: string;
+            };
+            if (updated?.id && updated.last_message && updated.last_message_at) {
+              applyConversationPreview(
+                updated.id,
+                updated.last_message,
+                updated.last_message_at
+              );
+            } else {
+              scheduleReload();
+            }
+          }
+        )
+        .on(
+          'postgres_changes',
+          {
+            event: 'UPDATE',
+            schema: 'public',
+            table: 'conversations',
+            filter: `user2_id=eq.${user.id}`,
+          },
+          (payload) => {
+            const updated = payload.new as {
+              id?: string;
+              last_message?: string;
+              last_message_at?: string;
+            };
+            if (updated?.id && updated.last_message && updated.last_message_at) {
+              applyConversationPreview(
+                updated.id,
+                updated.last_message,
+                updated.last_message_at
+              );
+            } else {
+              scheduleReload();
+            }
+          }
+        )
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'conversation_views',
+            filter: `user_id=eq.${user.id}`,
+          },
+          () => scheduleReload()
+        )
+        .subscribe((status) => {
+          console.log(`📡 Conversation preview channel: ${status}`);
+        });
 
-        channelRef.current = channel;
-      };
+      channelRef.current = channel;
+    };
 
-      setupPreviewChannel().catch((err) =>
-        console.error('Error setting up preview channel:', err)
-      );
-    });
+    setupPreviewChannel().catch((err) =>
+      console.error('Error setting up preview channel:', err)
+    );
 
     return () => {
       if (channelRef.current) {
@@ -186,9 +281,8 @@ export function useConversations() {
         reloadTimeoutRef.current = null;
       }
     };
-  }, [loadConversations]);
+  }, [applyConversationPreview, loadConversations, scheduleReload]);
 
-  // Listen to global preview update events from notification hook
   useEffect(() => {
     const handlePreviewUpdate = (event: Event) => {
       const custom = event as CustomEvent<{
@@ -198,43 +292,14 @@ export function useConversations() {
       }>;
       const { conversationId, content, created_at } = custom.detail || ({} as any);
       if (!conversationId) return;
-
-      setConversations((prev) => {
-        if (!prev || prev.length === 0) return prev;
-
-        const convExists = prev.some((c) => c.id === conversationId);
-        if (!convExists) return prev;
-
-        const updated = prev.map((conv) => {
-          if (conv.id === conversationId) {
-            const currentLast = new Date(conv.last_message_at || 0).getTime();
-            const newTime = new Date(created_at).getTime();
-            if (newTime > currentLast) {
-              return {
-                ...conv,
-                last_message: content || 'New message',
-                last_message_at: created_at,
-                updated_at: created_at,
-                has_messages: true,
-              };
-            }
-          }
-          return conv;
-        });
-
-        return [...updated].sort((a, b) => {
-          const dateA = new Date(a.last_message_at || a.updated_at || 0).getTime();
-          const dateB = new Date(b.last_message_at || b.updated_at || 0).getTime();
-          return dateB - dateA;
-        });
-      });
+      applyConversationPreview(conversationId, content, created_at);
     };
 
     window.addEventListener('conversation-preview-update', handlePreviewUpdate as EventListener);
     return () => {
       window.removeEventListener('conversation-preview-update', handlePreviewUpdate as EventListener);
     };
-  }, []);
+  }, [applyConversationPreview]);
 
   return { conversations, loading, error, reload: loadConversations };
 }

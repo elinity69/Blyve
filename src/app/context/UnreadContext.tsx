@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, ReactNode, useCallback, useMemo } from 'react';
+import { createContext, useContext, useState, useEffect, ReactNode, useCallback, useMemo, useRef } from 'react';
 import { NotificationManager } from '../lib/notifications';
 import { supabase } from '../lib/supabase';
 
@@ -10,15 +10,18 @@ interface UnreadContextType {
 
 const UnreadContext = createContext<UnreadContextType | undefined>(undefined);
 
-export const UnreadProvider = ({ 
-  children, 
-  currentUserId 
-}: { 
-  children: ReactNode; 
+const UNREAD_REFRESH_DEBOUNCE_MS = 400;
+
+export const UnreadProvider = ({
+  children,
+  currentUserId,
+}: {
+  children: ReactNode;
   currentUserId: string | null;
 }) => {
   const [totalUnread, setTotalUnread] = useState(0);
   const [unreadByConversation, setUnreadByConversation] = useState<Record<string, number>>({});
+  const refreshTimeoutRef = useRef<number | null>(null);
 
   const refreshUnreadCount = useCallback(async () => {
     if (!currentUserId) {
@@ -28,7 +31,6 @@ export const UnreadProvider = ({
     }
 
     try {
-      // Get all conversations where user is a participant
       const { data: conversations } = await supabase
         .from('conversations')
         .select('id')
@@ -42,9 +44,8 @@ export const UnreadProvider = ({
         return;
       }
 
-      const conversationIds = conversations.map(c => c.id);
+      const conversationIds = conversations.map((c) => c.id);
 
-      // Get total unread count (messages where sender is NOT current user and is_read is false)
       const { count: total } = await supabase
         .from('messages')
         .select('*', { count: 'exact', head: true })
@@ -55,7 +56,6 @@ export const UnreadProvider = ({
       setTotalUnread(total || 0);
       NotificationManager.updateBadge(total || 0);
 
-      // Get unread count per conversation
       const { data: messages } = await supabase
         .from('messages')
         .select('conversation_id')
@@ -65,7 +65,7 @@ export const UnreadProvider = ({
 
       if (messages) {
         const countByConv: Record<string, number> = {};
-        messages.forEach(msg => {
+        messages.forEach((msg) => {
           countByConv[msg.conversation_id] = (countByConv[msg.conversation_id] || 0) + 1;
         });
         setUnreadByConversation(countByConv);
@@ -77,75 +77,41 @@ export const UnreadProvider = ({
     }
   }, [currentUserId]);
 
-  // Initial load
-  useEffect(() => {
-    refreshUnreadCount();
+  const scheduleRefreshUnreadCount = useCallback(() => {
+    if (refreshTimeoutRef.current) return;
+    refreshTimeoutRef.current = window.setTimeout(() => {
+      refreshTimeoutRef.current = null;
+      void refreshUnreadCount();
+    }, UNREAD_REFRESH_DEBOUNCE_MS);
   }, [refreshUnreadCount]);
 
-  // Subscribe to refresh requests from the message realtime hub
+  useEffect(() => {
+    void refreshUnreadCount();
+  }, [refreshUnreadCount]);
+
   useEffect(() => {
     if (!currentUserId) return;
 
     const handleRefresh = () => {
-      void refreshUnreadCount();
+      scheduleRefreshUnreadCount();
     };
 
     window.addEventListener('unread-refresh-requested', handleRefresh);
     return () => {
       window.removeEventListener('unread-refresh-requested', handleRefresh);
+      if (refreshTimeoutRef.current) {
+        window.clearTimeout(refreshTimeoutRef.current);
+        refreshTimeoutRef.current = null;
+      }
     };
-  }, [currentUserId, refreshUnreadCount]);
-
-  // Subscribe to real-time changes (fallback if hub misses an event)
-  useEffect(() => {
-    if (!currentUserId) return;
-
-    const channel = supabase
-      .channel(`unread-updates-${currentUserId}`)
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'messages',
-        },
-        async (payload) => {
-          const message = payload.new || payload.old;
-          if (!message) return;
-
-          const { data: conversation } = await supabase
-            .from('conversations')
-            .select('user1_id, user2_id')
-            .eq('id', message.conversation_id)
-            .single();
-
-          if (
-            conversation &&
-            (conversation.user1_id === currentUserId || conversation.user2_id === currentUserId)
-          ) {
-            void refreshUnreadCount();
-          }
-        }
-      )
-      .subscribe((status) => {
-        console.log(`📡 Unread channel: ${status}`);
-      });
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [currentUserId, refreshUnreadCount]);
+  }, [currentUserId, scheduleRefreshUnreadCount]);
 
   const value = useMemo(
     () => ({ totalUnread, unreadByConversation, refreshUnreadCount }),
     [totalUnread, unreadByConversation, refreshUnreadCount]
   );
 
-  return (
-    <UnreadContext.Provider value={value}>
-      {children}
-    </UnreadContext.Provider>
-  );
+  return <UnreadContext.Provider value={value}>{children}</UnreadContext.Provider>;
 };
 
 export const useUnread = () => {

@@ -11,6 +11,7 @@ import {
 import type { User } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
 import { api } from '../lib/api';
+import { getCachedUser, initAuthSession, resolveAuthUser, subscribeAuth } from '../lib/authSession';
 import { Conversation } from '../hooks/useChat';
 
 /**
@@ -48,20 +49,6 @@ const isDevMode =
   (typeof process !== 'undefined' && process.env?.NODE_ENV === 'development'); // Node/Webpack
 
 const INIT_TIMEOUT_MS = isDevMode ? Infinity : 15000;
-/** Auth calls always get a timeout — getUser/getSession can deadlock without one. */
-const AUTH_TIMEOUT_MS = 15000;
-
-async function resolveAuthUser(knownUser?: User | null): Promise<User | null> {
-  if (knownUser) {
-    return knownUser;
-  }
-  const { data: { session } } = await timeoutPromise(
-    supabase.auth.getSession(),
-    AUTH_TIMEOUT_MS,
-    'Timeout: Failed to resolve auth session'
-  );
-  return session?.user ?? null;
-}
 
 // Debug-Log für Dev-Modus-Erkennung
 if (isDevMode) {
@@ -278,79 +265,65 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
 
       const blockedIds = new Set([...blockedByMe, ...blockedMe]);
 
-      // Enrich conversations (mit Timeout für jeden einzelnen)
-      console.log('🔄 Debug: [refreshConversations] Enriching conversations...');
-      const enrichedConversations: Conversation[] = await Promise.all(
-        (convsData || []).map(async (conv) => {
-          const otherUserId = conv.user1_id === user.id ? conv.user2_id : conv.user1_id;
-          
-          if (blockedIds.has(otherUserId)) {
-            return null as unknown as Conversation;
-          }
+      const visibleConvs = (convsData || []).filter((conv) => {
+        const otherUserId = conv.user1_id === user.id ? conv.user2_id : conv.user1_id;
+        return !blockedIds.has(otherUserId);
+      });
 
-          // WICHTIG: Timeout für Profile-Query (kann bei vielen Conversations langsam sein)
-          const profilePromise = Promise.resolve(
-            supabase
-              .from('profiles')
-              .select('id, name, display_name, username, images, avatar_url, ghost_mode')
-              .eq('id', otherUserId)
-              .single()
-          );
+      const otherUserIds = [
+        ...new Set(
+          visibleConvs.map((conv) =>
+            conv.user1_id === user.id ? conv.user2_id : conv.user1_id
+          )
+        ),
+      ];
 
-          const profileResult = await timeoutPromise(
-            profilePromise,
-            3000, // 3 Sekunden pro Profile
-            `Timeout: Failed to load profile for ${otherUserId}`
-          );
-          const { data: profile } = profileResult;
+      const profileMap = new Map<string, {
+        id: string;
+        name: string | null;
+        display_name: string | null;
+        username: string | null;
+        images: string[] | null;
+        avatar_url: string | null;
+        ghost_mode: boolean | null;
+      }>();
 
-          const countPromise = Promise.resolve(
-            supabase
-              .from('messages')
-              .select('*', { count: 'exact', head: true })
-              .eq('conversation_id', conv.id)
-              .eq('sender_id', otherUserId)
-              .eq('is_read', false)
-          );
+      if (otherUserIds.length > 0) {
+        const profilesPromise = Promise.resolve(
+          supabase
+            .from('profiles')
+            .select('id, name, display_name, username, images, avatar_url, ghost_mode')
+            .in('id', otherUserIds)
+        );
+        const profilesResult = await timeoutPromise(
+          profilesPromise,
+          10000,
+          'Timeout: Failed to load conversation profiles'
+        );
+        for (const profile of profilesResult.data || []) {
+          profileMap.set(profile.id, profile);
+        }
+      }
 
-          const countResult = await timeoutPromise(
-            countPromise,
-            3000, // 3 Sekunden für Count
-            `Timeout: Failed to count unread messages for ${conv.id}`
-          );
-          const { count } = countResult;
-
-          const msgCountPromise = Promise.resolve(
-            supabase
-              .from('messages')
-              .select('*', { count: 'exact', head: true })
-              .eq('conversation_id', conv.id)
-          );
-          
-          const msgCountResult = await timeoutPromise(
-            msgCountPromise,
-            3000, // 3 Sekunden für Message Count
-            `Timeout: Failed to count messages for ${conv.id}`
-          );
-          const { count: msgCount } = msgCountResult;
-
-          const displayLabel = profile?.display_name || profile?.name || 'Unknown';
-          return {
-            ...conv,
-            other_user: {
-              id: otherUserId,
-              name: displayLabel,
-              display_name: profile?.display_name || profile?.name || undefined,
-              username: profile?.username || undefined,
-              imageUrl: profile?.images?.[0] || profile?.avatar_url || undefined,
-              is_online: false,
-              ghost_mode: profile?.ghost_mode || false,
-            },
-            unread_count: count || 0,
-            has_messages: (msgCount || 0) > 0,
-          };
-        })
-      );
+      const enrichedConversations: Conversation[] = visibleConvs.map((conv) => {
+        const otherUserId = conv.user1_id === user.id ? conv.user2_id : conv.user1_id;
+        const profile = profileMap.get(otherUserId);
+        const displayLabel = profile?.display_name || profile?.name || 'Unknown';
+        return {
+          ...conv,
+          other_user: {
+            id: otherUserId,
+            name: displayLabel,
+            display_name: profile?.display_name || profile?.name || undefined,
+            username: profile?.username || undefined,
+            imageUrl: profile?.images?.[0] || profile?.avatar_url || undefined,
+            is_online: false,
+            ghost_mode: profile?.ghost_mode || false,
+          },
+          unread_count: 0,
+          has_messages: !!conv.last_message,
+        };
+      });
 
       const filteredConversations = enrichedConversations.filter(Boolean) as Conversation[];
       const sortedChats = filteredConversations.sort((a, b) => {
@@ -399,9 +372,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   // Ref to prevent multiple simultaneous loads
   const isLoadingRef = useRef(false);
   const lastLoadUserIdRef = useRef<string | null>(null);
-  const lastValidationRef = useRef<number>(0);
-  const currentUserIdRef = useRef<string | null>(null); // Track current logged-in user ID
-
+  const currentUserIdRef = useRef<string | null>(null);
   // Load data when user is authenticated
   const loadUserData = useCallback(async (knownUser?: User | null) => {
     // GUARD LOG: Log am Anfang, VOR allen Checks
@@ -552,406 +523,96 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     }
   }, [refreshCurrentUserProfile, refreshConversations]);
 
-  // Initial load on mount (only once)
+  // Initial load + shared auth listener (token sync in authSession)
   useEffect(() => {
     let mounted = true;
-    let timeoutId: NodeJS.Timeout | null = null;
-    
-    const init = async () => {
-      try {
-        // SICHERHEITS-TIMEOUT: Nur in Production, im Dev-Modus deaktiviert
-        timeoutId = INIT_TIMEOUT_MS === Infinity ? null : setTimeout(() => {
-          if (mounted) {
-            console.error(`⏱️ AppDataContext: Init timeout after ${INIT_TIMEOUT_MS}ms - forcing completion`);
-            setIsLoadingConversations(false);
-            setIsLoadingProfile(false);
-          }
-        }, INIT_TIMEOUT_MS);
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
 
-        // WICHTIG: Timeout nur in Production, im Dev-Modus deaktiviert
-        const sessionPromise = supabase.auth.getSession();
-        
-        const sessionResult = await timeoutPromise(
-          sessionPromise,
-          AUTH_TIMEOUT_MS,
-          'Timeout: Failed to get session during init'
-        );
-        
-        const { data: { session } } = sessionResult;
-        
-        console.log('🏁 Debug: [useEffect init] Session check result:', {
-          hasSession: !!session,
-          userId: session?.user?.id || 'null',
-          mounted: mounted
-        });
-        
+    const finishLoading = () => {
+      if (!mounted) return;
+      setIsLoadingConversations(false);
+      setIsLoadingProfile(false);
+    };
+
+    const bootstrap = async () => {
+      timeoutId =
+        INIT_TIMEOUT_MS === Infinity
+          ? null
+          : setTimeout(() => {
+              if (mounted) {
+                console.error(
+                  `⏱️ AppDataContext: Init timeout after ${INIT_TIMEOUT_MS}ms - forcing completion`
+                );
+                finishLoading();
+              }
+            }, INIT_TIMEOUT_MS);
+
+      try {
+        const session = await initAuthSession();
         if (mounted && session?.user) {
-          console.log('🏁 Debug: [useEffect init] Triggering loadUserData for user:', session.user.id);
-          window.setTimeout(() => {
-            if (!mounted) return;
-            void loadUserData(session.user);
-          }, 0);
+          currentUserIdRef.current = session.user.id;
+          await loadUserData(session.user);
         } else if (mounted) {
-          console.log('🏁 Debug: [useEffect init] No session or not mounted, skipping loadUserData');
-          // Keine Session - setze Loading-States zurück
-          setIsLoadingConversations(false);
-          setIsLoadingProfile(false);
-        }
-      } catch (error: any) {
-        // SOFTER ERROR HANDLER: Nur bei echten Auth-Fehlern ausloggen
-        const errorMessage = error?.message || String(error);
-        const isAuthError = 
-          errorMessage.includes('JWT expired') ||
-          errorMessage.includes('Refresh Token Not Found') ||
-          errorMessage.includes('Invalid refresh token') ||
-          errorMessage.includes('session_not_found') ||
-          errorMessage.includes('invalid_token');
-        
-        if (isAuthError) {
-          // Echter Auth-Fehler - User muss sich neu einloggen
-          console.warn('⚠️ AppDataContext: Auth error detected, clearing session:', errorMessage);
-          if (mounted) {
-            api.setAccessToken(null);
-            setConversations([]);
-            setCurrentUserProfile(null);
-          }
-        } else {
-          // Netzwerk-Fehler, Timeout, Server-Hiccup - NICHT ausloggen
-          console.warn('⚠️ AppDataContext: Non-critical error in init (keeping session):', errorMessage);
-          // Im Dev-Modus: Noch geduldiger
-          if (isDevMode) {
-            console.debug('🐛 Dev-Modus: Ignoring non-critical error, keeping user logged in');
-          }
-        }
-        
-        if (mounted) {
-          // KRITISCH: Auch bei Fehler Loading-State zurücksetzen
-          setIsLoadingConversations(false);
-          setIsLoadingProfile(false);
-        }
-      } finally {
-        if (timeoutId) {
-          clearTimeout(timeoutId);
-        }
-      }
-    };
-    
-    init();
-    
-    return () => {
-      mounted = false;
-      if (timeoutId) {
-        clearTimeout(timeoutId);
-      }
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // Only run once on mount
-
-  // Listen for auth state changes (login/logout)
-  useEffect(() => {
-    let mounted = true;
-    
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      console.log('🏁 Debug: [onAuthStateChange] Event received:', {
-        event,
-        userId: session?.user?.id || 'null',
-        email: session?.user?.email || 'null',
-        mounted,
-        isLoadingRef: isLoadingRef.current
-      });
-      
-      if (!mounted) {
-        return;
-      }
-
-      if (isLoadingRef.current && event !== 'SIGNED_IN' && event !== 'SIGNED_OUT') {
-        console.log('🏁 Debug: [onAuthStateChange] Early return:', {
-          mounted,
-          isLoadingRef: isLoadingRef.current,
-          event,
-        });
-        return;
-      }
-      
-      try {
-        console.log('🔄 AppDataContext: Auth state changed:', event, session?.user?.email);
-        
-        if (event === 'TOKEN_REFRESHED') {
-          if (session?.access_token) {
-            console.log('🔄 AppDataContext: Token refreshed, updating API client...');
-            api.setAccessToken(session.access_token);
-          }
-        } else if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION') {
-          if (session?.user && mounted) {
-            const newUserId = session.user.id;
-            const isSameUser = currentUserIdRef.current === newUserId;
-            
-            // KRITISCH: API-Client Token setzen (immer, auch bei gleichem User)
-            if (session.access_token) {
-              api.setAccessToken(session.access_token);
-            }
-            
-            // SMART CHECK: Nur komplett neu laden, wenn es ein NEUER User ist
-            if (isSameUser && isLoadingRef.current) {
-              console.log('🔄 AppDataContext: Same user, load already in progress — skipping');
-            } else if (isSameUser) {
-              console.log('🔄 AppDataContext: Same user signed in (token update), skipping full reload');
-            } else {
-              // Neuer User - komplett neu laden (defer: vermeidet Supabase-Deadlock mit getSession)
-              console.log('✅ AppDataContext: User session ready, loading data...', event);
-              currentUserIdRef.current = newUserId;
-              window.setTimeout(() => {
-                if (!mounted) return;
-                void loadUserData(session.user);
-              }, 0);
-            }
-          }
-        } else if (event === 'SIGNED_OUT') {
-          // KRITISCH: State sofort hart zurücksetzen
-          console.log('⚠️ AppDataContext: User signed out, clearing data...');
-          if (mounted) {
-            api.setAccessToken(null); // API-Client Token löschen
-            setConversations([]);
-            setCurrentUserProfile(null);
-            setIsLoadingConversations(false);
-            setIsLoadingProfile(false);
-            isLoadingRef.current = false;
-            lastLoadUserIdRef.current = null;
-            currentUserIdRef.current = null; // Clear user ID ref
-          }
+          finishLoading();
         }
       } catch (error) {
-        console.error('❌ AppDataContext: Error in auth state change handler:', error);
-        // KRITISCH: Auch bei Fehler Loading-States zurücksetzen
-        if (mounted) {
-          setIsLoadingConversations(false);
-          setIsLoadingProfile(false);
-        }
+        console.warn('AppDataContext: init failed:', error);
+        finishLoading();
+      } finally {
+        if (timeoutId) clearTimeout(timeoutId);
+      }
+    };
+
+    void bootstrap();
+
+    const unsubscribe = subscribeAuth((event, session) => {
+      if (!mounted) return;
+      if (event === 'TOKEN_REFRESHED') return;
+
+      if (event === 'SIGNED_IN') {
+        if (!session?.user) return;
+        const newUserId = session.user.id;
+        const isSameUser = currentUserIdRef.current === newUserId;
+        if (isSameUser && isLoadingRef.current) return;
+        if (isSameUser) return;
+
+        currentUserIdRef.current = newUserId;
+        window.setTimeout(() => {
+          if (!mounted) return;
+          void loadUserData(session.user);
+        }, 0);
+        return;
+      }
+
+      if (event === 'SIGNED_OUT') {
+        api.setAccessToken(null);
+        setConversations([]);
+        setCurrentUserProfile(null);
+        finishLoading();
+        isLoadingRef.current = false;
+        lastLoadUserIdRef.current = null;
+        currentUserIdRef.current = null;
       }
     });
 
     return () => {
       mounted = false;
-      if (subscription) {
-        try {
-          subscription.unsubscribe();
-        } catch (error) {
-          // Ignore unsubscribe errors (component might already be unmounted)
-          console.warn('⚠️ AppDataContext: Error unsubscribing from auth state:', error);
-        }
-      }
+      if (timeoutId) clearTimeout(timeoutId);
+      unsubscribe();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // Only set up listener once, loadUserData is stable
-
-  // App State Re-Validation: Prüfe Session wenn App aus Hintergrund kommt
-  useEffect(() => {
-    let mounted = true;
-    
-    const validateSessionOnFocus = async () => {
-      if (!mounted) return;
-      
-      // DEV-MODUS: Deaktiviere Focus-Validation komplett (nur für Production/Mobile)
-      if (isDevMode) {
-        console.debug('🐛 Dev-Modus: Skipping focus validation (not needed in browser dev mode)');
-        return;
-      }
-      
-      // Throttle: Don't validate more than once every 10 seconds
-      const now = Date.now();
-      if (now - lastValidationRef.current < 10000) {
-        console.debug('🔄 AppDataContext: Skipping validation (throttled, last validation was < 10s ago)');
-        return;
-      }
-      lastValidationRef.current = now;
-      
-      try {
-        console.log('🔄 AppDataContext: App became active, validating session...');
-        
-        // Prüfe ob Session noch gültig ist
-        // WICHTIG: Timeout nur in Production, im Dev-Modus deaktiviert
-        const sessionPromise = supabase.auth.getSession();
-        let sessionResult;
-        if (isDevMode) {
-          sessionResult = await sessionPromise; // Kein Timeout im Dev-Modus
-        } else {
-          sessionResult = await timeoutPromise(
-            sessionPromise,
-            5000, // 5 Sekunden für Session Check
-            'Timeout: Session validation took too long'
-          );
-        }
-        const { data: { session }, error } = sessionResult;
-        
-        if (error || !session) {
-          // SOFTER ERROR HANDLER: Nur bei echten Auth-Fehlern ausloggen
-          const errorMessage = error?.message || String(error);
-          const isAuthError = 
-            errorMessage.includes('JWT expired') ||
-            errorMessage.includes('Refresh Token Not Found') ||
-            errorMessage.includes('Invalid refresh token') ||
-            errorMessage.includes('session_not_found') ||
-            errorMessage.includes('invalid_token');
-          
-          if (isAuthError) {
-            // Echter Auth-Fehler - User muss sich neu einloggen
-            console.warn('⚠️ AppDataContext: Auth error on focus, clearing session:', errorMessage);
-            if (mounted) {
-              api.setAccessToken(null);
-              setConversations([]);
-              setCurrentUserProfile(null);
-              setIsLoadingConversations(false);
-              setIsLoadingProfile(false);
-              isLoadingRef.current = false;
-              lastLoadUserIdRef.current = null;
-            }
-          } else {
-            // Netzwerk-Fehler, Timeout, Server-Hiccup - NICHT ausloggen
-            console.warn('⚠️ AppDataContext: Non-critical session error on focus (keeping session):', errorMessage);
-            // Im Dev-Modus: Noch geduldiger
-            if (isDevMode) {
-              console.debug('🐛 Dev-Modus: Ignoring non-critical session error, keeping user logged in');
-            }
-            // Token aktualisieren versuchen (falls möglich)
-            try {
-              const { data: { session: retrySession } } = await supabase.auth.getSession();
-              if (retrySession?.access_token) {
-                api.setAccessToken(retrySession.access_token);
-                console.debug('💓 Heartbeat: Session retry successful');
-              }
-            } catch (retryError) {
-              console.debug('💓 Heartbeat: Session retry failed (non-critical):', retryError);
-            }
-          }
-          return;
-        }
-        
-        // Session ist gültig - aktualisiere Token falls nötig
-        if (session.access_token) {
-          api.setAccessToken(session.access_token);
-        }
-        
-      } catch (error: any) {
-        // SOFTER ERROR HANDLER: Nur bei echten Auth-Fehlern ausloggen
-        const errorMessage = error?.message || String(error);
-        const isAuthError = 
-          errorMessage.includes('JWT expired') ||
-          errorMessage.includes('Refresh Token Not Found') ||
-          errorMessage.includes('Invalid refresh token') ||
-          errorMessage.includes('session_not_found') ||
-          errorMessage.includes('invalid_token');
-        
-        if (isAuthError) {
-          // Echter Auth-Fehler - User muss sich neu einloggen
-          console.warn('⚠️ AppDataContext: Auth error validating session on focus:', errorMessage);
-          if (mounted) {
-            api.setAccessToken(null);
-            setConversations([]);
-            setCurrentUserProfile(null);
-            setIsLoadingConversations(false);
-            setIsLoadingProfile(false);
-            isLoadingRef.current = false;
-            lastLoadUserIdRef.current = null;
-          }
-        } else {
-          // Netzwerk-Fehler, Timeout, Server-Hiccup - NICHT ausloggen
-          console.warn('⚠️ AppDataContext: Non-critical error validating session (keeping session):', errorMessage);
-          // Im Dev-Modus: Noch geduldiger
-          if (isDevMode) {
-            console.debug('🐛 Dev-Modus: Ignoring non-critical validation error, keeping user logged in');
-          }
-        }
-      }
-    };
-    
-    // Web: visibilitychange Event (NUR in Production, nicht im Dev-Modus)
-    if (typeof window !== 'undefined' && !isDevMode) {
-      const handleVisibilityChange = () => {
-        if (document.visibilityState === 'visible') {
-          validateSessionOnFocus();
-        }
-      };
-      
-      // Focus Event (zusätzlich zu visibilitychange)
-      const handleFocus = () => {
-        validateSessionOnFocus();
-      };
-      
-      document.addEventListener('visibilitychange', handleVisibilityChange);
-      window.addEventListener('focus', handleFocus);
-      
-      return () => {
-        mounted = false;
-        document.removeEventListener('visibilitychange', handleVisibilityChange);
-        window.removeEventListener('focus', handleFocus);
-      };
-    }
-    
-    // Dev-Modus: Keine Event Listener registrieren
-    if (isDevMode) {
-      console.debug('🐛 Dev-Modus: Focus validation listeners disabled');
-    }
-    
-    return () => {
-      mounted = false;
-    };
   }, []);
 
-  // Subscribe to realtime updates for conversations
   useEffect(() => {
-    let conversationsChannel: ReturnType<typeof supabase.channel> | null = null;
-
-    const setupSubscriptions = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-
-      conversationsChannel = supabase
-        .channel('conversations-realtime')
-        .on(
-          'postgres_changes',
-          {
-            event: 'UPDATE',
-            schema: 'public',
-            table: 'conversations',
-            filter: `user1_id=eq.${user.id}`,
-          },
-          (payload) => {
-            const updated = payload.new as any;
-            if (updated.last_message && updated.last_message_at) {
-              updateConversationOptimistically(updated.id, updated.last_message, updated.last_message_at);
-            } else {
-              refreshConversations();
-            }
-          }
-        )
-        .on(
-          'postgres_changes',
-          {
-            event: 'UPDATE',
-            schema: 'public',
-            table: 'conversations',
-            filter: `user2_id=eq.${user.id}`,
-          },
-          (payload) => {
-            const updated = payload.new as any;
-            if (updated.last_message && updated.last_message_at) {
-              updateConversationOptimistically(updated.id, updated.last_message, updated.last_message_at);
-            } else {
-              refreshConversations();
-            }
-          }
-        )
-        .subscribe();
-    };
-
-    void setupSubscriptions();
-
-    return () => {
-      if (conversationsChannel) {
-        supabase.removeChannel(conversationsChannel);
+    const handleReload = () => {
+      const user = getCachedUser();
+      if (user) {
+        void loadUserData(user);
       }
     };
-  }, [updateConversationOptimistically, refreshConversations]);
+    window.addEventListener('app-data-reload', handleReload);
+    return () => window.removeEventListener('app-data-reload', handleReload);
+  }, [loadUserData]);
 
   const value = useMemo<AppDataContextType>(
     () => ({

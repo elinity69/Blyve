@@ -1,6 +1,5 @@
 import { useEffect, useRef } from 'react';
 import { useToast } from '../context/ToastContext';
-import { useUnread } from '../context/UnreadContext';
 import {
   dispatchConversationPreviewUpdate,
   dispatchUnreadRefreshRequest,
@@ -24,7 +23,6 @@ interface GroupMessageEventPayload {
  */
 export function useMessageRealtime(currentUserId: string | null) {
   const { showToast } = useToast();
-  const { refreshUnreadCount } = useUnread();
   const conversationIdsRef = useRef<Set<string>>(new Set());
   const groupIdsRef = useRef<Set<string>>(new Set());
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
@@ -74,7 +72,6 @@ export function useMessageRealtime(currentUserId: string | null) {
         message.created_at
       );
       dispatchUnreadRefreshRequest();
-      void refreshUnreadCount();
 
       if (message.sender_id === currentUserId) {
         return;
@@ -234,7 +231,6 @@ export function useMessageRealtime(currentUserId: string | null) {
             if (!message?.conversation_id) return;
             if (!conversationIdsRef.current.has(message.conversation_id)) return;
             dispatchUnreadRefreshRequest();
-            void refreshUnreadCount();
           }
         )
         .on(
@@ -280,5 +276,5 @@ export function useMessageRealtime(currentUserId: string | null) {
         channelRef.current = null;
       }
     };
-  }, [currentUserId, refreshUnreadCount, showToast]);
+  }, [currentUserId, showToast]);
 }

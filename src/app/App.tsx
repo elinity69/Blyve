@@ -26,6 +26,7 @@ import { CallJoinScreen } from './components/CallJoinScreen';
 import { parseCallJoinParams } from './lib/callJoinRoute';
 import i18n from '../lib/i18n';
 import { applyThemePreference, applyBootTheme, clearThemeCache, readThemeCache, applyResolvedTheme, syncThemeFromProfile } from './lib/theme';
+import { initAuthSession, subscribeAuth } from './lib/authSession';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -114,8 +115,7 @@ function AppContent({ onUserIdChange }: AppContentProps = {}) {
           api.setAccessToken(storedToken);
         }
         
-        // Then, verify with Supabase session (async, but more reliable)
-        const { data: { session } } = await supabase.auth.getSession();
+        const session = await initAuthSession();
         sessionUser = session?.user ?? null;
         console.log('App Start - Session:', sessionUser?.id);
         if (session?.access_token) {
@@ -449,17 +449,7 @@ function AppContent({ onUserIdChange }: AppContentProps = {}) {
             setNeedsOnboarding(false);
             setIsAuthenticated(true);
             
-            // Trigger AppDataContext to reload data
-            // The auth state change listener should handle this, but we force it
-            try {
-              const { data: { session } } = await supabase.auth.getSession();
-              if (session) {
-                // Force refresh session to trigger auth state change
-                await supabase.auth.refreshSession();
-              }
-            } catch (refreshError) {
-              console.warn('Could not refresh session:', refreshError);
-            }
+            window.dispatchEvent(new CustomEvent('app-data-reload'));
           } else {
             console.warn('⚠️ Onboarding not complete in database, staying in onboarding');
           }
@@ -503,8 +493,9 @@ function AppContent({ onUserIdChange }: AppContentProps = {}) {
       }
     };
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+    const unsubscribe = subscribeAuth((event, session) => {
       if (!mounted) return;
+      if (event === 'TOKEN_REFRESHED') return;
 
       if (event === 'SIGNED_OUT') {
         clearThemeCache();
@@ -529,7 +520,7 @@ function AppContent({ onUserIdChange }: AppContentProps = {}) {
 
     return () => {
       mounted = false;
-      subscription.unsubscribe();
+      unsubscribe();
     };
   }, []);
 

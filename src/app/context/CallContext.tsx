@@ -11,6 +11,7 @@
   useState,
 } from 'react';
 import { supabase } from '../lib/supabase';
+import { getCachedUser, subscribeAuth } from '../lib/authSession';
 import { api } from '../lib/api';
 import { getOptimizedImageUrl } from '../lib/images';
 import { toast } from '../lib/toast';
@@ -1517,22 +1518,18 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     let mounted = true;
-    supabase.auth
-      .getUser()
-      .then(({ data: { user } }) => {
-        if (mounted) setCurrentUserId(user?.id ?? null);
-      })
-      .catch(() => {
-        if (mounted) setCurrentUserId(null);
-      });
+    if (mounted) {
+      setCurrentUserId(getCachedUser()?.id ?? null);
+    }
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const unsubscribe = subscribeAuth((_event, session) => {
+      if (!mounted) return;
       setCurrentUserId(session?.user?.id ?? null);
     });
 
     return () => {
       mounted = false;
-      subscription.unsubscribe();
+      unsubscribe();
     };
   }, []);
 
@@ -1721,7 +1718,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     };
 
     void pollIncoming();
-    incomingPollRef.current = window.setInterval(() => void pollIncoming(), 4000);
+    incomingPollRef.current = window.setInterval(() => void pollIncoming(), 15000);
 
     return () => {
       if (incomingPollRef.current) {

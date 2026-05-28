@@ -20,8 +20,11 @@ export class ApiClient {
   }
 
   async getAccessToken(): Promise<string | null> {
+    if (this.accessToken) {
+      return this.accessToken;
+    }
+
     try {
-      // CRITICAL: Always get fresh token from Supabase session (source of truth)
       const { data: { session }, error } = await supabase.auth.getSession();
       
       if (error) {

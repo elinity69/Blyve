@@ -128,7 +128,8 @@ export function GroupThreadScreen({
     enabled: !!channelId,
     queryFn: () => fetchGroupChannelMessages(groupId, channelId!) as Promise<GroupMessageRow[]>,
     staleTime: 60_000,
-    refetchOnWindowFocus: true,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
   });
 
   useEffect(() => {
@@ -173,28 +174,6 @@ export function GroupThreadScreen({
       });
     }
   }, [channelId, fetchedMessages, isPending, queryError, t]);
-
-  useEffect(() => {
-    if (!channelId) return;
-
-    const refetchMessages = () => {
-      void refetch();
-    };
-
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
-        refetchMessages();
-      }
-    };
-
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    window.addEventListener('focus', refetchMessages);
-
-    return () => {
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-      window.removeEventListener('focus', refetchMessages);
-    };
-  }, [channelId, refetch]);
 
   useEffect(() => {
     if (!channelId) return;

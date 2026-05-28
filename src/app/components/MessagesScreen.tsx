@@ -252,7 +252,7 @@ export function MessagesScreen() {
     enabled: !!selectedGroupId,
     queryFn: () => fetchGroupChannels(selectedGroupId!),
     staleTime: 60_000,
-    refetchOnWindowFocus: true,
+    refetchOnWindowFocus: false,
   });
 
   const patchGroupChannels = React.useCallback(
