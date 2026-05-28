@@ -17,5 +17,10 @@ export const useProfile = () => {
       if (error) throw error;
       return data;
     },
+    staleTime: 1000 * 60 * 10,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    refetchOnMount: false,
+    retry: 1,
   });
 };

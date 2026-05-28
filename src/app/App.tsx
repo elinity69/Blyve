@@ -515,7 +515,7 @@ function AppContent({ onUserIdChange }: AppContentProps = {}) {
       const userId = session?.user?.id;
       if (!userId) return;
 
-      if (event === 'INITIAL_SESSION' || event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
+      if (event === 'INITIAL_SESSION' || event === 'SIGNED_IN') {
         const cachedTheme = readThemeCache();
         if (cachedTheme?.userId === userId) {
           applyResolvedTheme(cachedTheme.darkMode);

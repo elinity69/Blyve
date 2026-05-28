@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, ReactNode, useCallback } from 'react';
+import { createContext, useContext, useState, useEffect, ReactNode, useCallback, useMemo } from 'react';
 import { NotificationManager } from '../lib/notifications';
 import { supabase } from '../lib/supabase';
 
@@ -136,8 +136,13 @@ export const UnreadProvider = ({
     };
   }, [currentUserId, refreshUnreadCount]);
 
+  const value = useMemo(
+    () => ({ totalUnread, unreadByConversation, refreshUnreadCount }),
+    [totalUnread, unreadByConversation, refreshUnreadCount]
+  );
+
   return (
-    <UnreadContext.Provider value={{ totalUnread, unreadByConversation, refreshUnreadCount }}>
+    <UnreadContext.Provider value={value}>
       {children}
     </UnreadContext.Provider>
   );

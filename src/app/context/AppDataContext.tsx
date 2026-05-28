@@ -4,6 +4,7 @@ import {
   useState,
   useEffect,
   useCallback,
+  useMemo,
   useRef,
   ReactNode,
 } from 'react';
@@ -952,15 +953,26 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     };
   }, [updateConversationOptimistically, refreshConversations]);
 
-  const value: AppDataContextType = {
-    conversations,
-    refreshConversations,
-    updateConversationOptimistically,
-    isLoadingConversations,
-    currentUserProfile,
-    refreshCurrentUserProfile,
-    isLoadingProfile,
-  };
+  const value = useMemo<AppDataContextType>(
+    () => ({
+      conversations,
+      refreshConversations,
+      updateConversationOptimistically,
+      isLoadingConversations,
+      currentUserProfile,
+      refreshCurrentUserProfile,
+      isLoadingProfile,
+    }),
+    [
+      conversations,
+      refreshConversations,
+      updateConversationOptimistically,
+      isLoadingConversations,
+      currentUserProfile,
+      refreshCurrentUserProfile,
+      isLoadingProfile,
+    ]
+  );
 
   return <AppDataContext.Provider value={value}>{children}</AppDataContext.Provider>;
 }

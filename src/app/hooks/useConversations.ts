@@ -8,6 +8,7 @@ export function useConversations() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const channelRef = useRef<RealtimeChannel | null>(null);
+  const reloadTimeoutRef = useRef<number | null>(null);
 
   const loadConversations = useCallback(async () => {
     try {
@@ -127,6 +128,15 @@ export function useConversations() {
     }
   }, []);
 
+  const scheduleReload = useCallback(() => {
+    if (reloadTimeoutRef.current) return;
+
+    reloadTimeoutRef.current = window.setTimeout(() => {
+      reloadTimeoutRef.current = null;
+      void loadConversations();
+    }, 250);
+  }, [loadConversations]);
+
   useEffect(() => {
     loadConversations();
     let channel: RealtimeChannel | null = null;
@@ -141,7 +151,7 @@ export function useConversations() {
           .on(
             'postgres_changes',
             { event: 'UPDATE', schema: 'public', table: 'conversations' },
-            () => loadConversations()
+            () => scheduleReload()
           )
           // Read status changes: reload to keep unread badges in sync
           .on(
@@ -152,7 +162,7 @@ export function useConversations() {
               table: 'conversation_views',
               filter: `user_id=eq.${user.id}`,
             },
-            () => loadConversations()
+            () => scheduleReload()
           )
           .subscribe((status) => {
             console.log(`📡 Conversation preview channel: ${status}`);
@@ -170,6 +180,10 @@ export function useConversations() {
       if (channelRef.current) {
         supabase.removeChannel(channelRef.current);
         channelRef.current = null;
+      }
+      if (reloadTimeoutRef.current) {
+        window.clearTimeout(reloadTimeoutRef.current);
+        reloadTimeoutRef.current = null;
       }
     };
   }, [loadConversations]);

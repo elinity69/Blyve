@@ -94,8 +94,11 @@ export function useChat(conversationId: string | null, onMessageSent?: (conversa
     queryKey: dmMessagesQueryKey(conversationId!),
     enabled: !!conversationId,
     queryFn: () => fetchDmMessages(conversationId!),
-    staleTime: 60_000,
-    refetchOnWindowFocus: true,
+    staleTime: 1000 * 60 * 10,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    refetchOnMount: false,
+    retry: 1,
   });
 
   // Sync query results into local state (single effect — no separate clear effect that races).
@@ -218,7 +221,7 @@ export function useChat(conversationId: string | null, onMessageSent?: (conversa
     };
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      if (session?.user && (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED')) {
+      if (session?.user && event === 'SIGNED_IN') {
         refetchMessages();
       }
     });
