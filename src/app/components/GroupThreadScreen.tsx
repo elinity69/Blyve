@@ -30,6 +30,7 @@ import {
 } from '../lib/messageReply';
 import {
   CHAT_MESSAGE_LIST_CLASS,
+  CHAT_TYPING_CLEARANCE_EXTRA_PX,
   CHAT_MESSAGE_ROW_INNER_CLASS,
   CHAT_MESSAGE_ROW_INNER_GROUPED_CLASS,
   getChatMessageRowClass,
@@ -218,6 +219,21 @@ export function GroupThreadScreen({
     el.scrollTop = el.scrollHeight;
   }, [messages, loading]);
 
+  useEffect(() => {
+    const scrollForComposer = () => {
+      const el = scrollRef.current;
+      if (el) el.scrollTop = el.scrollHeight;
+    };
+
+    window.addEventListener('chat-composer-focus', scrollForComposer);
+    window.visualViewport?.addEventListener('resize', scrollForComposer);
+
+    return () => {
+      window.removeEventListener('chat-composer-focus', scrollForComposer);
+      window.visualViewport?.removeEventListener('resize', scrollForComposer);
+    };
+  }, []);
+
   useLayoutEffect(() => {
     if (!channelId || !isMdUp) return;
     const id = requestAnimationFrame(() => {
@@ -272,7 +288,7 @@ export function GroupThreadScreen({
     const measure = () => {
       const el = typingIndicatorRef.current;
       const height = el?.offsetHeight ?? 40;
-      setTypingClearance(height + 8);
+      setTypingClearance(height + CHAT_TYPING_CLEARANCE_EXTRA_PX);
     };
     measure();
     requestAnimationFrame(measure);
@@ -448,7 +464,7 @@ export function GroupThreadScreen({
       {/* Messages — same spacing / bubble style as ChatScreen */}
       <div
         ref={scrollRef}
-        className={`${CHAT_MESSAGE_LIST_CLASS} ${typingClearance > 0 ? '' : 'pb-1'}`}
+        className={CHAT_MESSAGE_LIST_CLASS}
         style={{
           WebkitOverflowScrolling: 'touch',
           ...(typingClearance > 0 ? { paddingBottom: typingClearance } : {}),

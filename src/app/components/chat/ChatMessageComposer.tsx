@@ -1,8 +1,13 @@
-import { useState, type ReactNode, type RefObject } from 'react';
+import { useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
 import { ImageIcon, Loader2, Send } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { FavoriteEmbedsPicker } from './FavoriteEmbedsPicker';
 import { useFavoriteEmbeds } from '../../hooks/useFavoriteEmbeds';
+import {
+  measureSafeAreaInsetBottom,
+  useMobileViewportInsets,
+} from '../../hooks/useMobileViewportInsets';
+import { useIsMobile } from '../ui/use-mobile';
 
 interface ChatMessageComposerProps {
   value: string;
@@ -28,12 +33,32 @@ export function ChatMessageComposer({
   typingIndicator,
 }: ChatMessageComposerProps) {
   const { t } = useTranslation();
+  const rootRef = useRef<HTMLDivElement>(null);
+  const isMobile = useIsMobile();
+  const { bottomInset } = useMobileViewportInsets(isMobile);
+  const [inVisualViewportShell, setInVisualViewportShell] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
   const { syncStatus, isCloudEnabled } = useFavoriteEmbeds();
   const showSyncDot = isCloudEnabled && syncStatus === 'syncing';
 
+  useLayoutEffect(() => {
+    setInVisualViewportShell(
+      !!rootRef.current?.closest('[data-visual-viewport-shell]')
+    );
+  }, []);
+
+  const composerPaddingBottom = isMobile
+    ? inVisualViewportShell
+      ? `max(0.5rem, ${Math.max(measureSafeAreaInsetBottom(), 8)}px)`
+      : `max(0.5rem, ${Math.max(bottomInset, 10)}px)`
+    : 'max(0.5rem, env(safe-area-inset-bottom, 0px))';
+
   return (
-    <div className="relative z-20 shrink-0 border-t border-gray-200 bg-white px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] dark:border-[#1f1f1f] dark:bg-[#0d0d0d] md:dark:bg-[#0e0e0e]">
+    <div
+      ref={rootRef}
+      className="relative z-20 shrink-0 border-t border-gray-200 bg-white px-4 pt-2 dark:border-[#1f1f1f] dark:bg-[#0d0d0d] md:dark:bg-[#0e0e0e]"
+      style={{ paddingBottom: composerPaddingBottom }}
+    >
       {typingIndicator}
       {replyBar}
       <div className="relative flex w-full items-center gap-2">
@@ -69,6 +94,9 @@ export function ChatMessageComposer({
               event.preventDefault();
               void onSend();
             }
+          }}
+          onFocus={() => {
+            window.dispatchEvent(new CustomEvent('chat-composer-focus'));
           }}
           placeholder={placeholder}
           className="flex-1 rounded-full bg-gray-100 px-4 py-2 text-gray-900 focus:outline-none dark:bg-[#1a1a1a] dark:text-[#dce6ef]"

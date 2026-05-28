@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
+import { useMobileViewportInsets } from '../hooks/useMobileViewportInsets';
 
 interface NavigationStackProps {
   children: React.ReactNode;
@@ -19,6 +20,7 @@ export function NavigationStack({ children, onBack, onEdgeDragProgress }: Naviga
   const isDraggingRef = useRef(false);
   const animationFrameRef = useRef<number | null>(null); // ✅ NEU
   const enterAnimationStateRef = useRef<'idle' | 'running' | 'done'>('idle');
+  const viewportFrame = useMobileViewportInsets(isMobile);
 
   useEffect(() => {
     const checkMobile = () => {
@@ -288,10 +290,11 @@ export function NavigationStack({ children, onBack, onEdgeDragProgress }: Naviga
         onTouchCancel={handleTouchEnd} // ✅ Handle touch cancel
         style={{
           position: 'fixed',
-          top: 0,
+          top: viewportFrame.offsetTop,
           left: 0,
           right: 0,
-          bottom: 0,
+          height: viewportFrame.height,
+          bottom: 'auto',
           zIndex: 10,
           backgroundColor: 'var(--color-background, white)',
           boxShadow: '-5px 0 20px rgba(0,0,0,0.15)',
@@ -301,7 +304,10 @@ export function NavigationStack({ children, onBack, onEdgeDragProgress }: Naviga
           touchAction: 'pan-y',
         }}
       >
-        <div className="flex h-full min-h-0 w-full flex-col overflow-hidden">
+        <div
+          data-visual-viewport-shell
+          className="flex h-full min-h-0 w-full flex-col overflow-hidden"
+        >
           {children}
         </div>
       </div>

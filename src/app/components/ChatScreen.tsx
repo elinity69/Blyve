@@ -33,6 +33,7 @@ import {
 } from '../lib/messageReply';
 import {
   CHAT_MESSAGE_LIST_CLASS,
+  CHAT_TYPING_CLEARANCE_EXTRA_PX,
   CHAT_MESSAGE_ROW_INNER_CLASS,
   CHAT_MESSAGE_ROW_INNER_GROUPED_CLASS,
   getChatMessageRowClass,
@@ -241,7 +242,7 @@ export function ChatScreen({
     const measure = () => {
       const el = typingIndicatorRef.current;
       const height = el?.offsetHeight ?? 40;
-      setTypingClearance(height + 8);
+      setTypingClearance(height + CHAT_TYPING_CLEARANCE_EXTRA_PX);
     };
     measure();
     requestAnimationFrame(measure);
@@ -262,6 +263,23 @@ export function ChatScreen({
     if (!container || !initialScrollDoneRef.current) return;
     scrollToBottomInstant(container);
   }, [isPartnerTyping, typingClearance, scrollToBottomInstant]);
+
+  useEffect(() => {
+    const scrollForComposer = () => {
+      const container = messagesContainerRef.current;
+      if (container && initialScrollDoneRef.current) {
+        scrollToBottomInstant(container);
+      }
+    };
+
+    window.addEventListener('chat-composer-focus', scrollForComposer);
+    window.visualViewport?.addEventListener('resize', scrollForComposer);
+
+    return () => {
+      window.removeEventListener('chat-composer-focus', scrollForComposer);
+      window.visualViewport?.removeEventListener('resize', scrollForComposer);
+    };
+  }, [scrollToBottomInstant]);
 
   const loadOlderAndPreserveScroll = useCallback(async () => {
     if (loadingMore || !hasMore || isLoadingOlderRef.current) return;
@@ -535,7 +553,7 @@ export function ChatScreen({
 
       {/* Messages */}
       <div 
-        className={`${CHAT_MESSAGE_LIST_CLASS} ${typingClearance > 0 ? '' : 'pb-1'}`}
+        className={CHAT_MESSAGE_LIST_CLASS}
         ref={messagesContainerRef}
         onScroll={handleMessagesScroll}
         style={{
