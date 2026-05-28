@@ -1,5 +1,6 @@
 // Refactored ApiClient to use Supabase SDK directly instead of Edge Functions
 import { supabase } from './supabase';
+import { isJitsiCallProvider } from './callProvider';
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL ?? '';
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY ?? '';
@@ -866,6 +867,33 @@ export class ApiClient {
       }
       throw e;
     }
+  }
+
+  /** Mark current user as left — stops pending invites and realtime churn. */
+  async leaveCallParticipant(callSessionId: string) {
+    const { data: { session } } = await supabase.auth.getSession();
+    const user = session?.user;
+    if (!user) {
+      throw new Error('Not authenticated');
+    }
+
+    if (isJitsiCallProvider()) {
+      const leftAt = new Date().toISOString();
+      const { error } = await supabase
+        .from('call_participants')
+        .update({
+          invite_status: 'left',
+          left_at: leftAt,
+          updated_at: leftAt,
+        })
+        .eq('call_session_id', callSessionId)
+        .eq('user_id', user.id)
+        .is('left_at', null);
+      if (error) throw error;
+      return { success: true, callSessionId };
+    }
+
+    return this.leaveCallSession(callSessionId);
   }
 }
 

@@ -303,7 +303,10 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   const activeCallSessionIdRef = useRef<string | null>(null);
   const endedTimeoutRef = useRef<number | null>(null);
   const participantChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
-  const sessionChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
+  const stateRef = useRef<CallUiState>(state);
+  const activeCallRef = useRef<ActiveCall | null>(activeCall);
+  const incomingCallRef = useRef<IncomingCall | null>(incomingCall);
+  const selfRoleRef = useRef<CallSelfRole>(selfRole);
   const incomingSoundRef = useRef<number | null>(null);
   const outgoingSoundRef = useRef<number | null>(null);
   const retryTimeoutRef = useRef<number | null>(null);
@@ -314,6 +317,19 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   const joinInFlightRef = useRef(false);
   const incomingRingCountRef = useRef(0);
   const outgoingRingCountRef = useRef(0);
+
+  useEffect(() => {
+    stateRef.current = state;
+  }, [state]);
+  useEffect(() => {
+    activeCallRef.current = activeCall;
+  }, [activeCall]);
+  useEffect(() => {
+    incomingCallRef.current = incomingCall;
+  }, [incomingCall]);
+  useEffect(() => {
+    selfRoleRef.current = selfRole;
+  }, [selfRole]);
 
   const pushDebug = useCallback((message: string) => {
     if (process.env.NODE_ENV !== 'development') return;
@@ -918,27 +934,16 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    if (selfRole === 'host') {
+    if (sessionId) {
       try {
-        if (sessionId) {
+        if (selfRoleRef.current === 'host') {
           await api.endCallSession(sessionId);
+        } else {
+          await api.leaveCallParticipant(sessionId);
         }
       } catch (error) {
-        console.warn('End call failed:', error);
-      } finally {
-        await resetMedia();
-        setIncomingCall(null);
-        incomingSessionIdRef.current = null;
-        setActiveCall(null);
-        activeCallSessionIdRef.current = null;
-        setSelfRole('unknown');
-        stopIncomingSound();
-        stopOutgoingSound();
-        setErrorMessage(null);
-        pushDebug(`hangup (host) session=${sessionId || 'none'}`);
-        moveToEnded();
+        console.warn('Leave/end call failed:', error);
       }
-      return;
     }
 
     await resetMedia();
@@ -946,12 +951,14 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     incomingSessionIdRef.current = null;
     setActiveCall(null);
     activeCallSessionIdRef.current = null;
+    jitsiActiveSessionRef.current = null;
+    setJitsiJoinRequest(null);
     setSelfRole('unknown');
     stopIncomingSound();
     stopOutgoingSound();
     setErrorMessage(null);
     setCanRetryConnection(false);
-    pushDebug(`hangup (participant) session=${sessionId || 'none'}`);
+    pushDebug(`hangup session=${sessionId || 'none'} role=${selfRoleRef.current}`);
     moveToEnded();
   }, [
     activeCall?.callSessionId,
@@ -961,7 +968,6 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     moveToEnded,
     pushDebug,
     resetMedia,
-    selfRole,
     stopIncomingSound,
     stopOutgoingSound,
   ]);
@@ -1533,8 +1539,17 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
+  const maybeShowIncomingRef = useRef(maybeShowIncoming);
+  maybeShowIncomingRef.current = maybeShowIncoming;
+  const connectToJitsiRef = useRef(connectToJitsi);
+  connectToJitsiRef.current = connectToJitsi;
+  const handleJitsiJoinErrorRef = useRef(handleJitsiJoinError);
+  handleJitsiJoinErrorRef.current = handleJitsiJoinError;
+
   useEffect(() => {
     if (!currentUserId) return;
+
+    const terminalStatuses = new Set(['ended', 'cancelled', 'declined', 'missed']);
 
     participantChannelRef.current = supabase
       .channel(`call-participants:${currentUserId}`)
@@ -1560,6 +1575,9 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
           const eventKey = `${payload.eventType}:${row.call_session_id}:${status}:${row.updated_at || ''}`;
           if (lastProcessedEventRef.current.has(eventKey)) return;
           lastProcessedEventRef.current.add(eventKey);
+          if (lastProcessedEventRef.current.size > 200) {
+            lastProcessedEventRef.current.clear();
+          }
 
           const { data: sessionRow } = await supabase
             .from('call_sessions')
@@ -1568,7 +1586,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
             .maybeSingle();
 
           const sessionStatus = String(sessionRow?.status || '').toLowerCase();
-          if (sessionRow && isTerminalCallStatus(sessionStatus)) {
+          if (sessionRow && terminalStatuses.has(sessionStatus)) {
             if (incomingSessionIdRef.current === row.call_session_id) {
               setIncomingCall(null);
               incomingSessionIdRef.current = null;
@@ -1584,7 +1602,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
           }
 
           if (status === 'pending' && row.user_id === currentUserId) {
-            await maybeShowIncoming(row.call_session_id);
+            await maybeShowIncomingRef.current(row.call_session_id);
             return;
           }
 
@@ -1592,17 +1610,17 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
             status === 'accepted' &&
             isJitsiCallProvider() &&
             activeCallSessionIdRef.current === row.call_session_id &&
-            state === 'calling' &&
+            stateRef.current === 'calling' &&
             sessionRow?.creator_id === currentUserId
           ) {
             try {
-              await connectToJitsi(
+              await connectToJitsiRef.current(
                 row.call_session_id,
-                sessionRow.conversation_id ?? activeCall?.conversationId,
-                activeCall?.callType || 'audio',
+                sessionRow.conversation_id ?? activeCallRef.current?.conversationId,
+                activeCallRef.current?.callType || 'audio'
               );
             } catch (error: unknown) {
-              handleJitsiJoinError(error);
+              handleJitsiJoinErrorRef.current(error);
             }
             return;
           }
@@ -1610,7 +1628,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
           if (['declined', 'missed', 'left', 'removed'].includes(status)) {
             if (
               activeCallSessionIdRef.current === row.call_session_id ||
-              incomingCall?.callSessionId === row.call_session_id
+              incomingCallRef.current?.callSessionId === row.call_session_id
             ) {
               setIncomingCall(null);
               incomingSessionIdRef.current = null;
@@ -1626,85 +1644,20 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       )
       .subscribe();
 
-    sessionChannelRef.current = supabase
-      .channel(`call-sessions:${currentUserId}`)
-      .on(
-        'postgres_changes',
-        { event: 'UPDATE', schema: 'public', table: 'call_sessions' },
-        async (payload) => {
-          const row = payload.new as {
-            id?: string;
-            status?: string;
-            conversation_id?: string | null;
-          };
-          if (!row?.id) return;
-          const sessionStatus = String(row.status || '').toLowerCase();
-
-          if (
-            isJitsiCallProvider() &&
-            (sessionStatus === 'joining' || sessionStatus === 'active') &&
-            activeCallSessionIdRef.current === row.id &&
-            state === 'calling'
-          ) {
-            try {
-              await connectToJitsi(
-                row.id,
-                row.conversation_id ?? activeCall?.conversationId,
-                activeCall?.callType || 'audio'
-              );
-            } catch (error: unknown) {
-              handleJitsiJoinError(error);
-            }
-            return;
-          }
-
-          if (isTerminalCallStatus(sessionStatus)) {
-            if (incomingSessionIdRef.current === row.id) {
-              setIncomingCall(null);
-              incomingSessionIdRef.current = null;
-              stopIncomingSound();
-            }
-            if (activeCallSessionIdRef.current === row.id) {
-              await resetMedia();
-              setActiveCall(null);
-              activeCallSessionIdRef.current = null;
-              moveToEnded();
-            }
-          }
-        }
-      )
-      .subscribe();
-
     return () => {
       if (participantChannelRef.current) {
         supabase.removeChannel(participantChannelRef.current);
         participantChannelRef.current = null;
       }
-      if (sessionChannelRef.current) {
-        supabase.removeChannel(sessionChannelRef.current);
-        sessionChannelRef.current = null;
-      }
     };
-  }, [
-    activeCall?.callType,
-    activeCall?.conversationId,
-    connectToJitsi,
-    currentUserId,
-    handleJitsiJoinError,
-    incomingCall?.callSessionId,
-    isTerminalCallStatus,
-    maybeShowIncoming,
-    moveToEnded,
-    resetMedia,
-    state,
-    stopIncomingSound,
-    stopOutgoingSound,
-  ]);
+  }, [currentUserId, moveToEnded, resetMedia, stopIncomingSound, stopOutgoingSound]);
 
   useEffect(() => {
     if (!currentUserId || state === 'in_call') return;
 
     const pollIncoming = async () => {
+      if (stateRef.current === 'in_call' || stateRef.current === 'incoming') return;
+
       const { data: pendingRows, error } = await supabase
         .from('call_participants')
         .select('call_session_id, invite_status, left_at')
@@ -1714,11 +1667,45 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         .order('updated_at', { ascending: false })
         .limit(1);
       if (error || !pendingRows?.length) return;
-      await maybeShowIncoming(pendingRows[0].call_session_id);
+
+      const sessionId = pendingRows[0].call_session_id;
+      const { data: sessionRow } = await supabase
+        .from('call_sessions')
+        .select('status, created_at, updated_at')
+        .eq('id', sessionId)
+        .maybeSingle();
+
+      const sessionStatus = String(sessionRow?.status || '').toLowerCase();
+      if (isTerminalCallStatus(sessionStatus)) {
+        try {
+          await api.acceptCall(sessionId, 'missed');
+        } catch {
+          // best effort — clear stale pending row
+        }
+        return;
+      }
+
+      if (
+        sessionRow &&
+        isExpiredRingingSession(
+          sessionRow.status,
+          sessionRow.created_at ?? null,
+          sessionRow.updated_at ?? null
+        )
+      ) {
+        try {
+          await api.acceptCall(sessionId, 'missed');
+        } catch {
+          // best effort
+        }
+        return;
+      }
+
+      await maybeShowIncomingRef.current(sessionId);
     };
 
     void pollIncoming();
-    incomingPollRef.current = window.setInterval(() => void pollIncoming(), 15000);
+    incomingPollRef.current = window.setInterval(() => void pollIncoming(), 30000);
 
     return () => {
       if (incomingPollRef.current) {
@@ -1726,7 +1713,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         incomingPollRef.current = null;
       }
     };
-  }, [currentUserId, maybeShowIncoming, state]);
+  }, [currentUserId, isTerminalCallStatus, state]);
 
   useEffect(() => {
     return () => {

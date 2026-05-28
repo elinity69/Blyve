@@ -1,6 +1,7 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
 import { RealtimeChannel } from '@supabase/supabase-js';
+import { debounce } from '../lib/requestThrottle';
 
 // Track online users via Supabase Presence
 export function useOnlineStatus(userId: string | null) {
@@ -8,38 +9,55 @@ export function useOnlineStatus(userId: string | null) {
   const [ghostModeUsers, setGhostModeUsers] = useState<Set<string>>(new Set());
   const channelRef = useRef<RealtimeChannel | null>(null);
 
-  // Load ghost mode status for users
   const loadGhostModeStatus = useCallback(async (userIds: string[]) => {
+    const unique = [...new Set(userIds)].slice(0, 50);
+    if (unique.length === 0) return;
+
     try {
       const { data } = await supabase
         .from('profiles')
         .select('id, ghost_mode')
-        .in('id', userIds);
+        .in('id', unique);
 
       if (data) {
-        const ghostUsers = new Set(
-          data.filter((p) => p.ghost_mode).map((p) => p.id)
-        );
-        setGhostModeUsers(ghostUsers);
+        setGhostModeUsers((prev) => {
+          const next = new Set(prev);
+          for (const row of data) {
+            if (row.ghost_mode) {
+              next.add(row.id);
+            } else {
+              next.delete(row.id);
+            }
+          }
+          return next;
+        });
       }
     } catch (error) {
       console.error('Error loading ghost mode status:', error);
     }
   }, []);
 
+  const debouncedLoadGhostMode = useMemo(
+    () => debounce((ids: string[]) => {
+      void loadGhostModeStatus(ids);
+    }, 600),
+    [loadGhostModeStatus]
+  );
+
+  const onlineUsersRef = useRef<Set<string>>(new Set());
+
   useEffect(() => {
     if (!userId) return;
 
-    // Track current user as online
     const channel = supabase
-      .channel('online-users')
+      .channel(`online-users-${userId}`)
       .on('presence', { event: 'sync' }, () => {
         const presenceState = channel.presenceState();
         const online = new Set<string>();
         const userIds: string[] = [];
         
         Object.keys(presenceState).forEach((key) => {
-          const presences = presenceState[key] as any[];
+          const presences = presenceState[key] as { user_id?: string }[];
           presences.forEach((presence) => {
             if (presence.user_id) {
               online.add(presence.user_id);
@@ -48,33 +66,37 @@ export function useOnlineStatus(userId: string | null) {
           });
         });
         
+        onlineUsersRef.current = online;
         setOnlineUsers(online);
-        // Load ghost mode for online users
         if (userIds.length > 0) {
-          loadGhostModeStatus(userIds);
+          debouncedLoadGhostMode(userIds);
         }
       })
-      .on('presence', { event: 'join' }, ({ key, newPresences }) => {
-        const online = new Set(onlineUsers);
+      .on('presence', { event: 'join' }, ({ newPresences }) => {
+        const online = new Set(onlineUsersRef.current);
         const userIds: string[] = [];
-        newPresences.forEach((presence: any) => {
-          if (presence.user_id) {
-            online.add(presence.user_id);
-            userIds.push(presence.user_id);
+        newPresences.forEach((presence) => {
+          const userId = (presence as { user_id?: string }).user_id;
+          if (userId) {
+            online.add(userId);
+            userIds.push(userId);
           }
         });
+        onlineUsersRef.current = online;
         setOnlineUsers(online);
         if (userIds.length > 0) {
-          loadGhostModeStatus(userIds);
+          debouncedLoadGhostMode(userIds);
         }
       })
-      .on('presence', { event: 'leave' }, ({ key, leftPresences }) => {
-        const online = new Set(onlineUsers);
-        leftPresences.forEach((presence: any) => {
-          if (presence.user_id) {
-            online.delete(presence.user_id);
+      .on('presence', { event: 'leave' }, ({ leftPresences }) => {
+        const online = new Set(onlineUsersRef.current);
+        leftPresences.forEach((presence) => {
+          const userId = (presence as { user_id?: string }).user_id;
+          if (userId) {
+            online.delete(userId);
           }
         });
+        onlineUsersRef.current = online;
         setOnlineUsers(online);
       })
       .subscribe(async (status) => {
@@ -96,7 +118,7 @@ export function useOnlineStatus(userId: string | null) {
         channelRef.current = null;
       }
     };
-  }, [userId, loadGhostModeStatus]);
+  }, [userId, debouncedLoadGhostMode]);
 
   const isOnline = useCallback(
     (checkUserId: string | null, checkUserGhostMode?: boolean): boolean => {

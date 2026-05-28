@@ -7,6 +7,7 @@ import {
 } from '../lib/messageEvents';
 import { NotificationManager } from '../lib/notifications';
 import { supabase } from '../lib/supabase';
+import { debounce } from '../lib/requestThrottle';
 
 interface GroupMessageEventPayload {
   id: string;
@@ -26,23 +27,34 @@ export function useMessageRealtime(currentUserId: string | null) {
   const conversationIdsRef = useRef<Set<string>>(new Set());
   const groupIdsRef = useRef<Set<string>>(new Set());
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
+  const lastConversationIdsLoadRef = useRef(0);
+  const lastGroupIdsLoadRef = useRef(0);
 
   useEffect(() => {
     if (!currentUserId) return;
 
     let cancelled = false;
 
-    const loadConversationIds = async () => {
+    const loadConversationIds = async (force = false) => {
+      const now = Date.now();
+      if (!force && now - lastConversationIdsLoadRef.current < 60_000) return;
+      lastConversationIdsLoadRef.current = now;
+
       const { data } = await supabase
         .from('conversations')
         .select('id')
-        .or(`user1_id.eq.${currentUserId},user2_id.eq.${currentUserId}`);
+        .or(`user1_id.eq.${currentUserId},user2_id.eq.${currentUserId}`)
+        .limit(200);
 
       if (cancelled) return;
       conversationIdsRef.current = new Set((data || []).map((row) => row.id));
     };
 
-    const loadGroupIds = async () => {
+    const loadGroupIds = async (force = false) => {
+      const now = Date.now();
+      if (!force && now - lastGroupIdsLoadRef.current < 60_000) return;
+      lastGroupIdsLoadRef.current = now;
+
       const { data } = await supabase
         .from('group_members')
         .select('group_id')
@@ -54,7 +66,7 @@ export function useMessageRealtime(currentUserId: string | null) {
 
     const handleMessageInsert = async (message: MessageEventPayload) => {
       if (!conversationIdsRef.current.has(message.conversation_id)) {
-        await loadConversationIds();
+        await loadConversationIds(true);
         if (!conversationIdsRef.current.has(message.conversation_id)) {
           return;
         }
@@ -133,7 +145,7 @@ export function useMessageRealtime(currentUserId: string | null) {
 
     const handleGroupMessageInsert = async (message: GroupMessageEventPayload) => {
       if (!groupIdsRef.current.has(message.group_id)) {
-        await loadGroupIds();
+        await loadGroupIds(true);
         if (!groupIdsRef.current.has(message.group_id)) {
           return;
         }
@@ -198,8 +210,13 @@ export function useMessageRealtime(currentUserId: string | null) {
       }
     };
 
+    const refreshMembership = debounce(() => {
+      void loadConversationIds();
+      void loadGroupIds();
+    }, 1000);
+
     const setup = async () => {
-      await Promise.all([loadConversationIds(), loadGroupIds()]);
+      await Promise.all([loadConversationIds(true), loadGroupIds(true)]);
       if (cancelled) return;
 
       if (channelRef.current) {
@@ -260,17 +277,13 @@ export function useMessageRealtime(currentUserId: string | null) {
 
     void setup();
 
-    const refreshConversationIds = () => {
-      void loadConversationIds();
-      void loadGroupIds();
-    };
-    window.addEventListener('conversation-opened', refreshConversationIds);
-    window.addEventListener('conversation-closed', refreshConversationIds);
+    window.addEventListener('conversation-opened', refreshMembership);
+    window.addEventListener('conversation-closed', refreshMembership);
 
     return () => {
       cancelled = true;
-      window.removeEventListener('conversation-opened', refreshConversationIds);
-      window.removeEventListener('conversation-closed', refreshConversationIds);
+      window.removeEventListener('conversation-opened', refreshMembership);
+      window.removeEventListener('conversation-closed', refreshMembership);
       if (channelRef.current) {
         supabase.removeChannel(channelRef.current);
         channelRef.current = null;

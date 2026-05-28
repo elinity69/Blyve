@@ -7,6 +7,8 @@ import { GroupThreadScreen } from './GroupThreadScreen';
 import { GroupVoiceChannelScreen } from './GroupVoiceChannelScreen';
 import { SharedProfileView } from './SharedProfileView';
 import { supabase } from '../lib/supabase';
+import { getCachedUser, initAuthSession, subscribeAuth } from '../lib/authSession';
+import { debounce } from '../lib/requestThrottle';
 import { api } from '../lib/api';
 import { getOptimizedImageUrl } from '../lib/images';
 import { User } from '../types';
@@ -298,21 +300,33 @@ export function MessagesScreen() {
     return () => window.removeEventListener('typing-status-changed', handleTypingStatus);
   }, []);
 
-  React.useEffect(() => {
-    if (conversations.length === 0) return;
-    prefetchRecentDmMessages(
-      queryClient,
-      conversations.map((conversation) => conversation.id)
-    );
-  }, [conversations, queryClient]);
+  const topConversationIdsKey = useMemo(
+    () =>
+      conversations
+        .slice(0, 5)
+        .map((conversation) => conversation.id)
+        .join(','),
+    [conversations]
+  );
 
   React.useEffect(() => {
-    const groupIds = myGroupRows
-      .map((row) => row.group?.id)
-      .filter((id): id is string => Boolean(id));
-    if (groupIds.length === 0) return;
-    prefetchAllGroupChannels(queryClient, groupIds);
-  }, [myGroupRows, queryClient]);
+    if (!topConversationIdsKey) return;
+    prefetchRecentDmMessages(queryClient, topConversationIdsKey.split(','));
+  }, [topConversationIdsKey, queryClient]);
+
+  const myGroupIdsKey = useMemo(
+    () =>
+      myGroupRows
+        .map((row) => row.group?.id)
+        .filter((id): id is string => Boolean(id))
+        .join(','),
+    [myGroupRows]
+  );
+
+  React.useEffect(() => {
+    if (!myGroupIdsKey) return;
+    prefetchAllGroupChannels(queryClient, myGroupIdsKey.split(','));
+  }, [myGroupIdsKey, queryClient]);
 
   const isConversationTyping = React.useCallback(
     (conversationId: string) => Boolean(typingByConversation[conversationId]),
@@ -799,6 +813,14 @@ export function MessagesScreen() {
     setVoicePresenceByChannel(next);
   }, [selectedGroup?.id, voiceChannelIdsKey, voiceChannels]);
 
+  const debouncedReloadVoicePresence = useMemo(
+    () =>
+      debounce(() => {
+        void reloadVoicePresence();
+      }, 500),
+    [reloadVoicePresence]
+  );
+
   const handleCreateChannel = React.useCallback(async () => {
     if (!selectedGroup?.id) return;
     const name = newChannelName.trim();
@@ -1210,8 +1232,9 @@ export function MessagesScreen() {
   );
 
   useEffect(() => {
-    void reloadVoicePresence();
-  }, [reloadVoicePresence]);
+    if (!selectedGroup?.id) return;
+    debouncedReloadVoicePresence();
+  }, [selectedGroup?.id, voiceChannelIdsKey, debouncedReloadVoicePresence]);
 
   useEffect(() => {
     if (!selectedGroup?.id || !currentUserId) return;
@@ -1226,14 +1249,14 @@ export function MessagesScreen() {
           filter: `group_id=eq.${selectedGroup.id}`,
         },
         () => {
-          void reloadVoicePresence();
+          debouncedReloadVoicePresence();
         }
       )
       .subscribe();
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [currentUserId, reloadVoicePresence, selectedGroup?.id]);
+  }, [currentUserId, debouncedReloadVoicePresence, selectedGroup?.id]);
 
   useEffect(() => {
     if (!selectedGroup?.id || !currentUserId) {
@@ -1293,12 +1316,21 @@ export function MessagesScreen() {
     });
   }, [selectedGroupId, groupChannels, isDesktop]);
 
+  const selectedTextChannelIdsKey = useMemo(() => {
+    if (!selectedGroupId) return '';
+    return groupChannels
+      .filter((ch) => (ch.type ?? 'text') === 'text')
+      .slice(0, 3)
+      .map((ch) => ch.id)
+      .join(',');
+  }, [groupChannels, selectedGroupId]);
+
   React.useEffect(() => {
-    if (!selectedGroupId || groupChannels.length === 0) return;
-    for (const channel of groupChannels.filter((ch) => (ch.type ?? 'text') === 'text').slice(0, 3)) {
-      void prefetchGroupChannelMessages(queryClient, selectedGroupId, channel.id);
+    if (!selectedGroupId || !selectedTextChannelIdsKey) return;
+    for (const channelId of selectedTextChannelIdsKey.split(',')) {
+      void prefetchGroupChannelMessages(queryClient, selectedGroupId, channelId);
     }
-  }, [selectedGroupId, groupChannels, queryClient]);
+  }, [selectedGroupId, selectedTextChannelIdsKey, queryClient]);
 
   useEffect(() => {
     const mq = window.matchMedia('(min-width: 768px)');
@@ -1309,17 +1341,24 @@ export function MessagesScreen() {
   }, []);
 
   useEffect(() => {
-    const getCurrentUser = async () => {
-      try {
-        const { data: { user } } = await supabase.auth.getUser();
-        if (user) {
-          setCurrentUserId(user.id);
-        }
-      } catch (error) {
-        console.error('Failed to get current user:', error);
-      }
+    let mounted = true;
+
+    const applyUser = (userId: string | null) => {
+      if (mounted) setCurrentUserId(userId);
     };
-    getCurrentUser();
+
+    void initAuthSession().then((session) => {
+      applyUser(session?.user?.id ?? getCachedUser()?.id ?? null);
+    });
+
+    const unsubscribe = subscribeAuth((_event, session) => {
+      applyUser(session?.user?.id ?? null);
+    });
+
+    return () => {
+      mounted = false;
+      unsubscribe();
+    };
   }, []);
 
   useEffect(() => {
@@ -1350,30 +1389,40 @@ export function MessagesScreen() {
     };
   }, [currentUserId, loadFriends]);
 
+  const refreshGroupUnreadDebounced = useMemo(
+    () =>
+      debounce(() => {
+        void refreshGroupUnreadCounts();
+      }, 500),
+    [refreshGroupUnreadCounts]
+  );
+
   useEffect(() => {
-    if (!currentUserId || myGroupRows.length === 0) return;
-    const groupIds = myGroupRows.map((row) => row.group?.id).filter(Boolean) as string[];
+    if (!currentUserId || !myGroupIdsKey) return;
+    const groupIds = myGroupIdsKey.split(',').filter(Boolean);
     if (groupIds.length === 0) return;
 
-    const channel = supabase
-      .channel(`group-unread-${currentUserId}`)
-      .on(
+    const channel = supabase.channel(`group-unread-${currentUserId}`);
+    for (const groupId of groupIds.slice(0, 30)) {
+      channel.on(
         'postgres_changes',
         {
           event: 'INSERT',
           schema: 'public',
           table: 'group_messages',
+          filter: `group_id=eq.${groupId}`,
         },
         () => {
-          void refreshGroupUnreadCounts();
+          refreshGroupUnreadDebounced();
         }
-      )
-      .subscribe();
+      );
+    }
+    channel.subscribe();
 
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [currentUserId, myGroupRows, refreshGroupUnreadCounts]);
+  }, [currentUserId, myGroupIdsKey, refreshGroupUnreadDebounced]);
 
   const incomingRequestCount = incomingRequests.length;
 

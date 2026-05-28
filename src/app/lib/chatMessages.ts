@@ -1,7 +1,14 @@
 import type { QueryClient } from '@tanstack/react-query';
 import { supabase } from './supabase';
 import { api } from './api';
+import { createPrefetchRegistry } from './requestThrottle';
 import type { Message } from '../hooks/useChat';
+
+const dmPrefetchRegistry = createPrefetchRegistry();
+const groupChannelsPrefetchRegistry = createPrefetchRegistry();
+const groupMessagesPrefetchRegistry = createPrefetchRegistry();
+
+const PREFETCH_STALE_MS = 1000 * 60 * 10;
 
 export const DM_MESSAGES_PAGE_SIZE = 50;
 
@@ -30,10 +37,15 @@ export function prefetchDmMessages(
   queryClient: QueryClient,
   conversationId: string
 ): Promise<void> {
+  const key = `dm:${conversationId}`;
+  if (dmPrefetchRegistry.has(key)) {
+    return Promise.resolve();
+  }
+  dmPrefetchRegistry.run(key, () => {});
   return queryClient.prefetchQuery({
     queryKey: dmMessagesQueryKey(conversationId),
     queryFn: () => fetchDmMessages(conversationId),
-    staleTime: 60_000,
+    staleTime: PREFETCH_STALE_MS,
   });
 }
 
@@ -50,10 +62,15 @@ export function prefetchGroupChannelMessages(
   groupId: string,
   channelId: string
 ): Promise<void> {
+  const key = `group-msg:${groupId}:${channelId}`;
+  if (groupMessagesPrefetchRegistry.has(key)) {
+    return Promise.resolve();
+  }
+  groupMessagesPrefetchRegistry.run(key, () => {});
   return queryClient.prefetchQuery({
     queryKey: groupMessagesQueryKey(groupId, channelId),
     queryFn: () => fetchGroupChannelMessages(groupId, channelId),
-    staleTime: 60_000,
+    staleTime: PREFETCH_STALE_MS,
   });
 }
 
@@ -88,10 +105,15 @@ export async function prefetchGroupChannels(
   queryClient: QueryClient,
   groupId: string
 ): Promise<void> {
+  const key = `group-ch:${groupId}`;
+  if (groupChannelsPrefetchRegistry.has(key)) {
+    return;
+  }
+  groupChannelsPrefetchRegistry.run(key, () => {});
   await queryClient.prefetchQuery({
     queryKey: groupChannelsQueryKey(groupId),
     queryFn: () => fetchGroupChannels(groupId),
-    staleTime: 60_000,
+    staleTime: PREFETCH_STALE_MS,
   });
 
   const channels =

@@ -1,3 +1,5 @@
+import { markJitsiMicGranted, shouldSkipJitsiPrejoin } from './jitsiMicStorage';
+
 export type MicrophoneAccessResult =
   | { ok: true }
   | { ok: false; reason: 'unsupported' | 'insecure' | 'denied' | 'error'; message?: string };
@@ -36,8 +38,16 @@ export async function checkMicrophonePermission(): Promise<MicrophonePermissionS
 }
 
 export async function hasMicrophonePermission(): Promise<boolean> {
+  // Persisted across sessions (incl. PWA / Add to Home Screen on same origin).
+  if (shouldSkipJitsiPrejoin()) {
+    return true;
+  }
   const state = await checkMicrophonePermission();
-  return state === 'granted';
+  if (state === 'granted') {
+    markJitsiMicGranted();
+    return true;
+  }
+  return false;
 }
 
 /** Request mic while the browser still has a user-gesture (call/accept button click). */
@@ -62,6 +72,7 @@ export async function requestMicrophoneAccess(): Promise<MicrophoneAccessResult>
   try {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
     stream.getTracks().forEach((track) => track.stop());
+    markJitsiMicGranted();
     return { ok: true };
   } catch (error: unknown) {
     const name = String((error as DOMException)?.name || '');

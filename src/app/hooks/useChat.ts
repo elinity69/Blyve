@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
-import { getCachedUser, subscribeAuth } from '../lib/authSession';
+import { getCachedUser, resolveAuthUser, subscribeAuth } from '../lib/authSession';
 import { api } from '../lib/api';
 import { RealtimeChannel } from '@supabase/supabase-js';
 import { dispatchConversationPreviewUpdate, dispatchUnreadRefreshRequest } from '../lib/messageEvents';
@@ -261,9 +261,7 @@ export function useChat(conversationId: string | null, onMessageSent?: (conversa
     if (!conversationId) return;
 
     try {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
+      const user = await resolveAuthUser();
       if (!user) return;
 
       const { data: profile, error: profileError } = await supabase
