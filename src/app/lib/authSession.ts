@@ -64,6 +64,10 @@ export function getCachedSession(): Session | null {
   return cachedSession;
 }
 
+export function getCachedAccessToken(): string | null {
+  return cachedSession?.access_token ?? null;
+}
+
 export function getCachedUser(): User | null {
   return cachedUser;
 }

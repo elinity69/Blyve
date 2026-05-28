@@ -10,7 +10,8 @@ interface UnreadContextType {
 
 const UnreadContext = createContext<UnreadContextType | undefined>(undefined);
 
-const UNREAD_REFRESH_DEBOUNCE_MS = 400;
+const UNREAD_REFRESH_DEBOUNCE_MS = 500;
+const UNREAD_MIN_REFRESH_INTERVAL_MS = 2500;
 
 export const UnreadProvider = ({
   children,
@@ -22,6 +23,8 @@ export const UnreadProvider = ({
   const [totalUnread, setTotalUnread] = useState(0);
   const [unreadByConversation, setUnreadByConversation] = useState<Record<string, number>>({});
   const refreshTimeoutRef = useRef<number | null>(null);
+  const lastRefreshAtRef = useRef(0);
+  const inFlightRef = useRef(false);
 
   const refreshUnreadCount = useCallback(async () => {
     if (!currentUserId) {
@@ -29,6 +32,17 @@ export const UnreadProvider = ({
       setUnreadByConversation({});
       return;
     }
+
+    const now = Date.now();
+    if (now - lastRefreshAtRef.current < UNREAD_MIN_REFRESH_INTERVAL_MS) {
+      return;
+    }
+    if (inFlightRef.current) {
+      return;
+    }
+
+    inFlightRef.current = true;
+    lastRefreshAtRef.current = now;
 
     try {
       const { data: conversations } = await supabase
@@ -46,34 +60,30 @@ export const UnreadProvider = ({
 
       const conversationIds = conversations.map((c) => c.id);
 
-      const { count: total } = await supabase
-        .from('messages')
-        .select('*', { count: 'exact', head: true })
-        .in('conversation_id', conversationIds)
-        .neq('sender_id', currentUserId)
-        .eq('is_read', false);
-
-      setTotalUnread(total || 0);
-      NotificationManager.updateBadge(total || 0);
-
-      const { data: messages } = await supabase
+      const { data: unreadRows, error } = await supabase
         .from('messages')
         .select('conversation_id')
         .in('conversation_id', conversationIds)
         .neq('sender_id', currentUserId)
         .eq('is_read', false);
 
-      if (messages) {
-        const countByConv: Record<string, number> = {};
-        messages.forEach((msg) => {
-          countByConv[msg.conversation_id] = (countByConv[msg.conversation_id] || 0) + 1;
-        });
-        setUnreadByConversation(countByConv);
-      } else {
-        setUnreadByConversation({});
+      if (error) {
+        throw error;
       }
+
+      const countByConv: Record<string, number> = {};
+      for (const row of unreadRows || []) {
+        countByConv[row.conversation_id] = (countByConv[row.conversation_id] || 0) + 1;
+      }
+
+      const total = unreadRows?.length ?? 0;
+      setTotalUnread(total);
+      setUnreadByConversation(countByConv);
+      NotificationManager.updateBadge(total);
     } catch (error) {
       console.error('Error fetching unread counts:', error);
+    } finally {
+      inFlightRef.current = false;
     }
   }, [currentUserId]);
 

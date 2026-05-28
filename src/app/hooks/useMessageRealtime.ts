@@ -18,12 +18,19 @@ interface GroupMessageEventPayload {
   created_at: string;
 }
 
+const MAX_REALTIME_CONVERSATIONS = 30;
+const MAX_REALTIME_GROUPS = 30;
+const MEMBERSHIP_RELOAD_MS = 60_000;
+
 /**
- * Single realtime hub for message INSERT/UPDATE events.
+ * Filtered realtime hub for message events (no global table listeners).
  * Drives preview text, unread badges, toasts, and notification sounds.
  */
 export function useMessageRealtime(currentUserId: string | null) {
   const { showToast } = useToast();
+  const showToastRef = useRef(showToast);
+  showToastRef.current = showToast;
+
   const conversationIdsRef = useRef<Set<string>>(new Set());
   const groupIdsRef = useRef<Set<string>>(new Set());
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
@@ -37,22 +44,28 @@ export function useMessageRealtime(currentUserId: string | null) {
 
     const loadConversationIds = async (force = false) => {
       const now = Date.now();
-      if (!force && now - lastConversationIdsLoadRef.current < 60_000) return;
+      if (!force && now - lastConversationIdsLoadRef.current < MEMBERSHIP_RELOAD_MS) {
+        return false;
+      }
       lastConversationIdsLoadRef.current = now;
 
       const { data } = await supabase
         .from('conversations')
         .select('id')
         .or(`user1_id.eq.${currentUserId},user2_id.eq.${currentUserId}`)
+        .order('updated_at', { ascending: false })
         .limit(200);
 
-      if (cancelled) return;
+      if (cancelled) return false;
       conversationIdsRef.current = new Set((data || []).map((row) => row.id));
+      return true;
     };
 
     const loadGroupIds = async (force = false) => {
       const now = Date.now();
-      if (!force && now - lastGroupIdsLoadRef.current < 60_000) return;
+      if (!force && now - lastGroupIdsLoadRef.current < MEMBERSHIP_RELOAD_MS) {
+        return false;
+      }
       lastGroupIdsLoadRef.current = now;
 
       const { data } = await supabase
@@ -60,24 +73,12 @@ export function useMessageRealtime(currentUserId: string | null) {
         .select('group_id')
         .eq('user_id', currentUserId);
 
-      if (cancelled) return;
+      if (cancelled) return false;
       groupIdsRef.current = new Set((data || []).map((row) => row.group_id));
+      return true;
     };
 
     const handleMessageInsert = async (message: MessageEventPayload) => {
-      if (!conversationIdsRef.current.has(message.conversation_id)) {
-        await loadConversationIds(true);
-        if (!conversationIdsRef.current.has(message.conversation_id)) {
-          return;
-        }
-      }
-
-      console.log('🔔 Message realtime INSERT:', {
-        messageId: message.id,
-        conversationId: message.conversation_id,
-        senderId: message.sender_id,
-      });
-
       dispatchConversationPreviewUpdate(
         message.conversation_id,
         message.content,
@@ -92,9 +93,7 @@ export function useMessageRealtime(currentUserId: string | null) {
       NotificationManager.playNotificationSound({ conversationId: message.conversation_id });
 
       const activeConversationId = NotificationManager.getActiveConversationId();
-      const isChatOpen = activeConversationId === message.conversation_id;
-
-      if (isChatOpen) {
+      if (activeConversationId === message.conversation_id) {
         return;
       }
 
@@ -122,7 +121,7 @@ export function useMessageRealtime(currentUserId: string | null) {
       };
 
       if (NotificationManager.isAppVisible()) {
-        showToast(toastPayload);
+        showToastRef.current(toastPayload);
         return;
       }
 
@@ -144,13 +143,6 @@ export function useMessageRealtime(currentUserId: string | null) {
     };
 
     const handleGroupMessageInsert = async (message: GroupMessageEventPayload) => {
-      if (!groupIdsRef.current.has(message.group_id)) {
-        await loadGroupIds(true);
-        if (!groupIdsRef.current.has(message.group_id)) {
-          return;
-        }
-      }
-
       if (message.sender_id === currentUserId) {
         return;
       }
@@ -186,7 +178,7 @@ export function useMessageRealtime(currentUserId: string | null) {
           : message.content || 'New message';
 
       if (NotificationManager.isAppVisible()) {
-        showToast({
+        showToastRef.current({
           type: 'info',
           variant: 'message',
           title: senderName,
@@ -210,84 +202,90 @@ export function useMessageRealtime(currentUserId: string | null) {
       }
     };
 
-    const refreshMembership = debounce(() => {
-      void loadConversationIds();
-      void loadGroupIds();
-    }, 1000);
+    const subscribeFilteredChannel = () => {
+      if (channelRef.current) {
+        supabase.removeChannel(channelRef.current);
+        channelRef.current = null;
+      }
+
+      const channel = supabase.channel(`message-realtime-${currentUserId}`);
+
+      for (const conversationId of [...conversationIdsRef.current].slice(
+        0,
+        MAX_REALTIME_CONVERSATIONS
+      )) {
+        channel.on(
+          'postgres_changes',
+          {
+            event: 'INSERT',
+            schema: 'public',
+            table: 'messages',
+            filter: `conversation_id=eq.${conversationId}`,
+          },
+          (payload) => {
+            void handleMessageInsert(payload.new as MessageEventPayload);
+          }
+        );
+        channel.on(
+          'postgres_changes',
+          {
+            event: 'UPDATE',
+            schema: 'public',
+            table: 'messages',
+            filter: `conversation_id=eq.${conversationId}`,
+          },
+          (payload) => {
+            const message = (payload.new || payload.old) as MessageEventPayload | null;
+            if (!message?.conversation_id) return;
+            dispatchUnreadRefreshRequest();
+          }
+        );
+      }
+
+      for (const groupId of [...groupIdsRef.current].slice(0, MAX_REALTIME_GROUPS)) {
+        channel.on(
+          'postgres_changes',
+          {
+            event: 'INSERT',
+            schema: 'public',
+            table: 'group_messages',
+            filter: `group_id=eq.${groupId}`,
+          },
+          (payload) => {
+            void handleGroupMessageInsert(payload.new as GroupMessageEventPayload);
+          }
+        );
+      }
+
+      channel.subscribe();
+      channelRef.current = channel;
+    };
 
     const setup = async () => {
       await Promise.all([loadConversationIds(true), loadGroupIds(true)]);
       if (cancelled) return;
-
-      if (channelRef.current) {
-        supabase.removeChannel(channelRef.current);
-        channelRef.current = null;
-      }
-
-      const channel = supabase
-        .channel(`message-realtime-${currentUserId}`)
-        .on(
-          'postgres_changes',
-          { event: 'INSERT', schema: 'public', table: 'messages' },
-          (payload) => {
-            void handleMessageInsert(payload.new as MessageEventPayload);
-          }
-        )
-        .on(
-          'postgres_changes',
-          { event: 'INSERT', schema: 'public', table: 'group_messages' },
-          (payload) => {
-            void handleGroupMessageInsert(payload.new as GroupMessageEventPayload);
-          }
-        )
-        .on(
-          'postgres_changes',
-          { event: 'UPDATE', schema: 'public', table: 'messages' },
-          (payload) => {
-            const message = (payload.new || payload.old) as MessageEventPayload | null;
-            if (!message?.conversation_id) return;
-            if (!conversationIdsRef.current.has(message.conversation_id)) return;
-            dispatchUnreadRefreshRequest();
-          }
-        )
-        .on(
-          'postgres_changes',
-          { event: 'UPDATE', schema: 'public', table: 'conversations' },
-          (payload) => {
-            const updated = payload.new as {
-              id?: string;
-              last_message?: string;
-              last_message_at?: string;
-            };
-            if (!updated?.id || !updated.last_message || !updated.last_message_at) return;
-            if (!conversationIdsRef.current.has(updated.id)) return;
-            dispatchConversationPreviewUpdate(
-              updated.id,
-              updated.last_message,
-              updated.last_message_at
-            );
-          }
-        )
-        .subscribe((status) => {
-          console.log(`📡 Message realtime channel: ${status}`);
-        });
-
-      channelRef.current = channel;
+      subscribeFilteredChannel();
     };
+
+    const refreshMembershipAndResubscribe = debounce(async () => {
+      await Promise.all([loadConversationIds(true), loadGroupIds(true)]);
+      if (cancelled) return;
+      subscribeFilteredChannel();
+    }, 1000);
 
     void setup();
 
-    window.addEventListener('conversation-opened', refreshMembership);
-    window.addEventListener('conversation-closed', refreshMembership);
+    window.addEventListener('conversation-opened', refreshMembershipAndResubscribe);
+    window.addEventListener('conversation-closed', refreshMembershipAndResubscribe);
 
     return () => {
       cancelled = true;
-      window.removeEventListener('conversation-opened', refreshMembership);
-      window.removeEventListener('conversation-closed', refreshMembership);
+      window.removeEventListener('conversation-opened', refreshMembershipAndResubscribe);
+      window.removeEventListener('conversation-closed', refreshMembershipAndResubscribe);
       if (channelRef.current) {
         supabase.removeChannel(channelRef.current);
         channelRef.current = null;
       }
     };
-  }, [currentUserId, showToast]);
+  }, [currentUserId]);
 }

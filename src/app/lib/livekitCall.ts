@@ -1,5 +1,5 @@
 import { Room, type LocalParticipant, type RemoteParticipant } from 'livekit-client';
-import { supabase } from './supabase';
+import { resolveAuthUser } from './authSession';
 import { api } from './api';
 import i18n from '../../lib/i18n';
 
@@ -28,7 +28,7 @@ function normalizeLiveKitServerUrl(rawUrl: string): string {
 }
 
 export async function connectLiveKitRoom(callSessionId: string): Promise<LiveKitConnectResult> {
-  const { data: { user } } = await supabase.auth.getUser();
+  const user = await resolveAuthUser();
   if (!user?.id) {
     throw new Error('Missing user identity for LiveKit token request');
   }

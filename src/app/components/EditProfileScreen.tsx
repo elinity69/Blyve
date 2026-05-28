@@ -8,6 +8,7 @@ import { User, UtensilsCrossed, ChevronLeft, Save } from 'lucide-react';
 import { Button } from './ui/button';
 import { api } from '../lib/api';
 import { supabase } from '../lib/supabase';
+import { getCachedUser, resolveAuthUser } from '../lib/authSession';
 import { toast } from '../lib/toast';
 import { useTranslation } from 'react-i18next';
 // NavigationStack is handled by parent - no need to import
@@ -61,7 +62,7 @@ export function EditProfileScreen({ onBack, onSave, previousScreen }: EditProfil
     try {
       console.log('EditProfileScreen - Loading profile...');
       // Load directly from Supabase (more reliable than API)
-      const { data: { user } } = await supabase.auth.getUser();
+      const user = getCachedUser() ?? (await resolveAuthUser());
       if (!user) {
         console.warn('⚠️ EditProfileScreen: No authenticated user');
         if (mountedRef.current) {
@@ -196,7 +197,7 @@ export function EditProfileScreen({ onBack, onSave, previousScreen }: EditProfil
         return;
       }
       setUsernameStatus('checking');
-      const { data: { user } } = await supabase.auth.getUser();
+      const user = getCachedUser() ?? (await resolveAuthUser());
       if (!user || cancelled) return;
       const avail = await isUsernameAvailable(supabase, u, user.id);
       if (!cancelled) setUsernameStatus(avail ? 'available' : 'taken');
@@ -256,8 +257,8 @@ export function EditProfileScreen({ onBack, onSave, previousScreen }: EditProfil
       console.log('Saving profile changes...');
       
       // Get current user
-      const { data: { user }, error: authError } = await supabase.auth.getUser();
-      if (authError || !user) {
+      const user = getCachedUser() ?? (await resolveAuthUser());
+      if (!user) {
         throw new Error('User not authenticated');
       }
 

@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Camera, Check, Globe, X } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { getCachedUser, resolveAuthUser } from '../lib/authSession';
 import { useTranslation } from 'react-i18next';
 import i18n, { APP_LANGUAGES, normalizeAppLanguage, type AppLanguageCode } from '../../lib/i18n';
 import {
@@ -142,7 +143,7 @@ export function OnboardingWizard({ userName, onComplete }: OnboardingWizardProps
       return;
     }
     try {
-      const { data: { user } } = await supabase.auth.getUser();
+      const user = getCachedUser() ?? (await resolveAuthUser());
       if (!user) throw new Error('User not authenticated');
 
       const u = normalizeUsernameInput(formData.username);

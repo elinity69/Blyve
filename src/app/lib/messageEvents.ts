@@ -18,6 +18,13 @@ export function dispatchConversationPreviewUpdate(
   );
 }
 
+let lastUnreadRefreshDispatchAt = 0;
+
 export function dispatchUnreadRefreshRequest() {
+  const now = Date.now();
+  if (now - lastUnreadRefreshDispatchAt < 400) {
+    return;
+  }
+  lastUnreadRefreshDispatchAt = now;
   window.dispatchEvent(new CustomEvent('unread-refresh-requested'));
 }

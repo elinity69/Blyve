@@ -3,6 +3,7 @@ import { Camera, X, ChevronLeft, Upload, Eye } from 'lucide-react';
 import { Button } from './ui/button';
 import { api } from '../lib/api';
 import { supabase } from '../lib/supabase';
+import { getCachedUser, resolveAuthUser } from '../lib/authSession';
 import { toast } from '../lib/toast';
 import { useTranslation } from 'react-i18next';
 import { SharedProfileView } from './SharedProfileView';
@@ -49,7 +50,7 @@ export function MediaEditScreen({ profile, onBack, previousScreen }: MediaEditSc
 
     try {
       // Get user first
-      const { data: { user } } = await supabase.auth.getUser();
+      const user = getCachedUser() ?? (await resolveAuthUser());
       if (!user) {
         throw new Error('User not authenticated');
       }
@@ -158,7 +159,7 @@ export function MediaEditScreen({ profile, onBack, previousScreen }: MediaEditSc
 
       // Update profile in database
       try {
-        const { data: { user } } = await supabase.auth.getUser();
+        const user = getCachedUser() ?? (await resolveAuthUser());
         if (!user) {
           throw new Error('User not authenticated');
         }

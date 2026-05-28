@@ -70,13 +70,7 @@ export function AuthScreen({ onAuthSuccess }: AuthScreenProps) {
         throw new Error(`Failed to establish session: ${supabaseError?.message || 'No session returned'}`);
       }
 
-      await new Promise(resolve => setTimeout(resolve, 200));
-
-      const { data: { session: verifySession } } = await supabase.auth.getSession();
-      if (!verifySession?.access_token) {
-        throw new Error('Session verification failed - session not persisted');
-      }
-
+      api.setAccessToken(supabaseSession.session.access_token);
       onAuthSuccess();
     } catch (err: any) {
       setError(err.message || 'Authentication failed');

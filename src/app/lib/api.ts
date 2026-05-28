@@ -1,4 +1,6 @@
 // Refactored ApiClient to use Supabase SDK directly instead of Edge Functions
+import type { User } from '@supabase/supabase-js';
+import { getCachedAccessToken, initAuthSession, resolveAuthUser } from './authSession';
 import { supabase } from './supabase';
 import { isJitsiCallProvider } from './callProvider';
 
@@ -25,53 +27,35 @@ export class ApiClient {
       return this.accessToken;
     }
 
-    try {
-      const { data: { session }, error } = await supabase.auth.getSession();
-      
-      if (error) {
-        // Don't log as error during login process - might be temporary
-        if (!error.message?.includes('session_not_found')) {
-          console.warn('API - Failed to get session from Supabase:', error);
-        }
-        // Fallback to localStorage (might be during login transition)
-        const storedToken = localStorage.getItem('accessToken');
-        if (storedToken) {
-          this.accessToken = storedToken;
-          return storedToken;
-        }
-        return null;
-      }
-      
-      if (session?.access_token) {
-        const freshToken = session.access_token;
-        // Update internal cache and localStorage
-        if (this.accessToken !== freshToken) {
-          console.log('API - Token refreshed from Supabase session');
-          this.accessToken = freshToken;
-          localStorage.setItem('accessToken', freshToken);
-        }
-        return freshToken;
-      }
-      
-      // No active session - but don't clear token immediately (might be during login)
-      // Only log if we previously had a token
-      if (this.accessToken || localStorage.getItem('accessToken')) {
-        console.log('API - Session expired, token cleared');
-      }
-      
-      // Don't clear immediately - let the auth flow complete
-      // Token will be set once session is established
-      return null;
-    } catch (err) {
-      // Silently handle errors during login process
-      // Fallback to localStorage as last resort
+    const cachedToken = getCachedAccessToken();
+    if (cachedToken) {
+      this.accessToken = cachedToken;
+      return cachedToken;
+    }
+
     const storedToken = localStorage.getItem('accessToken');
     if (storedToken) {
-        this.accessToken = storedToken;
-        return storedToken;
+      this.accessToken = storedToken;
+      return storedToken;
     }
-      return null;
+
+    await initAuthSession();
+    const hydratedToken = getCachedAccessToken();
+    if (hydratedToken) {
+      this.accessToken = hydratedToken;
+      localStorage.setItem('accessToken', hydratedToken);
+      return hydratedToken;
     }
+
+    return null;
+  }
+
+  private async requireUser(): Promise<User> {
+    const user = await resolveAuthUser();
+    if (!user) {
+      throw new Error('No authenticated user');
+    }
+    return user;
   }
 
   /**
@@ -212,10 +196,7 @@ export class ApiClient {
   // Profile - Use Supabase SDK directly
   async getProfile() {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        throw new Error('No authenticated user');
-      }
+      const user = await this.requireUser();
       const { data: profile, error } = await supabase
         .from('profiles')
         .select('id, name, email, avatar_url, display_name, username, bio, images, ghost_mode, onboarding_complete')
@@ -233,10 +214,7 @@ export class ApiClient {
 
   async updateProfile(updates: any) {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        throw new Error('No authenticated user');
-      }
+      const user = await this.requireUser();
       const { data, error } = await supabase
         .from('profiles')
         .update(updates)
@@ -255,10 +233,7 @@ export class ApiClient {
 
   async uploadProfilePicture(file: File) {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        throw new Error('No authenticated user');
-      }
+      const user = await this.requireUser();
     
     console.log('Upload starting...', {
       fileName: file.name,
@@ -309,10 +284,7 @@ export class ApiClient {
 
   async deleteAccount() {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        throw new Error('No authenticated user');
-      }
+      const user = await this.requireUser();
       // Delete profile first
       const { error: profileError } = await supabase
         .from('profiles')
@@ -340,10 +312,7 @@ export class ApiClient {
   // Update online status - Use Supabase directly
   async updateOnlineStatus() {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        throw new Error('No authenticated user');
-      }
+      const user = await this.requireUser();
 
       const now = new Date().toISOString();
       let { error } = await supabase
@@ -377,10 +346,7 @@ export class ApiClient {
   // Chat: Get conversations - Use Supabase directly
   async getConversations() {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        throw new Error('No authenticated user');
-      }
+      const user = await this.requireUser();
 
       const { data: conversations, error } = await supabase
         .from('conversations')
@@ -406,10 +372,7 @@ export class ApiClient {
   // Chat: Get messages for a conversation - Use Supabase directly
   async getMessages(otherUserId: string) {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        throw new Error('No authenticated user');
-      }
+      const user = await this.requireUser();
 
       // Find conversation
       const { data: conversation } = await supabase
@@ -478,10 +441,7 @@ export class ApiClient {
   }
 
   async removeFriend(friendUserId: string) {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) {
-      throw new Error('No authenticated user');
-    }
+    const user = await this.requireUser();
 
     const { error } = await supabase
       .from('friends')
@@ -537,10 +497,7 @@ export class ApiClient {
   }
 
   async uploadGroupIcon(file: File) {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) {
-      throw new Error('No authenticated user');
-    }
+    const user = await this.requireUser();
 
     const fileExt = file.name.split('.').pop() || 'jpg';
     const fileName = `${user.id}/groups/${Date.now()}.${fileExt}`;
@@ -600,10 +557,7 @@ export class ApiClient {
   }
 
   async uploadChannelIcon(groupId: string, file: File) {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) {
-      throw new Error('No authenticated user');
-    }
+    const user = await this.requireUser();
 
     const fileExt = file.name.split('.').pop() || 'jpg';
     const fileName = `${user.id}/channels/${groupId}/${Date.now()}.${fileExt}`;
@@ -871,11 +825,7 @@ export class ApiClient {
 
   /** Mark current user as left — stops pending invites and realtime churn. */
   async leaveCallParticipant(callSessionId: string) {
-    const { data: { session } } = await supabase.auth.getSession();
-    const user = session?.user;
-    if (!user) {
-      throw new Error('Not authenticated');
-    }
+    const user = await this.requireUser();
 
     if (isJitsiCallProvider()) {
       const leftAt = new Date().toISOString();

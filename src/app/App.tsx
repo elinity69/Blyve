@@ -26,7 +26,13 @@ import { CallJoinScreen } from './components/CallJoinScreen';
 import { parseCallJoinParams } from './lib/callJoinRoute';
 import i18n from '../lib/i18n';
 import { applyThemePreference, applyBootTheme, clearThemeCache, readThemeCache, applyResolvedTheme, syncThemeFromProfile } from './lib/theme';
-import { initAuthSession, subscribeAuth } from './lib/authSession';
+import {
+  getCachedAccessToken,
+  getCachedUser,
+  initAuthSession,
+  resolveAuthUser,
+  subscribeAuth,
+} from './lib/authSession';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -160,21 +166,14 @@ function AppContent({ onUserIdChange }: AppContentProps = {}) {
         applyBootTheme();
       }
 
-      // Check if user has existing session
-      const token = await api.getAccessToken();
+      const token = getCachedAccessToken() ?? (await api.getAccessToken());
       console.log('=== APP INITIALIZATION ===');
       console.log('Initial token check:', token && typeof token === 'string' ? `Token exists (${token.substring(0, 20)}...)` : 'No token found');
       
       if (token && typeof token === 'string') {
-      // Verify token is still valid and check if profile is complete
-      // Use Supabase directly instead of Edge Function to avoid JWT issues
       console.log('Verifying token validity...');
       try {
-        let user = sessionUser;
-        if (!user) {
-          const { data: { session: retrySession } } = await supabase.auth.getSession();
-          user = retrySession?.user ?? null;
-        }
+        const user = sessionUser ?? getCachedUser() ?? (await resolveAuthUser());
         if (!user) {
           throw new Error('No user found');
         }
@@ -330,7 +329,7 @@ function AppContent({ onUserIdChange }: AppContentProps = {}) {
     // Check if new user needs onboarding
     try {
       // Use Supabase directly instead of API for profile check (more reliable)
-      const { data: { user } } = await supabase.auth.getUser();
+      const user = getCachedUser() ?? (await resolveAuthUser());
       
       if (!user) {
         console.warn('No user found after login');
@@ -428,7 +427,7 @@ function AppContent({ onUserIdChange }: AppContentProps = {}) {
       await new Promise(resolve => setTimeout(resolve, 500));
       
     // Reload profile to get updated data
-      const { data: { user } } = await supabase.auth.getUser();
+      const user = getCachedUser() ?? (await resolveAuthUser());
       if (user) {
         // FIX: Verwende maybeSingle() - Profil sollte existieren, aber sicherheitshalber
         const { data: profile, error: profileError } = await supabase

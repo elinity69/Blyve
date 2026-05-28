@@ -3,6 +3,7 @@ import { Button } from './ui/button';
 import { useState, useEffect } from 'react';
 import { api } from '../lib/api';
 import { supabase } from '../lib/supabase';
+import { getCachedUser, resolveAuthUser } from '../lib/authSession';
 import { getOptimizedImageUrl } from '../lib/images';
 import { toast } from '../lib/toast';
 import { useTranslation } from 'react-i18next';
@@ -59,7 +60,7 @@ export function SettingsScreen({ onSignOut, onBack, previousScreen }: SettingsSc
 
   const fetchProfile = async () => {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
+      const user = getCachedUser() ?? (await resolveAuthUser());
       if (!user) {
         setLoading(false);
         return;
@@ -124,10 +125,8 @@ export function SettingsScreen({ onSignOut, onBack, previousScreen }: SettingsSc
     setUpdatingGhostMode(true);
     try {
       const newGhostMode = !ghostMode;
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      
+      const user = getCachedUser() ?? (await resolveAuthUser());
+
       if (!user) {
         throw new Error('Nicht eingeloggt');
       }
@@ -273,7 +272,7 @@ export function SettingsScreen({ onSignOut, onBack, previousScreen }: SettingsSc
                     const newDarkMode = !darkMode;
                     setUpdatingDarkMode(true);
                     try {
-                      const { data: { user } } = await supabase.auth.getUser();
+                      const user = getCachedUser() ?? (await resolveAuthUser());
                       if (!user) throw new Error('User not authenticated');
                       const { error } = await supabase
                         .from('profiles')

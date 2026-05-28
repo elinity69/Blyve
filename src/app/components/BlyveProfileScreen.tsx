@@ -9,6 +9,7 @@ import { EditProfileScreen } from './EditProfileScreen';
 import { MediaEditScreen } from './MediaEditScreen';
 import { getOptimizedImageUrl } from '../lib/images';
 import { supabase } from '../lib/supabase';
+import { getCachedUser, resolveAuthUser } from '../lib/authSession';
 interface BlyveProfileScreenProps {
   onSignOut: () => void;
   onEditProfile: () => void;
@@ -47,7 +48,7 @@ export function BlyveProfileScreen({
   // Load profile
   const loadProfile = async () => {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
+      const user = getCachedUser() ?? (await resolveAuthUser());
       if (!user) {
       setLoading(false);
         return;

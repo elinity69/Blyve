@@ -15,6 +15,7 @@ import { useIsMdUp } from './ui/use-mobile';
 import { useCall } from '../context/CallContext';
 import { ChatEmbeddedCallBar } from './ChatEmbeddedCallBar';
 import { NotificationManager } from '../lib/notifications';
+import { getCachedUser, resolveAuthUser } from '../lib/authSession';
 import { getAppDateLocale } from '../../lib/i18n';
 import {
   ConversationActionsMenu,
@@ -423,7 +424,7 @@ export function ChatScreen({
     if (!selectedReportReason || !reportTargetUserId) return;
 
     try {
-      const { data: { user } } = await supabase.auth.getUser();
+      const user = getCachedUser() ?? (await resolveAuthUser());
       if (!user) throw new Error('User not authenticated');
 
       const { error } = await supabase
