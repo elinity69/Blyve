@@ -13,7 +13,8 @@ import {
 import { GroupChannelNavContext } from '../context/GroupChannelNavContext';
 import { useAppData } from '../context/AppDataContext';
 import { useCall } from '../context/CallContext';
-import { useIsMdUp } from './ui/use-mobile';
+import { useIsMdUp, useIsMobile } from './ui/use-mobile';
+import { useChatScrollAnchor } from '../hooks/useChatScrollAnchor';
 import { getOptimizedImageUrl } from '../lib/images';
 import { useGroupTyping } from '../hooks/useGroupTyping';
 import { formatGroupTypingLabel } from '../lib/groupTypingBroadcast';
@@ -219,20 +220,8 @@ export function GroupThreadScreen({
     el.scrollTop = el.scrollHeight;
   }, [messages, loading]);
 
-  useEffect(() => {
-    const scrollForComposer = () => {
-      const el = scrollRef.current;
-      if (el) el.scrollTop = el.scrollHeight;
-    };
-
-    window.addEventListener('chat-composer-focus', scrollForComposer);
-    window.visualViewport?.addEventListener('resize', scrollForComposer);
-
-    return () => {
-      window.removeEventListener('chat-composer-focus', scrollForComposer);
-      window.visualViewport?.removeEventListener('resize', scrollForComposer);
-    };
-  }, []);
+  const isMobile = useIsMobile();
+  useChatScrollAnchor(scrollRef, isMobile);
 
   useLayoutEffect(() => {
     if (!channelId || !isMdUp) return;

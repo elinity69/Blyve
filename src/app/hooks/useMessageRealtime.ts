@@ -5,6 +5,7 @@ import {
   dispatchUnreadRefreshRequest,
   type MessageEventPayload,
 } from '../lib/messageEvents';
+import { isMessageReadReceiptUpdate } from '../lib/messageReadReceipts';
 import { NotificationManager } from '../lib/notifications';
 import { supabase } from '../lib/supabase';
 import { debounce } from '../lib/requestThrottle';
@@ -79,21 +80,26 @@ export function useMessageRealtime(currentUserId: string | null) {
     };
 
     const handleMessageInsert = async (message: MessageEventPayload) => {
+      const activeConversationId = NotificationManager.getActiveConversationId();
+      const isChatOpen = activeConversationId === message.conversation_id;
+
       dispatchConversationPreviewUpdate(
         message.conversation_id,
         message.content,
         message.created_at
       );
-      dispatchUnreadRefreshRequest();
 
       if (message.sender_id === currentUserId) {
         return;
       }
 
+      if (!isChatOpen) {
+        dispatchUnreadRefreshRequest();
+      }
+
       NotificationManager.playNotificationSound({ conversationId: message.conversation_id });
 
-      const activeConversationId = NotificationManager.getActiveConversationId();
-      if (activeConversationId === message.conversation_id) {
+      if (isChatOpen) {
         return;
       }
 
@@ -235,8 +241,19 @@ export function useMessageRealtime(currentUserId: string | null) {
             filter: `conversation_id=eq.${conversationId}`,
           },
           (payload) => {
+            if (
+              isMessageReadReceiptUpdate(
+                payload.old as Record<string, unknown> | undefined,
+                payload.new as Record<string, unknown> | undefined
+              )
+            ) {
+              return;
+            }
             const message = (payload.new || payload.old) as MessageEventPayload | null;
             if (!message?.conversation_id) return;
+            if (NotificationManager.getActiveConversationId() === message.conversation_id) {
+              return;
+            }
             dispatchUnreadRefreshRequest();
           }
         );

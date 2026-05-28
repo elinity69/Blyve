@@ -1,6 +1,6 @@
 /** Shared chat message styles (DM + group) — grouped bubble layout. */
 export const CHAT_MESSAGE_LIST_CLASS =
-  'min-h-0 flex-1 overflow-y-auto bg-white px-2 pt-2 pb-0 dark:bg-[#0d0d0d] md:dark:bg-[#0e0e0e]';
+  'min-h-0 flex-1 overflow-y-auto overflow-anchor-auto bg-white px-2 pt-2 pb-0 dark:bg-[#0d0d0d] md:dark:bg-[#0e0e0e]';
 
 /** Extra space below the list when a typing bubble sits above the composer. */
 export const CHAT_TYPING_CLEARANCE_EXTRA_PX = 4;

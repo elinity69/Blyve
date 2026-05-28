@@ -3,10 +3,8 @@ import { ImageIcon, Loader2, Send } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { FavoriteEmbedsPicker } from './FavoriteEmbedsPicker';
 import { useFavoriteEmbeds } from '../../hooks/useFavoriteEmbeds';
-import {
-  measureSafeAreaInsetBottom,
-  useMobileViewportInsets,
-} from '../../hooks/useMobileViewportInsets';
+import { MOBILE_VV_CSS } from '../../lib/mobileViewport';
+import { useMobileViewportDriver } from '../../hooks/useMobileViewportInsets';
 import { useIsMobile } from '../ui/use-mobile';
 
 interface ChatMessageComposerProps {
@@ -35,7 +33,7 @@ export function ChatMessageComposer({
   const { t } = useTranslation();
   const rootRef = useRef<HTMLDivElement>(null);
   const isMobile = useIsMobile();
-  const { bottomInset } = useMobileViewportInsets(isMobile);
+  useMobileViewportDriver(isMobile);
   const [inVisualViewportShell, setInVisualViewportShell] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
   const { syncStatus, isCloudEnabled } = useFavoriteEmbeds();
@@ -49,8 +47,8 @@ export function ChatMessageComposer({
 
   const composerPaddingBottom = isMobile
     ? inVisualViewportShell
-      ? `max(0.5rem, ${Math.max(measureSafeAreaInsetBottom(), 8)}px)`
-      : `max(0.5rem, ${Math.max(bottomInset, 10)}px)`
+      ? 'max(0.5rem, env(safe-area-inset-bottom, 0px))'
+      : `max(0.5rem, var(${MOBILE_VV_CSS.bottomInset}, env(safe-area-inset-bottom, 0px)))`
     : 'max(0.5rem, env(safe-area-inset-bottom, 0px))';
 
   return (

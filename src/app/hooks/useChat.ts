@@ -3,8 +3,13 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
 import { getCachedUser, resolveAuthUser, subscribeAuth } from '../lib/authSession';
 import { api } from '../lib/api';
+import { useAppData } from '../context/AppDataContext';
 import { RealtimeChannel } from '@supabase/supabase-js';
 import { dispatchConversationPreviewUpdate, dispatchUnreadRefreshRequest } from '../lib/messageEvents';
+import {
+  hasUnreadMessagesFromOthers,
+  isMessageReadReceiptUpdate,
+} from '../lib/messageReadReceipts';
 import {
   DM_MESSAGES_PAGE_SIZE,
   dmMessagesQueryKey,
@@ -64,9 +69,14 @@ export function useChat(conversationId: string | null, onMessageSent?: (conversa
   const [error, setError] = useState<string | null>(null);
   const channelRef = useRef<RealtimeChannel | null>(null);
   const currentUserIdRef = useRef<string | null>(null);
+  const messagesRef = useRef<Message[]>([]);
+  const markAsReadInFlightRef = useRef(false);
   const prevConversationIdRef = useRef<string | null>(null);
   const queryClient = useQueryClient();
+  const { currentUserProfile } = useAppData();
   const pageSize = DM_MESSAGES_PAGE_SIZE;
+
+  messagesRef.current = messages;
 
   useEffect(() => {
     currentUserIdRef.current = getCachedUser()?.id ?? null;
@@ -80,7 +90,6 @@ export function useChat(conversationId: string | null, onMessageSent?: (conversa
     isPending,
     isFetched,
     error: queryError,
-    refetch,
   } = useQuery({
     queryKey: dmMessagesQueryKey(conversationId!),
     enabled: !!conversationId,
@@ -91,6 +100,71 @@ export function useChat(conversationId: string | null, onMessageSent?: (conversa
     refetchOnMount: false,
     retry: 1,
   });
+
+  const markAsRead = useCallback(async () => {
+    if (!conversationId || markAsReadInFlightRef.current) return;
+
+    const userId = currentUserIdRef.current ?? getCachedUser()?.id;
+    if (!userId) return;
+
+    if (!hasUnreadMessagesFromOthers(messagesRef.current, userId)) {
+      return;
+    }
+
+    if (currentUserProfile?.ghost_mode) {
+      return;
+    }
+
+    markAsReadInFlightRef.current = true;
+
+    try {
+      const user = await resolveAuthUser();
+      if (!user) return;
+
+      const { error: updateError } = await supabase
+        .from('messages')
+        .update({
+          read_at: new Date().toISOString(),
+          is_read: true,
+        })
+        .eq('conversation_id', conversationId)
+        .neq('sender_id', user.id)
+        .eq('is_read', false);
+
+      if (updateError) {
+        const msg = String((updateError as { message?: string }).message || '');
+        const missingCol =
+          (updateError as { code?: string }).code === 'PGRST204' &&
+          (msg.includes('is_read') || msg.includes('read_at'));
+        if (missingCol) {
+          return;
+        }
+        throw updateError;
+      }
+
+      const readAt = new Date().toISOString();
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.conversation_id === conversationId &&
+          m.sender_id !== user.id &&
+          !m.is_read
+            ? { ...m, is_read: true, read_at: readAt }
+            : m
+        )
+      );
+
+      dispatchUnreadRefreshRequest();
+    } catch (err) {
+      if (!isAbortError(err)) {
+        console.error('Error marking messages as read:', err);
+      }
+    } finally {
+      markAsReadInFlightRef.current = false;
+    }
+  }, [conversationId, currentUserProfile?.ghost_mode]);
+
+  const markAsReadRef = useRef(markAsRead);
+  markAsReadRef.current = markAsRead;
 
   // Sync query results into local state (single effect — no separate clear effect that races).
   useEffect(() => {
@@ -133,7 +207,18 @@ export function useChat(conversationId: string | null, onMessageSent?: (conversa
       );
       setHasMore(fetchedMessages.length === pageSize);
     }
-  }, [conversationId, fetchedMessages, isPending, isFetched, queryError]);
+  }, [conversationId, fetchedMessages, isPending, isFetched, queryError, pageSize]);
+
+  // Mark read when opening a conversation or after the initial message page loads.
+  useEffect(() => {
+    if (!conversationId) return;
+    void markAsReadRef.current();
+  }, [conversationId]);
+
+  useEffect(() => {
+    if (!conversationId || isPending || !fetchedMessages?.length) return;
+    void markAsReadRef.current();
+  }, [conversationId, isPending, fetchedMessages]);
 
   // Realtime subscription — only tied to conversationId.
   useEffect(() => {
@@ -165,7 +250,9 @@ export function useChat(conversationId: string | null, onMessageSent?: (conversa
             newMessage.content,
             newMessage.created_at
           );
+
           if (newMessage.sender_id !== currentUserIdRef.current) {
+            void markAsReadRef.current();
             dispatchUnreadRefreshRequest();
           }
         }
@@ -233,6 +320,15 @@ export function useChat(conversationId: string | null, onMessageSent?: (conversa
             return [...prev, newMessage];
           });
 
+          queryClient.setQueryData<Message[]>(
+            dmMessagesQueryKey(conversationId),
+            (cached) => {
+              const base = cached ?? [];
+              if (base.some((m) => m.id === newMessage.id)) return base;
+              return [...base, newMessage as Message];
+            }
+          );
+
           dispatchConversationPreviewUpdate(
             conversationId,
             newMessage.content,
@@ -243,7 +339,6 @@ export function useChat(conversationId: string | null, onMessageSent?: (conversa
             onMessageSent(conversationId, newMessage.content, newMessage.created_at);
           }
         }
-        void queryClient.invalidateQueries({ queryKey: dmMessagesQueryKey(conversationId) });
 
         return newMessage;
       } catch (err: any) {
@@ -257,84 +352,16 @@ export function useChat(conversationId: string | null, onMessageSent?: (conversa
     [conversationId, onMessageSent, queryClient]
   );
 
-  const markAsRead = useCallback(async () => {
-    if (!conversationId) return;
-
-    try {
-      const user = await resolveAuthUser();
-      if (!user) return;
-
-      const { data: profile, error: profileError } = await supabase
-        .from('profiles')
-        .select('ghost_mode')
-        .eq('id', user.id)
-        .single();
-
-      if (profileError) {
-        if (!isAbortError(profileError)) {
-          console.warn('Error loading ghost mode status:', profileError);
-        }
-        return;
-      }
-
-      if (profile?.ghost_mode) {
-        return;
-      }
-
-      const { error: updateError } = await supabase
-        .from('messages')
-        .update({
-          read_at: new Date().toISOString(),
-          is_read: true,
-        })
-        .eq('conversation_id', conversationId)
-        .neq('sender_id', user.id)
-        .eq('is_read', false);
-
-      if (updateError) {
-        const msg = String((updateError as { message?: string }).message || '');
-        const missingCol =
-          (updateError as { code?: string }).code === 'PGRST204' &&
-          (msg.includes('is_read') || msg.includes('read_at'));
-        if (missingCol) {
-          return;
-        }
-        throw updateError;
-      }
-
-      const readAt = new Date().toISOString();
-      setMessages((prev) =>
-        prev.map((m) =>
-          m.conversation_id === conversationId &&
-          m.sender_id !== user.id &&
-          !m.is_read
-            ? { ...m, is_read: true, read_at: readAt }
-            : m
-        )
-      );
-
-      dispatchUnreadRefreshRequest();
-      void queryClient.invalidateQueries({
-        queryKey: dmMessagesQueryKey(conversationId),
-        refetchType: 'active',
-      });
-    } catch (err) {
-      if (!isAbortError(err)) {
-        console.error('Error marking messages as read:', err);
-      }
-    }
-  }, [conversationId, queryClient]);
-
   const loadOlderMessages = useCallback(async (): Promise<Message[]> => {
     if (!conversationId || loadingMore || !hasMore) return [];
-    const oldestMessage = messages[0];
+    const oldestMessage = messagesRef.current[0];
     if (!oldestMessage) return [];
 
     try {
       setLoadingMore(true);
       const { data, error: fetchError } = await supabase
         .from('messages')
-        .select('id, conversation_id, sender_id, content, created_at, is_read, read_at')
+        .select('id, conversation_id, sender_id, content, created_at, is_read, read_at, reply_to_message_id')
         .eq('conversation_id', conversationId)
         .lt('created_at', oldestMessage.created_at)
         .order('created_at', { ascending: false })
@@ -357,7 +384,7 @@ export function useChat(conversationId: string | null, onMessageSent?: (conversa
     } finally {
       setLoadingMore(false);
     }
-  }, [conversationId, loadingMore, hasMore, messages]);
+  }, [conversationId, loadingMore, hasMore, pageSize]);
 
   return {
     messages,

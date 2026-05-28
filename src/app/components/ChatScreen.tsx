@@ -11,7 +11,8 @@ import { REPORT_REASONS } from '../constants/report';
 import { useTyping } from '../hooks/useTyping';
 import { useAppData } from '../context/AppDataContext';
 import { TypingBubble } from './TypingBubble';
-import { useIsMdUp } from './ui/use-mobile';
+import { useIsMdUp, useIsMobile } from './ui/use-mobile';
+import { useChatScrollAnchor } from '../hooks/useChatScrollAnchor';
 import { useCall } from '../context/CallContext';
 import { ChatEmbeddedCallBar } from './ChatEmbeddedCallBar';
 import { NotificationManager } from '../lib/notifications';
@@ -78,7 +79,7 @@ export function ChatScreen({
 }: ChatScreenProps) {
   const { t, i18n } = useTranslation();
   const [conversationActionsMenu, setConversationActionsMenu] = useState<ConversationActionTarget | null>(null);
-  const { messages, loading, loadingMore, hasMore, sending, error, sendMessage, markAsRead, loadOlderMessages } = useChat(conversationId);
+  const { messages, loading, loadingMore, hasMore, sending, error, sendMessage, loadOlderMessages } = useChat(conversationId);
   const { currentUserProfile } = useAppData();
   const {
     startDirectCall,
@@ -87,11 +88,13 @@ export function ChatScreen({
     connectionState: callConnectionState,
   } = useCall();
   const isMdUp = useIsMdUp();
+  const isMobile = useIsMobile();
   const [messageInput, setMessageInput] = useState('');
   const [replyTarget, setReplyTarget] = useState<ReplyTarget | null>(null);
   const messageInputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
+  useChatScrollAnchor(messagesContainerRef, isMobile);
   const typingIndicatorRef = useRef<HTMLDivElement>(null);
   const [typingClearance, setTypingClearance] = useState(0);
   const isLoadingOlderRef = useRef(false);
@@ -265,23 +268,6 @@ export function ChatScreen({
     scrollToBottomInstant(container);
   }, [isPartnerTyping, typingClearance, scrollToBottomInstant]);
 
-  useEffect(() => {
-    const scrollForComposer = () => {
-      const container = messagesContainerRef.current;
-      if (container && initialScrollDoneRef.current) {
-        scrollToBottomInstant(container);
-      }
-    };
-
-    window.addEventListener('chat-composer-focus', scrollForComposer);
-    window.visualViewport?.addEventListener('resize', scrollForComposer);
-
-    return () => {
-      window.removeEventListener('chat-composer-focus', scrollForComposer);
-      window.visualViewport?.removeEventListener('resize', scrollForComposer);
-    };
-  }, [scrollToBottomInstant]);
-
   const loadOlderAndPreserveScroll = useCallback(async () => {
     if (loadingMore || !hasMore || isLoadingOlderRef.current) return;
     const container = messagesContainerRef.current;
@@ -325,18 +311,6 @@ export function ChatScreen({
       loadOlderAndPreserveScroll();
     }
   }, [loadOlderAndPreserveScroll, loadingMore, hasMore]);
-
-  useEffect(() => {
-    if (messages.length > 0) {
-      markAsRead();
-    }
-  }, [messages, markAsRead]);
-
-  useEffect(() => {
-    if (conversationId) {
-      markAsRead();
-    }
-  }, [conversationId, markAsRead]);
 
   useEffect(() => {
     if (messageInput.trim().length > 0) {

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
-import { useMobileViewportInsets } from '../hooks/useMobileViewportInsets';
+import { MOBILE_VV_CSS } from '../lib/mobileViewport';
+import { useMobileViewportDriver } from '../hooks/useMobileViewportInsets';
 
 interface NavigationStackProps {
   children: React.ReactNode;
@@ -20,7 +21,7 @@ export function NavigationStack({ children, onBack, onEdgeDragProgress }: Naviga
   const isDraggingRef = useRef(false);
   const animationFrameRef = useRef<number | null>(null); // ✅ NEU
   const enterAnimationStateRef = useRef<'idle' | 'running' | 'done'>('idle');
-  const viewportFrame = useMobileViewportInsets(isMobile);
+  useMobileViewportDriver(isMobile);
 
   useEffect(() => {
     const checkMobile = () => {
@@ -290,10 +291,10 @@ export function NavigationStack({ children, onBack, onEdgeDragProgress }: Naviga
         onTouchCancel={handleTouchEnd} // ✅ Handle touch cancel
         style={{
           position: 'fixed',
-          top: viewportFrame.offsetTop,
+          top: `var(${MOBILE_VV_CSS.offsetTop}, 0px)`,
           left: 0,
           right: 0,
-          height: viewportFrame.height,
+          height: `var(${MOBILE_VV_CSS.height}, 100dvh)`,
           bottom: 'auto',
           zIndex: 10,
           backgroundColor: 'var(--color-background, white)',
