@@ -45,8 +45,20 @@ export async function uploadChatMedia(
   file: File,
   ctx: MediaUploadContext,
 ): Promise<ConfirmedUpload> {
+  const mimeType =
+    file.type ||
+    (file.name.toLowerCase().endsWith('.png')
+      ? 'image/png'
+      : file.name.toLowerCase().endsWith('.jpg') || file.name.toLowerCase().endsWith('.jpeg')
+        ? 'image/jpeg'
+        : file.name.toLowerCase().endsWith('.webp')
+          ? 'image/webp'
+          : file.name.toLowerCase().endsWith('.gif')
+            ? 'image/gif'
+            : '');
+
   const presign = await api.requestUploadPresign({
-    mimeType: file.type,
+    mimeType,
     sizeBytes: file.size,
     filename: file.name,
     ...contextPayload(ctx),

@@ -68,9 +68,30 @@ function parseUploadContext(body: Record<string, unknown>): UploadContext | null
 }
 
 export async function handleUploadPresign(c: Context, getSupabase: (c: Context) => SupabaseClient) {
+  try {
+    return await handleUploadPresignInner(c, getSupabase);
+  } catch (err) {
+    console.error("POST /uploads/presign unhandled:", err);
+    const message = err instanceof Error ? err.message : "Presign failed";
+    return c.json({ error: message }, 500);
+  }
+}
+
+async function handleUploadPresignInner(c: Context, getSupabase: (c: Context) => SupabaseClient) {
   const r2 = getR2Config();
   if (!r2) {
-    return c.json({ error: "R2 is not configured on the server" }, 503);
+    return c.json({ error: "R2 is not configured on the server (set Supabase secrets)" }, 503);
+  }
+
+  if (
+    r2.endpoint.includes("<") ||
+    r2.endpoint.includes("YOUR_") ||
+    r2.accessKeyId === "..." ||
+    !r2.endpoint.includes("r2.cloudflarestorage.com")
+  ) {
+    return c.json({
+      error: "R2_ENDPOINT or credentials look like placeholders — fix supabase secrets",
+    }, 503);
   }
 
   const supabase = getSupabase(c);
@@ -140,7 +161,12 @@ export async function handleUploadPresign(c: Context, getSupabase: (c: Context) 
 
   if (insertError || !attachment) {
     console.error("message_attachments insert failed:", insertError);
-    return c.json({ error: "Failed to create attachment record" }, 500);
+    const hint = insertError?.code === "42P01" || insertError?.message?.includes("message_attachments")
+      ? "Run migration 20260529120000_message_attachments_r2.sql (supabase db push)"
+      : insertError?.message;
+    return c.json({
+      error: hint || "Failed to create attachment record",
+    }, 500);
   }
 
   return c.json({
@@ -157,6 +183,16 @@ export async function handleUploadPresign(c: Context, getSupabase: (c: Context) 
 }
 
 export async function handleUploadConfirm(c: Context, getSupabase: (c: Context) => SupabaseClient) {
+  try {
+    return await handleUploadConfirmInner(c, getSupabase);
+  } catch (err) {
+    console.error("POST /uploads/confirm unhandled:", err);
+    const message = err instanceof Error ? err.message : "Confirm failed";
+    return c.json({ error: message }, 500);
+  }
+}
+
+async function handleUploadConfirmInner(c: Context, getSupabase: (c: Context) => SupabaseClient) {
   const r2 = getR2Config();
   if (!r2) {
     return c.json({ error: "R2 is not configured on the server" }, 503);
