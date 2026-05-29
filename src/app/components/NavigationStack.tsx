@@ -81,8 +81,8 @@ export function NavigationStack({ children, onBack, skipEnterAnimation = false }
     isVerticalScrollRef.current = false;
     setSwipeBackLock(false);
 
-    // Swipe-back only from the left edge — avoids translating the shell during list scroll.
-    if (startX > 48) {
+    // Swipe-back from the left edge — capture phase wins over chat scroll containers.
+    if (startX > 56) {
       directionLockedRef.current = true;
       isVerticalScrollRef.current = true;
     }
@@ -102,7 +102,7 @@ export function NavigationStack({ children, onBack, skipEnterAnimation = false }
       if (absDeltaX > 10 || absDeltaY > 10) {
         directionLockedRef.current = true;
 
-        if (absDeltaY > absDeltaX * 1.85) {
+        if (absDeltaY > absDeltaX * 1.65) {
           isVerticalScrollRef.current = true;
           setSwipeBackLock(false);
           return;
@@ -216,10 +216,13 @@ export function NavigationStack({ children, onBack, skipEnterAnimation = false }
             : { type: 'tween', duration: 0.28, ease: [0.32, 0.72, 0, 1] }
         }
         onTouchStart={handleTouchStart}
+        onTouchStartCapture={handleTouchStart}
         onTouchMove={handleTouchMove}
         onTouchMoveCapture={handleTouchMove}
         onTouchEnd={handleTouchEnd}
+        onTouchEndCapture={handleTouchEnd}
         onTouchCancel={handleTouchEnd}
+        onTouchCancelCapture={handleTouchEnd}
         style={{
           ...shellStyle,
           willChange: swipeBackLocked ? 'transform' : 'auto',

@@ -19,6 +19,10 @@ import {
   fetchDmMessages,
   mergeDmMessagesById,
 } from '../lib/chatMessages';
+import {
+  fetchConversationLastViewedAt,
+  upsertConversationLastViewedAt,
+} from '../lib/conversationViews';
 import { onAppForeground, shouldResubscribeRealtimeChannel } from '../lib/realtimeReconnect';
 
 export interface Message {
@@ -59,6 +63,7 @@ function isAbortError(err: unknown): boolean {
 
 export function useChat(conversationId: string | null, onMessageSent?: (conversationId: string, lastMessage: string, lastMessageAt: string) => void) {
   const [messages, setMessages] = useState<Message[]>([]);
+  const [lastViewedAt, setLastViewedAt] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(true);
@@ -115,7 +120,13 @@ export function useChat(conversationId: string | null, onMessageSent?: (conversa
 
     const unreadKey = getUnreadBatchKey(messagesRef.current, userId);
     const syncedKey = unreadKey || `synced:${conversationId}`;
-    if (lastPatchedUnreadKeyRef.current === syncedKey) return;
+    const readAt = new Date().toISOString();
+
+    if (lastPatchedUnreadKeyRef.current === syncedKey) {
+      await upsertConversationLastViewedAt(conversationId, userId, readAt);
+      setLastViewedAt(readAt);
+      return;
+    }
 
     markAsReadInFlightRef.current = true;
     dispatchConversationUnreadCleared(conversationId);
@@ -123,8 +134,6 @@ export function useChat(conversationId: string | null, onMessageSent?: (conversa
     try {
       const user = await resolveAuthUser();
       if (!user) return;
-
-      const readAt = new Date().toISOString();
 
       const { error: updateError } = await supabase
         .from('messages')
@@ -148,6 +157,9 @@ export function useChat(conversationId: string | null, onMessageSent?: (conversa
       }
 
       lastPatchedUnreadKeyRef.current = syncedKey;
+
+      await upsertConversationLastViewedAt(conversationId, user.id, readAt);
+      setLastViewedAt(readAt);
 
       if (unreadKey) {
         setMessages((prev) => applyReadStateToDmMessages(prev, conversationId, user.id, readAt));
@@ -225,6 +237,54 @@ export function useChat(conversationId: string | null, onMessageSent?: (conversa
       setHasMore(fetchedMessages.length === pageSize);
     }
   }, [conversationId, fetchedMessages, isPending, isFetched, queryError, pageSize]);
+
+  useEffect(() => {
+    if (!conversationId) {
+      setLastViewedAt(null);
+      return;
+    }
+
+    const userId = currentUserIdRef.current ?? getCachedUser()?.id;
+    if (!userId) return;
+
+    let cancelled = false;
+    void fetchConversationLastViewedAt(conversationId, userId).then((viewedAt) => {
+      if (!cancelled) setLastViewedAt(viewedAt);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [conversationId]);
+
+  useEffect(() => {
+    if (!conversationId) return;
+
+    const userId = currentUserIdRef.current ?? getCachedUser()?.id;
+    if (!userId) return;
+
+    const channel = supabase
+      .channel(`conversation-view:${conversationId}:${userId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'conversation_views',
+          filter: `conversation_id=eq.${conversationId}`,
+        },
+        (payload) => {
+          const row = payload.new as { user_id?: string; last_viewed_at?: string } | null;
+          if (!row?.user_id || row.user_id !== userId || !row.last_viewed_at) return;
+          setLastViewedAt(row.last_viewed_at);
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [conversationId]);
 
   // One initial mark-as-read per conversation after the first page is in local state.
   useEffect(() => {
@@ -523,6 +583,7 @@ export function useChat(conversationId: string | null, onMessageSent?: (conversa
 
   return {
     messages,
+    lastViewedAt,
     loading,
     loadingMore,
     hasMore,

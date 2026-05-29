@@ -27,6 +27,17 @@ const previewShellStyle = {
   overflow: 'hidden' as const,
 };
 
+const FORWARD_EDGE_RATIO = 0.5;
+
+function setForwardSwipeLock(locked: boolean) {
+  if (typeof document === 'undefined') return;
+  if (locked) {
+    document.documentElement.dataset.forwardSwipeLock = '1';
+  } else {
+    delete document.documentElement.dataset.forwardSwipeLock;
+  }
+}
+
 export function useEdgeBackNavigation({
   baseContent,
   onStackChange,
@@ -39,8 +50,11 @@ export function useEdgeBackNavigation({
   const onForwardSwipeRef = useRef(onForwardSwipe);
   const lastScreenCacheRef = useRef<StackScreen | null>(null);
   const forwardAnimFrameRef = useRef<number | null>(null);
+  const previewShellRef = useRef<HTMLDivElement | null>(null);
+  const stackRef = useRef<StackScreen[]>([]);
   onStackChangeRef.current = onStackChange;
   onForwardSwipeRef.current = onForwardSwipe;
+  stackRef.current = stack;
 
   const forwardDragRef = useRef({
     startX: 0,
@@ -59,6 +73,7 @@ export function useEdgeBackNavigation({
     if (stack.length > 0) {
       window.dispatchEvent(new CustomEvent('mobile-chat-stack-open'));
       setForwardDragX(0);
+      setForwardSwipeLock(false);
     } else {
       window.dispatchEvent(new CustomEvent('mobile-chat-stack-close'));
     }
@@ -69,6 +84,7 @@ export function useEdgeBackNavigation({
       if (forwardAnimFrameRef.current) {
         cancelAnimationFrame(forwardAnimFrameRef.current);
       }
+      setForwardSwipeLock(false);
     };
   }, []);
 
@@ -113,83 +129,116 @@ export function useEdgeBackNavigation({
     []
   );
 
-  const handleBaseTouchStart = (event: React.TouchEvent) => {
-    if (stack.length > 0 || !onForwardSwipeRef.current || !lastScreenCacheRef.current) return;
-    const touch = event.touches[0];
-    forwardDragRef.current = {
-      startX: touch.clientX,
-      startY: touch.clientY,
-      currentX: touch.clientX,
-      directionLocked: false,
-      isVerticalScroll: false,
-      isDragging: false,
+  useEffect(() => {
+    const shell = previewShellRef.current;
+    if (!shell) return;
+
+    const resetDrag = () => {
+      forwardDragRef.current = {
+        startX: 0,
+        startY: 0,
+        currentX: 0,
+        directionLocked: false,
+        isVerticalScroll: false,
+        isDragging: false,
+      };
+      setForwardSwipeLock(false);
     };
-  };
 
-  const handleBaseTouchMove = (event: React.TouchEvent) => {
-    if (stack.length > 0 || !onForwardSwipeRef.current || !lastScreenCacheRef.current) return;
-    const touch = event.touches[0];
-    const drag = forwardDragRef.current;
-    const deltaX = touch.clientX - drag.startX;
-    const deltaY = touch.clientY - drag.startY;
-
-    if (!drag.directionLocked) {
-      const absDeltaX = Math.abs(deltaX);
-      const absDeltaY = Math.abs(deltaY);
-      if (absDeltaX > 10 || absDeltaY > 10) {
-        drag.directionLocked = true;
-        if (absDeltaY > absDeltaX * 1.3) {
-          drag.isVerticalScroll = true;
-          return;
-        }
-        if (deltaX <= 0 || drag.startX > window.innerWidth * 0.45) {
-          drag.isVerticalScroll = true;
-          return;
-        }
-        drag.isDragging = true;
-      } else {
+    const onTouchStart = (event: TouchEvent) => {
+      if (stackRef.current.length > 0 || !onForwardSwipeRef.current || !lastScreenCacheRef.current) {
         return;
       }
-    }
 
-    if (drag.isVerticalScroll || !drag.isDragging) return;
-    drag.currentX = touch.clientX;
-
-    const positiveDelta = Math.max(0, drag.currentX - drag.startX);
-    setForwardDragX(Math.min(positiveDelta, window.innerWidth));
-
-    if (event.cancelable) event.preventDefault();
-  };
-
-  const handleBaseTouchEnd = () => {
-    if (stack.length > 0 || !onForwardSwipeRef.current || !lastScreenCacheRef.current) return;
-    const drag = forwardDragRef.current;
-    if (!drag.isDragging) return;
-
-    const deltaX = Math.max(0, drag.currentX - drag.startX);
-    const threshold = window.innerWidth * 0.28;
-
-    forwardDragRef.current = {
-      startX: 0,
-      startY: 0,
-      currentX: 0,
-      directionLocked: false,
-      isVerticalScroll: false,
-      isDragging: false,
+      const touch = event.touches[0];
+      forwardDragRef.current = {
+        startX: touch.clientX,
+        startY: touch.clientY,
+        currentX: touch.clientX,
+        directionLocked: false,
+        isVerticalScroll: false,
+        isDragging: false,
+      };
     };
 
-    if (deltaX > threshold) {
-      animateForwardDrag(deltaX, window.innerWidth, () => {
-        const cached = lastScreenCacheRef.current;
-        if (cached) {
-          setStack([{ ...cached, skipEnterAnimation: true }]);
+    const onTouchMove = (event: TouchEvent) => {
+      if (stackRef.current.length > 0 || !onForwardSwipeRef.current || !lastScreenCacheRef.current) {
+        return;
+      }
+
+      const touch = event.touches[0];
+      const drag = forwardDragRef.current;
+      const deltaX = touch.clientX - drag.startX;
+      const deltaY = touch.clientY - drag.startY;
+
+      if (!drag.directionLocked) {
+        const absDeltaX = Math.abs(deltaX);
+        const absDeltaY = Math.abs(deltaY);
+        if (absDeltaX > 8 || absDeltaY > 8) {
+          drag.directionLocked = true;
+          const edgeLimit = window.innerWidth * FORWARD_EDGE_RATIO;
+          if (absDeltaY > absDeltaX * 1.15 || deltaX <= 0 || drag.startX > edgeLimit) {
+            drag.isVerticalScroll = true;
+            return;
+          }
+          drag.isDragging = true;
+          setForwardSwipeLock(true);
+        } else {
+          return;
         }
-        onForwardSwipeRef.current?.();
-      });
-    } else {
-      animateForwardDrag(deltaX, 0);
-    }
-  };
+      }
+
+      if (drag.isVerticalScroll || !drag.isDragging) return;
+      drag.currentX = touch.clientX;
+
+      const positiveDelta = Math.max(0, drag.currentX - drag.startX);
+      setForwardDragX(Math.min(positiveDelta, window.innerWidth));
+
+      if (event.cancelable) event.preventDefault();
+    };
+
+    const onTouchEnd = () => {
+      if (stackRef.current.length > 0 || !onForwardSwipeRef.current || !lastScreenCacheRef.current) {
+        resetDrag();
+        return;
+      }
+
+      const drag = forwardDragRef.current;
+      if (!drag.isDragging) {
+        resetDrag();
+        return;
+      }
+
+      const deltaX = Math.max(0, drag.currentX - drag.startX);
+      const threshold = window.innerWidth * 0.28;
+
+      resetDrag();
+
+      if (deltaX > threshold) {
+        animateForwardDrag(deltaX, window.innerWidth, () => {
+          const cached = lastScreenCacheRef.current;
+          if (cached) {
+            setStack([{ ...cached, skipEnterAnimation: true }]);
+          }
+          onForwardSwipeRef.current?.();
+        });
+      } else {
+        animateForwardDrag(deltaX, 0);
+      }
+    };
+
+    shell.addEventListener('touchstart', onTouchStart, { capture: true, passive: true });
+    shell.addEventListener('touchmove', onTouchMove, { capture: true, passive: false });
+    shell.addEventListener('touchend', onTouchEnd, { capture: true, passive: true });
+    shell.addEventListener('touchcancel', onTouchEnd, { capture: true, passive: true });
+
+    return () => {
+      shell.removeEventListener('touchstart', onTouchStart, { capture: true });
+      shell.removeEventListener('touchmove', onTouchMove, { capture: true });
+      shell.removeEventListener('touchend', onTouchEnd, { capture: true });
+      shell.removeEventListener('touchcancel', onTouchEnd, { capture: true });
+    };
+  }, [animateForwardDrag]);
 
   const renderLayers = useCallback(() => {
     const hasOverlay = stack.length > 0;
@@ -200,15 +249,12 @@ export function useEdgeBackNavigation({
     return (
       <>
         <div
+          ref={previewShellRef}
           data-messages-preview-shell
-          onTouchStart={handleBaseTouchStart}
-          onTouchMove={handleBaseTouchMove}
-          onTouchEnd={handleBaseTouchEnd}
-          onTouchCancel={handleBaseTouchEnd}
           style={{
             ...previewShellStyle,
             pointerEvents: hasOverlay ? 'none' : 'auto',
-            touchAction: hasOverlay || showForwardPreview ? 'none' : 'pan-y',
+            touchAction: hasOverlay || showForwardPreview ? 'none' : 'manipulation',
             overscrollBehavior: 'none',
           }}
         >

@@ -1745,8 +1745,11 @@ export function MessagesScreen() {
         </div>
 
         <div className="flex flex-1 min-w-0 min-h-0">
-          <div className="flex flex-col flex-1 min-w-0 min-h-0 md:max-w-[340px] md:w-[32%] md:shrink-0 border-r border-gray-200 dark:border-white/10 blyve-app-bg">
-            <div className="sticky top-0 z-10 bg-white/80 dark:bg-black/80 oled:bg-black/95 oled:md:bg-black/95 backdrop-blur-md border-b border-gray-200 dark:border-white/5 px-4 py-4 shrink-0">
+          <div
+            data-messages-preview-panel
+            className="flex flex-col flex-1 min-w-0 min-h-0 md:max-w-[340px] md:w-[32%] md:shrink-0 border-r border-gray-200 dark:border-white/10 blyve-app-bg overflow-hidden"
+          >
+            <div className="z-10 bg-white/80 dark:bg-black/80 oled:bg-black/95 oled:md:bg-black/95 backdrop-blur-md border-b border-gray-200 dark:border-white/5 px-4 py-4 shrink-0">
               <div className="flex items-center justify-between gap-3">
                 {selectedGroup ? (
                   <ServerTitleButton

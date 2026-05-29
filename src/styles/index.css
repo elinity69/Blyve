@@ -347,7 +347,8 @@ button.bg-gradient-to-r {
 }
 
 /* Lock chat scroll while a horizontal swipe-back gesture is active */
-html[data-swipe-back-lock='1'] [data-chat-messages-scroll] {
+html[data-swipe-back-lock='1'] [data-chat-messages-scroll],
+html[data-forward-swipe-lock='1'] [data-messages-preview-scroll] {
   overflow: hidden !important;
   touch-action: none !important;
   overscroll-behavior: none;
@@ -358,9 +359,18 @@ html[data-swipe-back-lock='1'] [data-chat-messages-scroll] {
   overscroll-behavior: none;
 }
 
+[data-messages-preview-panel] {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-height: 0;
+  overflow: hidden;
+}
+
 [data-messages-preview-scroll] {
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+  overflow-x: hidden;
 }
 
 /* Compact voice message player inside chat bubbles */

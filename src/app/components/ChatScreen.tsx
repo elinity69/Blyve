@@ -55,6 +55,12 @@ import {
   isNewSenderGroupStart,
 } from '../lib/messageGrouping';
 import { isOutgoingMessageRead } from '../lib/messageReadReceipts';
+import {
+  findFirstUnreadMessageId,
+  isNearBottom,
+  scrollContainerToBottomStable,
+  scrollContainerToMessage,
+} from '../lib/chatScroll';
 
 interface ChatScreenProps {
   onBack: () => void;
@@ -84,6 +90,7 @@ export function ChatScreen({
   const [conversationActionsMenu, setConversationActionsMenu] = useState<ConversationActionTarget | null>(null);
   const {
     messages,
+    lastViewedAt,
     loading,
     loadingMore,
     hasMore,
@@ -107,11 +114,6 @@ export function ChatScreen({
   const messageInputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
-  const assignMessagesContainer = useChatScrollAnchor(
-    messagesContainerRef,
-    isMobile,
-    messagesEndRef
-  );
   const typingIndicatorRef = useRef<HTMLDivElement>(null);
   const [typingClearance, setTypingClearance] = useState(0);
   const isLoadingOlderRef = useRef(false);
@@ -127,6 +129,26 @@ export function ChatScreen({
   const initialScrollDoneRef = useRef(false);
   const canLoadOlderRef = useRef(false);
   const lastMessageIdRef = useRef<string | null>(null);
+  const lastAppliedViewedAtRef = useRef<string | null>(null);
+  const [scrollAnchorReady, setScrollAnchorReady] = useState(false);
+
+  const applyInitialScrollPosition = useCallback(() => {
+    const container = messagesContainerRef.current;
+    if (!container || messages.length === 0) return;
+
+    const firstUnreadId = findFirstUnreadMessageId(messages, currentUserId, lastViewedAt);
+    if (firstUnreadId && scrollContainerToMessage(container, firstUnreadId)) {
+      return;
+    }
+
+    scrollContainerToBottomStable(container);
+  }, [messages, currentUserId, lastViewedAt]);
+
+  const assignMessagesContainer = useChatScrollAnchor(
+    messagesContainerRef,
+    isMobile && scrollAnchorReady,
+    messagesEndRef
+  );
 
   const isGhostMode = !!currentUserProfile?.ghost_mode;
 
@@ -208,13 +230,11 @@ export function ChatScreen({
     return null;
   }, [messages, currentUserId]);
 
-  const scrollToBottomInstant = useCallback((element: HTMLElement) => {
-    element.scrollTop = element.scrollHeight;
-  }, []);
-
   useEffect(() => {
     initialScrollDoneRef.current = false;
     lastMessageIdRef.current = null;
+    lastAppliedViewedAtRef.current = null;
+    setScrollAnchorReady(false);
   }, [conversationId]);
 
   useEffect(() => {
@@ -243,17 +263,32 @@ export function ChatScreen({
     if (!container) return;
 
     if (!initialScrollDoneRef.current) {
-      scrollToBottomInstant(container);
+      applyInitialScrollPosition();
       initialScrollDoneRef.current = true;
       lastMessageIdRef.current = messages[messages.length - 1]?.id ?? null;
+      lastAppliedViewedAtRef.current = lastViewedAt;
+      requestAnimationFrame(() => setScrollAnchorReady(true));
       return;
     }
 
     const lastMessage = messages[messages.length - 1];
-    if (lastMessageIdRef.current === lastMessage.id) return;
-    lastMessageIdRef.current = lastMessage.id;
-    scrollToBottomInstant(container);
-  }, [loading, messages, scrollToBottomInstant]);
+    if (lastMessageIdRef.current !== lastMessage.id) {
+      lastMessageIdRef.current = lastMessage.id;
+      if (isNearBottom(container)) {
+        scrollContainerToBottomStable(container);
+      }
+      return;
+    }
+
+    if (
+      lastViewedAt &&
+      lastAppliedViewedAtRef.current !== lastViewedAt &&
+      !findFirstUnreadMessageId(messages, currentUserId, lastViewedAt)
+    ) {
+      lastAppliedViewedAtRef.current = lastViewedAt;
+      scrollContainerToBottomStable(container);
+    }
+  }, [loading, messages, lastViewedAt, currentUserId, applyInitialScrollPosition]);
 
   useLayoutEffect(() => {
     if (!isPartnerTyping) {
@@ -283,8 +318,10 @@ export function ChatScreen({
     if (!isPartnerTyping || typingClearance <= 0) return;
     const container = messagesContainerRef.current;
     if (!container || !initialScrollDoneRef.current) return;
-    scrollToBottomInstant(container);
-  }, [isPartnerTyping, typingClearance, scrollToBottomInstant]);
+    if (isNearBottom(container)) {
+      scrollContainerToBottomStable(container);
+    }
+  }, [isPartnerTyping, typingClearance]);
 
   const loadOlderAndPreserveScroll = useCallback(async () => {
     if (loadingMore || !hasMore || isLoadingOlderRef.current) return;
@@ -740,7 +777,7 @@ export function ChatScreen({
                 </motion.div>
               );
             })}
-            <div ref={messagesEndRef} />
+            <div ref={messagesEndRef} data-chat-scroll-end aria-hidden />
           </>
         )}
       </div>
