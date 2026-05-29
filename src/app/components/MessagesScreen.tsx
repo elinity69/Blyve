@@ -15,14 +15,32 @@ import { User } from '../types';
 import { useUnread } from '../context/UnreadContext';
 import { useTranslation } from 'react-i18next';
 import { toast } from '../lib/toast';
-import { Plus, MessageCircle, Volume2, Hash, Link2, Pencil, Trash2, RefreshCw } from 'lucide-react';
+import {
+  Plus,
+  MessageCircle,
+  Volume2,
+  Hash,
+  Link2,
+  Pencil,
+  Trash2,
+  RefreshCw,
+  Film,
+  Mic,
+  ImageIcon,
+  Video,
+  FileText,
+} from 'lucide-react';
+import {
+  getConversationListPreview,
+  type ConversationPreviewIcon,
+} from '../lib/conversationListPreview';
 import { GroupChannelNavContext } from '../context/GroupChannelNavContext';
 import { useCall } from '../context/CallContext';
 import {
   formatGroupTypingLabel,
   subscribeGroupTypingBroadcast,
 } from '../lib/groupTypingBroadcast';
-import { NotificationBadge, NotificationBadgeInline } from './NotificationBadge';
+import { NotificationBadge, NotificationBadgeInline, VoiceActiveBadge } from './NotificationBadge';
 import {
   ConversationActionsMenu,
   openConversationActionsMenuFromEvent,
@@ -227,6 +245,7 @@ export function MessagesScreen() {
   const [joinInviteInput, setJoinInviteInput] = useState('');
   const [joiningViaInvite, setJoiningViaInvite] = useState(false);
   const [voicePresenceByChannel, setVoicePresenceByChannel] = useState<Record<string, VoicePresenceParticipant[]>>({});
+  const [groupsWithVoiceActivity, setGroupsWithVoiceActivity] = useState<Set<string>>(() => new Set());
   const [typingNamesByChannelId, setTypingNamesByChannelId] = useState<Record<string, string[]>>({});
   const [conversationActionsMenu, setConversationActionsMenu] = useState<ConversationActionTarget | null>(null);
   const [groupActionsMenu, setGroupActionsMenu] = useState<GroupActionTarget | null>(null);
@@ -327,6 +346,54 @@ export function MessagesScreen() {
     if (!myGroupIdsKey) return;
     prefetchAllGroupChannels(queryClient, myGroupIdsKey.split(','));
   }, [myGroupIdsKey, queryClient]);
+
+  const reloadGroupsVoiceActivity = React.useCallback(async () => {
+    const groupIds = myGroupIdsKey ? myGroupIdsKey.split(',') : [];
+    if (groupIds.length === 0) {
+      setGroupsWithVoiceActivity((prev) => (prev.size === 0 ? prev : new Set()));
+      return;
+    }
+    const { data, error } = await supabase
+      .from('voice_channel_presence')
+      .select('group_id')
+      .in('group_id', groupIds);
+    if (error) return;
+    const active = new Set((data ?? []).map((row) => row.group_id as string));
+    setGroupsWithVoiceActivity(active);
+  }, [myGroupIdsKey]);
+
+  const debouncedReloadGroupsVoiceActivity = useMemo(
+    () =>
+      debounce(() => {
+        void reloadGroupsVoiceActivity();
+      }, 500),
+    [reloadGroupsVoiceActivity],
+  );
+
+  React.useEffect(() => {
+    void reloadGroupsVoiceActivity();
+  }, [reloadGroupsVoiceActivity]);
+
+  React.useEffect(() => {
+    if (!currentUserId) return;
+    const channel = supabase
+      .channel('voice-presence-rail')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'voice_channel_presence',
+        },
+        () => {
+          debouncedReloadGroupsVoiceActivity();
+        },
+      )
+      .subscribe();
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [currentUserId, debouncedReloadGroupsVoiceActivity]);
 
   const isConversationTyping = React.useCallback(
     (conversationId: string) => Boolean(typingByConversation[conversationId]),
@@ -1249,6 +1316,17 @@ export function MessagesScreen() {
   }, [selectedGroup?.id, voiceChannelIdsKey, debouncedReloadVoicePresence]);
 
   useEffect(() => {
+    if (!selectedGroup?.id) return;
+    const hasAnyone = Object.values(voicePresenceByChannel).some((participants) => participants.length > 0);
+    setGroupsWithVoiceActivity((prev) => {
+      const next = new Set(prev);
+      if (hasAnyone) next.add(selectedGroup.id);
+      else next.delete(selectedGroup.id);
+      return next;
+    });
+  }, [selectedGroup?.id, voicePresenceByChannel]);
+
+  useEffect(() => {
     if (!selectedGroup?.id || !currentUserId) return;
     const channel = supabase
       .channel(`voice-presence-${selectedGroup.id}`)
@@ -1262,13 +1340,14 @@ export function MessagesScreen() {
         },
         () => {
           debouncedReloadVoicePresence();
+          debouncedReloadGroupsVoiceActivity();
         }
       )
       .subscribe();
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [currentUserId, debouncedReloadVoicePresence, selectedGroup?.id]);
+  }, [currentUserId, debouncedReloadGroupsVoiceActivity, debouncedReloadVoicePresence, selectedGroup?.id]);
 
   useEffect(() => {
     if (!selectedGroup?.id || !currentUserId) {
@@ -1650,6 +1729,7 @@ export function MessagesScreen() {
                     group={g}
                     isActive={isActive}
                     unread={unread}
+                    hasVoiceActivity={groupsWithVoiceActivity.has(g.id)}
                     onSelect={() => selectGroupFromRail(g)}
                     onPrefetch={() => {
                       void prefetchGroupChannels(queryClient, g.id);
@@ -1970,6 +2050,7 @@ export function MessagesScreen() {
     dmUnreadTotal,
     groupUnreadById,
     myGroupRows,
+    groupsWithVoiceActivity,
     groupsLoading,
     groupChannels,
     textChannels,
@@ -2640,6 +2721,7 @@ interface GroupRailIconProps {
   group: GroupRow;
   isActive: boolean;
   unread: number;
+  hasVoiceActivity: boolean;
   onSelect: () => void;
   onPrefetch: () => void;
   onOpenActions: (event: React.MouseEvent | React.PointerEvent) => void;
@@ -2649,10 +2731,12 @@ function GroupRailIcon({
   group,
   isActive,
   unread,
+  hasVoiceActivity,
   onSelect,
   onPrefetch,
   onOpenActions,
 }: GroupRailIconProps) {
+  const { t } = useTranslation();
   const longPress = useLongPress(onOpenActions);
   const { onPointerDown: onLongPressPointerDown, ...longPressHandlers } = longPress;
   const hue = groupAccentHue(group.id);
@@ -2688,6 +2772,9 @@ function GroupRailIcon({
           initial
         )}
       </button>
+      {hasVoiceActivity ? (
+        <VoiceActiveBadge ariaLabel={t('groups.voiceActiveOnServer')} />
+      ) : null}
       <NotificationBadge count={unread} />
     </div>
   );
@@ -2727,6 +2814,24 @@ interface ConversationListRowProps {
   onOpenActions: (event: React.MouseEvent | React.PointerEvent) => void;
 }
 
+function ConversationPreviewIcon({ kind }: { kind: ConversationPreviewIcon }) {
+  const className = 'h-4 w-4 shrink-0 opacity-80';
+  switch (kind) {
+    case 'gif':
+      return <Film className={className} aria-hidden />;
+    case 'audio':
+      return <Mic className={className} aria-hidden />;
+    case 'image':
+      return <ImageIcon className={className} aria-hidden />;
+    case 'video':
+      return <Video className={className} aria-hidden />;
+    case 'file':
+      return <FileText className={className} aria-hidden />;
+    default:
+      return null;
+  }
+}
+
 function ConversationListRow({
   conv,
   otherUser,
@@ -2741,6 +2846,21 @@ function ConversationListRow({
 }: ConversationListRowProps) {
   const { t } = useTranslation();
   const longPress = useLongPress(onOpenActions);
+
+  const lastMessagePreview = useMemo(
+    () =>
+      getConversationListPreview(conv.last_message, {
+        gif: t('chat.conversationPreviewGif'),
+        image: t('chat.conversationPreviewImage'),
+        video: t('chat.conversationPreviewVideo'),
+        audio: t('chat.conversationPreviewAudio'),
+        file: t('chat.conversationPreviewFile'),
+        youtube: t('chat.conversationPreviewYoutube'),
+        spotify: t('chat.conversationPreviewSpotify'),
+        link: t('chat.conversationPreviewLink'),
+      }),
+    [conv.last_message, t],
+  );
 
   return (
     <div
@@ -2794,7 +2914,7 @@ function ConversationListRow({
             ) : null}
           </div>
           <p
-            className={`truncate text-sm ${
+            className={`flex min-w-0 items-center gap-1.5 truncate text-sm ${
               isTyping
                 ? 'italic text-[#5865f2]'
                 : unreadCount > 0
@@ -2802,7 +2922,18 @@ function ConversationListRow({
                   : 'text-gray-500 dark:text-gray-400'
             }`}
           >
-            {isTyping ? t('chat.typingPreview') : conv.last_message || t('chat.noMessagesYet')}
+            {isTyping ? (
+              t('chat.typingPreview')
+            ) : lastMessagePreview.text ? (
+              <>
+                {lastMessagePreview.icon ? (
+                  <ConversationPreviewIcon kind={lastMessagePreview.icon} />
+                ) : null}
+                <span className="truncate">{lastMessagePreview.text}</span>
+              </>
+            ) : (
+              t('chat.noMessagesYet')
+            )}
           </p>
         </div>
       </div>

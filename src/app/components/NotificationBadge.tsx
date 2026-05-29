@@ -1,4 +1,5 @@
 import React from 'react';
+import { Volume2 } from 'lucide-react';
 
 interface NotificationBadgeProps {
   count: number;
@@ -22,6 +23,26 @@ export function NotificationBadge({
       aria-label={`${label} unread`}
     >
       {label}
+    </span>
+  );
+}
+
+/** Top-left rail indicator: someone is in a group voice channel (same shell as NotificationBadge). */
+export function VoiceActiveBadge({
+  ariaLabel,
+  className = '',
+  borderClassName = 'border-[#1e1f22]',
+}: {
+  ariaLabel: string;
+  className?: string;
+  borderClassName?: string;
+}) {
+  return (
+    <span
+      className={`pointer-events-none absolute -top-1.5 -left-1.5 z-20 flex h-5 min-w-[1.25rem] items-center justify-center rounded-full border-2 bg-[#23a559] px-1 text-[11px] font-bold leading-none text-white shadow-sm ${borderClassName} ${className}`}
+      aria-label={ariaLabel}
+    >
+      <Volume2 className="h-3 w-3 shrink-0" strokeWidth={2.5} aria-hidden />
     </span>
   );
 }
