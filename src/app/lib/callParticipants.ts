@@ -73,14 +73,15 @@ export function dedupeCallParticipants(
   return deduped;
 }
 
-/** Only show remotes on the call stage once they are actually in the media session. */
+/** Show remotes on the call stage when they are known (1:1 setup) or present in Jitsi. */
 export function shouldShowOnCallStage(
   participant: CallParticipantLike & { isLocal?: boolean },
   remoteParticipantCount = 0,
 ): boolean {
   if (participant.isLocal) return true;
   if (participant.jitsiParticipantId) return true;
-  if (remoteParticipantCount > 0 && isProfileUserId(participant.id)) return true;
+  if (isProfileUserId(participant.id)) return true;
+  if (remoteParticipantCount > 0) return true;
   return false;
 }
 

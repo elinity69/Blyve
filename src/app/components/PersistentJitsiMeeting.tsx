@@ -1,4 +1,5 @@
-import React, { useLayoutEffect, useRef } from 'react';
+import React, { useCallback, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { JitsiCallView, type JitsiCallLayout } from './JitsiCallView';
 import type { CallMediaType, JitsiHandle } from '../lib/jitsi';
 import type { JitsiJoinCredentials } from '../lib/jitsiCall';
@@ -57,7 +58,7 @@ interface PersistentJitsiMeetingProps {
 }
 
 /**
- * Keeps a single Jitsi iframe mounted while reparenting its DOM host between PiP / embedded / fullscreen slots.
+ * Keeps a single Jitsi iframe mounted while moving it between PiP / embedded / fullscreen slots via React portals.
  */
 export function PersistentJitsiMeeting({
   visualSlotEl,
@@ -103,81 +104,73 @@ export function PersistentJitsiMeeting({
   compactControls,
   forceShowControls,
 }: PersistentJitsiMeetingProps) {
-  const hostRef = useRef<HTMLDivElement | null>(null);
-  const fallbackSlotRef = useRef<HTMLDivElement>(null);
+  const [fallbackEl, setFallbackEl] = useState<HTMLDivElement | null>(null);
+  const assignFallbackRef = useCallback((node: HTMLDivElement | null) => {
+    setFallbackEl(node);
+  }, []);
 
-  useLayoutEffect(() => {
-    const host = hostRef.current;
-    const fallback = fallbackSlotRef.current;
-    if (!host || !fallback) return;
+  const portalTarget = visualSlotEl ?? fallbackEl;
 
-    const target = visualSlotEl ?? fallback;
-
-    if (host.parentElement !== target) {
-      target.appendChild(host);
-    }
-
-    return () => {
-      // Reparent back into React's tree before unmount — appendChild to chat anchors
-      // moves nodes outside the fiber parent and causes removeChild NotFoundError.
-      if (host.parentElement !== fallback) {
-        fallback.appendChild(host);
-      }
-    };
-  }, [visualSlotEl, layout, sessionId, mountKey]);
+  const meeting = (
+    <div className="h-full w-full min-h-0 min-w-0">
+      <JitsiCallView
+        sessionId={sessionId}
+        inviteToken={inviteToken}
+        callType={callType}
+        userId={userId}
+        mountKey={mountKey}
+        layout={layout}
+        mediaActive={mediaActive}
+        streamMode={streamMode}
+        hideJitsiVideo={hideJitsiVideo}
+        connectionState={connectionState}
+        isMuted={isMuted}
+        isCameraEnabled={isCameraEnabled}
+        isScreenShareEnabled={isScreenShareEnabled}
+        overlay={overlay}
+        callPinned={callPinned}
+        onJoinResolved={onJoinResolved}
+        onJoinError={onJoinError}
+        onReady={onReady}
+        onConnectionEstablished={onConnectionEstablished}
+        onReadyToClose={onReadyToClose}
+        onParticipantCountChange={onParticipantCountChange}
+        onAudioMuteChanged={onAudioMuteChanged}
+        onVideoMuteChanged={onVideoMuteChanged}
+        onScreenShareChanged={onScreenShareChanged}
+        onScreenShareError={onScreenShareError}
+        onDominantSpeakerChanged={onDominantSpeakerChanged}
+        onConferenceJoined={onConferenceJoined}
+        onRemoteParticipantJoined={onRemoteParticipantJoined}
+        onRemoteMediaChanged={onRemoteMediaChanged}
+        onRemoteMediaSync={onRemoteMediaSync}
+        onRemoteSpeakingChanged={onRemoteSpeakingChanged}
+        onRemoteStreamActiveChange={onRemoteStreamActiveChange}
+        onExpandedChange={onExpandedChange}
+        onMinimizeToPip={onMinimizeToPip}
+        onTogglePin={onTogglePin}
+        onHangUp={onHangUp}
+        onToggleMute={onToggleMute}
+        onToggleCamera={onToggleCamera}
+        onToggleScreenShare={onToggleScreenShare}
+        compactControls={compactControls}
+        forceShowControls={forceShowControls}
+      />
+    </div>
+  );
 
   return (
     <>
       <div
-        ref={fallbackSlotRef}
-        aria-hidden
-        className="pointer-events-none fixed -left-[9999px] top-0 h-px w-px overflow-hidden opacity-0"
+        ref={assignFallbackRef}
+        aria-hidden={!!visualSlotEl}
+        className={
+          visualSlotEl
+            ? 'pointer-events-none fixed -left-[9999px] top-0 h-px w-px overflow-hidden opacity-0'
+            : 'h-full w-full min-h-0 min-w-0'
+        }
       />
-      <div ref={hostRef} className="h-full w-full min-h-0 min-w-0">
-        <JitsiCallView
-          sessionId={sessionId}
-          inviteToken={inviteToken}
-          callType={callType}
-          userId={userId}
-          mountKey={mountKey}
-          layout={layout}
-          mediaActive={mediaActive}
-          streamMode={streamMode}
-          hideJitsiVideo={hideJitsiVideo}
-          connectionState={connectionState}
-          isMuted={isMuted}
-          isCameraEnabled={isCameraEnabled}
-          isScreenShareEnabled={isScreenShareEnabled}
-          overlay={overlay}
-          callPinned={callPinned}
-          onJoinResolved={onJoinResolved}
-          onJoinError={onJoinError}
-          onReady={onReady}
-          onConnectionEstablished={onConnectionEstablished}
-          onReadyToClose={onReadyToClose}
-          onParticipantCountChange={onParticipantCountChange}
-          onAudioMuteChanged={onAudioMuteChanged}
-          onVideoMuteChanged={onVideoMuteChanged}
-          onScreenShareChanged={onScreenShareChanged}
-          onScreenShareError={onScreenShareError}
-          onDominantSpeakerChanged={onDominantSpeakerChanged}
-          onConferenceJoined={onConferenceJoined}
-          onRemoteParticipantJoined={onRemoteParticipantJoined}
-          onRemoteMediaChanged={onRemoteMediaChanged}
-          onRemoteMediaSync={onRemoteMediaSync}
-          onRemoteSpeakingChanged={onRemoteSpeakingChanged}
-          onRemoteStreamActiveChange={onRemoteStreamActiveChange}
-          onExpandedChange={onExpandedChange}
-          onMinimizeToPip={onMinimizeToPip}
-          onTogglePin={onTogglePin}
-          onHangUp={onHangUp}
-          onToggleMute={onToggleMute}
-          onToggleCamera={onToggleCamera}
-          onToggleScreenShare={onToggleScreenShare}
-          compactControls={compactControls}
-          forceShowControls={forceShowControls}
-        />
-      </div>
+      {portalTarget ? createPortal(meeting, portalTarget) : null}
     </>
   );
 }

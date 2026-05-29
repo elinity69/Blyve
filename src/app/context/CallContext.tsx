@@ -34,6 +34,10 @@ import { premiumCallAudio } from '../lib/callAudio/ensurePremiumCallAudio';
 import { isScreenShareSupported } from '../lib/screenShareSupport';
 import { filterJoinedStageParticipants, mergeCallParticipants } from '../lib/callParticipants';
 
+function isProfileUserId(id: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+}
+
 type CallUiState = 'idle' | 'calling' | 'incoming' | 'in_call' | 'ended';
 export type CallDisplayMode = 'embedded' | 'pip' | 'fullscreen';
 type TerminalCallStatus = 'ended' | 'cancelled' | 'declined' | 'missed';
@@ -329,6 +333,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   const incomingSessionIdRef = useRef<string | null>(null);
   const lastProcessedEventRef = useRef<Set<string>>(new Set());
   const joinInFlightRef = useRef(false);
+  const callTeardownRef = useRef(false);
   const incomingRingCountRef = useRef(0);
   const outgoingRingCountRef = useRef(0);
 
@@ -418,6 +423,10 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     localJitsiParticipantIdRef.current = null;
     jitsiIdToDisplayNameRef.current.clear();
     localSpeakingBroadcastRef.current = false;
+    if (dominantSpeakerClearTimeoutRef.current) {
+      window.clearTimeout(dominantSpeakerClearTimeoutRef.current);
+      dominantSpeakerClearTimeoutRef.current = null;
+    }
     for (const timeoutId of remoteSpeakingTimeoutRef.current.values()) {
       window.clearTimeout(timeoutId);
     }
@@ -594,6 +603,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
           activeCallSessionIdRef.current = callSessionId;
           pushDebug(`jitsi outgoing created session=${callSessionId}`);
           setActiveCall((prev) => (prev ? { ...prev, callSessionId } : prev));
+          await connectToJitsi(callSessionId, input.conversationId, 'audio');
 
           outgoingCallTimeoutRef.current = window.setTimeout(async () => {
             if (activeCallSessionIdRef.current !== callSessionId) return;
@@ -942,67 +952,76 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     }
   }, [incomingCall, moveToEnded, pushDebug, stopIncomingSound]);
   const hangUp = useCallback(async () => {
-    const sessionId = activeCall?.callSessionId || activeCallSessionIdRef.current;
-    const voiceChannelLeave =
-      activeCall?.isVoiceChannel && activeCall.groupId && activeCall.channelId
-        ? { groupId: activeCall.groupId, channelId: activeCall.channelId }
-        : null;
+    if (callTeardownRef.current) return;
+    callTeardownRef.current = true;
 
-    if (voiceChannelLeave) {
-      try {
-        await api.leaveVoiceChannel(voiceChannelLeave.groupId, voiceChannelLeave.channelId);
-      } catch (error) {
-        console.warn('Leave voice channel failed:', error);
+    try {
+      const sessionId = activeCall?.callSessionId || activeCallSessionIdRef.current;
+      const voiceChannelLeave =
+        activeCall?.isVoiceChannel && activeCall.groupId && activeCall.channelId
+          ? { groupId: activeCall.groupId, channelId: activeCall.channelId }
+          : null;
+
+      if (voiceChannelLeave) {
+        try {
+          await api.leaveVoiceChannel(voiceChannelLeave.groupId, voiceChannelLeave.channelId);
+        } catch (error) {
+          console.warn('Leave voice channel failed:', error);
+        }
+        await resetMedia();
+        flushSync(() => {
+          setIncomingCall(null);
+          incomingSessionIdRef.current = null;
+          setActiveCall(null);
+          activeCallSessionIdRef.current = null;
+          jitsiActiveSessionRef.current = null;
+          setSelfRole('unknown');
+          moveToEnded();
+        });
+        stopIncomingSound();
+        stopOutgoingSound();
+        setErrorMessage(null);
+        setCanRetryConnection(false);
+        pushDebug(`voice channel leave session=${sessionId || 'none'}`);
+        return;
       }
+
+      if (sessionId) {
+        const isDirectConversation =
+          Boolean(activeCall?.conversationId) &&
+          !activeCall?.isVoiceChannel &&
+          !activeCall?.groupId;
+        try {
+          if (isDirectConversation) {
+            await api.leaveCallParticipant(sessionId);
+          } else if (selfRoleRef.current === 'host') {
+            await api.endCallSession(sessionId);
+          } else {
+            await api.leaveCallParticipant(sessionId);
+          }
+        } catch (error) {
+          console.warn('Leave/end call failed:', error);
+        }
+      }
+
       await resetMedia();
-      setIncomingCall(null);
-      incomingSessionIdRef.current = null;
-      setActiveCall(null);
-      activeCallSessionIdRef.current = null;
-      jitsiActiveSessionRef.current = null;
-      setJitsiJoinRequest(null);
-      setSelfRole('unknown');
+      flushSync(() => {
+        setIncomingCall(null);
+        incomingSessionIdRef.current = null;
+        setActiveCall(null);
+        activeCallSessionIdRef.current = null;
+        jitsiActiveSessionRef.current = null;
+        setSelfRole('unknown');
+        moveToEnded();
+      });
       stopIncomingSound();
       stopOutgoingSound();
       setErrorMessage(null);
       setCanRetryConnection(false);
-      pushDebug(`voice channel leave session=${sessionId || 'none'}`);
-      moveToEnded();
-      return;
+      pushDebug(`hangup session=${sessionId || 'none'} role=${selfRoleRef.current}`);
+    } finally {
+      callTeardownRef.current = false;
     }
-
-    if (sessionId) {
-      const isDirectConversation =
-        Boolean(activeCall?.conversationId) &&
-        !activeCall?.isVoiceChannel &&
-        !activeCall?.groupId;
-      try {
-        if (isDirectConversation) {
-          await api.leaveCallParticipant(sessionId);
-        } else if (selfRoleRef.current === 'host') {
-          await api.endCallSession(sessionId);
-        } else {
-          await api.leaveCallParticipant(sessionId);
-        }
-      } catch (error) {
-        console.warn('Leave/end call failed:', error);
-      }
-    }
-
-    await resetMedia();
-    setIncomingCall(null);
-    incomingSessionIdRef.current = null;
-    setActiveCall(null);
-    activeCallSessionIdRef.current = null;
-    jitsiActiveSessionRef.current = null;
-    setJitsiJoinRequest(null);
-    setSelfRole('unknown');
-    stopIncomingSound();
-    stopOutgoingSound();
-    setErrorMessage(null);
-    setCanRetryConnection(false);
-    pushDebug(`hangup session=${sessionId || 'none'} role=${selfRoleRef.current}`);
-    moveToEnded();
   }, [
     activeCall?.callSessionId,
     activeCall?.channelId,
@@ -1220,6 +1239,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const handleJitsiReadyToClose = useCallback(() => {
+    if (callTeardownRef.current || stateRef.current === 'idle') return;
     void hangUp();
   }, [hangUp]);
 
@@ -1270,6 +1290,40 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     [activeCall?.participants]
   );
 
+  const broadcastSpeakingToRemotes = useCallback((speaking: boolean, levelDb = -35) => {
+    if (isMutedRef.current) return;
+    const handle = jitsiHandleRef.current;
+    if (!handle) return;
+
+    const now = Date.now();
+    if (speaking) {
+      if (!localSpeakingBroadcastRef.current || now - lastSpeakingBroadcastAtRef.current > 250) {
+        localSpeakingBroadcastRef.current = true;
+        lastSpeakingBroadcastAtRef.current = now;
+        handle.broadcastSpeakingState(true, levelDb);
+      }
+      return;
+    }
+
+    if (localSpeakingBroadcastRef.current) {
+      localSpeakingBroadcastRef.current = false;
+      handle.broadcastSpeakingState(false, levelDb);
+    }
+  }, []);
+
+  const markLocalSpeaking = useCallback(() => {
+    setSpeakingParticipantId('__local__');
+
+    const existing = remoteSpeakingTimeoutRef.current.get('__local__');
+    if (existing) window.clearTimeout(existing);
+    const timeoutId = window.setTimeout(() => {
+      setSpeakingParticipantId((prev) => (prev === '__local__' ? null : prev));
+      remoteSpeakingTimeoutRef.current.delete('__local__');
+      broadcastSpeakingToRemotes(false);
+    }, 900);
+    remoteSpeakingTimeoutRef.current.set('__local__', timeoutId);
+  }, [broadcastSpeakingToRemotes]);
+
   const markRemoteSpeaking = useCallback(
     (partyId: string) => {
       setSpeakingParticipantId(partyId);
@@ -1294,12 +1348,21 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
 
       if (!jitsiParticipantId) {
         dominantSpeakerClearTimeoutRef.current = window.setTimeout(() => {
-          setSpeakingParticipantId((prev) => (prev === '__local__' ? prev : null));
+          setSpeakingParticipantId((prev) => {
+            if (prev === '__local__') {
+              broadcastSpeakingToRemotes(false);
+            }
+            return prev === '__local__' ? null : prev;
+          });
         }, 500);
         return;
       }
 
-      if (jitsiParticipantId === localJitsiParticipantIdRef.current) return;
+      if (jitsiParticipantId === localJitsiParticipantIdRef.current) {
+        markLocalSpeaking();
+        broadcastSpeakingToRemotes(true);
+        return;
+      }
 
       const partyId = resolveSpeakingParticipantId(jitsiParticipantId);
       if (!partyId || partyId === '__local__') return;
@@ -1316,7 +1379,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         return { ...prev, participants: nextParticipants };
       });
     },
-    [markRemoteSpeaking, resolveSpeakingParticipantId]
+    [broadcastSpeakingToRemotes, markLocalSpeaking, markRemoteSpeaking, resolveSpeakingParticipantId]
   );
 
   const handleJitsiRemoteSpeakingChanged = useCallback(
@@ -1354,7 +1417,6 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   const handleJitsiRemoteParticipantJoined = useCallback(
     (payload: { id?: string; displayName?: string }) => {
       const displayName = payload.displayName?.trim();
-      if (!displayName) return;
 
       if (
         payload.id &&
@@ -1365,20 +1427,35 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       }
 
       const localName = localIdentity?.trim().toLowerCase();
-      if (localName && displayName.toLowerCase() === localName) {
+      if (localName && displayName && displayName.toLowerCase() === localName) {
         return;
       }
 
       if (payload.id) {
-        jitsiIdToDisplayNameRef.current.set(payload.id, displayName);
+        jitsiIdToDisplayNameRef.current.set(
+          payload.id,
+          displayName || jitsiIdToDisplayNameRef.current.get(payload.id) || 'Participant',
+        );
       }
+
+      if (!displayName && !payload.id) return;
 
       setActiveCall((prev) => {
         if (!prev) return prev;
 
+        const remotes = prev.participants;
+        const fallbackName =
+          displayName ||
+          (remotes.length === 1 ? remotes[0].name : undefined) ||
+          'Participant';
+
         const incoming: CallParty = {
-          id: payload.id || displayName,
-          name: displayName,
+          id:
+            remotes.length === 1 && isProfileUserId(remotes[0].id)
+              ? remotes[0].id
+              : payload.id || fallbackName,
+          name: fallbackName,
+          avatarUrl: remotes.length === 1 ? remotes[0].avatarUrl : undefined,
           jitsiParticipantId: payload.id,
         };
 
@@ -1547,7 +1624,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     setCallHostAnchorEl(element);
   }, []);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (state !== 'in_call') {
       setCallHostAnchorEl(null);
     }
