@@ -132,7 +132,7 @@ async function handleUploadPresignInner(c: Context, getSupabase: (c: Context) =>
 
   const ext = extensionFromMime(mimeType);
   const storageKey = buildStorageKey(user.id, ext);
-  const { uploadUrl, expiresIn } = await createPresignedPutUrl(
+  const { uploadUrl, expiresIn, headers: putHeaders } = await createPresignedPutUrl(
     r2,
     storageKey,
     mimeType,
@@ -173,9 +173,7 @@ async function handleUploadPresignInner(c: Context, getSupabase: (c: Context) =>
     attachmentId: attachment.id,
     uploadUrl,
     method: "PUT",
-    headers: {
-      "Content-Type": mimeType,
-    },
+    headers: putHeaders,
     storageKey,
     expiresIn,
     kind: validation.kind,

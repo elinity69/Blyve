@@ -143,12 +143,25 @@ export function buildPublicUrl(config: R2Config, storageKey: string): string | n
   return `${base}/${storageKey}`;
 }
 
+export function buildPresignedPutHeaders(
+  uploadUrl: string,
+  mimeType: string,
+): Record<string, string> {
+  const signed = new URL(uploadUrl).searchParams.get("X-Amz-SignedHeaders") ?? "";
+  const names = signed.split(";").filter(Boolean);
+  const headers: Record<string, string> = {};
+  if (names.includes("content-type") && mimeType) {
+    headers["Content-Type"] = mimeType;
+  }
+  return headers;
+}
+
 export async function createPresignedPutUrl(
   config: R2Config,
   storageKey: string,
   mimeType: string,
   sizeBytes: number,
-): Promise<{ uploadUrl: string; expiresIn: number }> {
+): Promise<{ uploadUrl: string; expiresIn: number; headers: Record<string, string> }> {
   const client = createS3Client(config);
   const command = new PutObjectCommand({
     Bucket: config.bucketName,
@@ -159,7 +172,11 @@ export async function createPresignedPutUrl(
   const uploadUrl = await getSignedUrl(client, command, {
     expiresIn: PRESIGN_EXPIRES_SEC,
   });
-  return { uploadUrl, expiresIn: PRESIGN_EXPIRES_SEC };
+  return {
+    uploadUrl,
+    expiresIn: PRESIGN_EXPIRES_SEC,
+    headers: buildPresignedPutHeaders(uploadUrl, mimeType),
+  };
 }
 
 export async function objectExistsInR2(

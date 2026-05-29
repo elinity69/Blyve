@@ -450,7 +450,7 @@ export class ApiClient {
       attachmentId: string;
       uploadUrl: string;
       method: 'PUT';
-      headers: { 'Content-Type': string };
+      headers: Record<string, string>;
       storageKey: string;
       expiresIn: number;
       kind: string;
