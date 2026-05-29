@@ -46,9 +46,10 @@ export function ChatMessageBody({
             <MessageReplyQuote quote={replyQuote} isMe={isMe} />
           </div>
         ) : null}
-        <MessageBubble position={bubblePosition} isMe={isMe} time={messageTime} isRead={isRead}>
+        <MessageBubble position={bubblePosition} isMe={isMe}>
           <MessageEmbedList embeds={embeds} inBubble isMe={isMe} />
         </MessageBubble>
+        <MessageEmbedTimeFooter time={messageTime} isMe={isMe} isRead={isRead} />
       </div>
     );
   }
