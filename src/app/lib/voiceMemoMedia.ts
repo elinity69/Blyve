@@ -1,3 +1,4 @@
+import { premiumCallAudio } from './callAudio/ensurePremiumCallAudio';
 import { markJitsiMicGranted, shouldSkipJitsiPrejoin } from './jitsiMicStorage';
 import {
   checkMicrophonePermission,
@@ -25,6 +26,10 @@ export function releaseVoiceMemoStream(): void {
  */
 export async function acquireVoiceMemoStream(): Promise<MediaStream | null> {
   if (typeof window === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
+    return null;
+  }
+
+  if (premiumCallAudio.isSessionActive()) {
     return null;
   }
 

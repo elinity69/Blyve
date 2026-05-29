@@ -51,6 +51,22 @@ export function assertServerAuthorizedRoom(roomName: string, sessionId: string):
   }
 }
 
+/**
+ * JaaS loads external_api.js from https://8x8.vc/{appId}/external_api.js — the API
+ * roomName must be the server slug only, not `{appId}/{slug}` (otherwise vmms 404).
+ */
+export function resolveJitsiExternalRoomName(roomName: string, jitsiAppId?: string): string {
+  const normalized = roomName.trim();
+  const appId = jitsiAppId?.trim();
+  if (!appId) return normalized;
+
+  const prefix = `${appId}/`;
+  if (normalized.startsWith(prefix)) {
+    return normalized.slice(prefix.length);
+  }
+  return normalized;
+}
+
 function parseJitsiJoinPayload(
   payload: Record<string, unknown> | null | undefined,
   sessionId: string,
@@ -120,6 +136,16 @@ export function toJitsiCallError(error: unknown): string {
   }
   if (lower.includes('invalid invite token') || lower.includes('invite token expired')) {
     return i18n.t('call.invalidInviteLink');
+  }
+  if (
+    lower.includes('conference not found') ||
+    lower.includes('room does not exist') ||
+    lower.includes('not allowed to join')
+  ) {
+    return i18n.t('call.roomUnavailable');
+  }
+  if (lower.includes('unauthorized') || lower.includes('authentication')) {
+    return i18n.t('call.joinUnauthorized');
   }
   return message || i18n.t('call.genericError');
 }

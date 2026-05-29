@@ -36,6 +36,22 @@ export function ChatMessageBody({
     : CHAT_MESSAGE_BUBBLE_TEXT_CLASS;
 
   const mediaOnly = !showText && embeds.length > 0;
+  const voiceOnly = mediaOnly && embeds.length === 1 && embeds[0]?.kind === 'audio';
+
+  if (voiceOnly) {
+    return (
+      <div className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}>
+        {replyQuote ? (
+          <div className="mb-1 max-w-full">
+            <MessageReplyQuote quote={replyQuote} isMe={isMe} />
+          </div>
+        ) : null}
+        <MessageBubble position={bubblePosition} isMe={isMe} time={messageTime} isRead={isRead}>
+          <MessageEmbedList embeds={embeds} inBubble isMe={isMe} />
+        </MessageBubble>
+      </div>
+    );
+  }
 
   if (mediaOnly) {
     return (
@@ -46,7 +62,7 @@ export function ChatMessageBody({
           </div>
         ) : null}
         <div className="max-w-full min-w-0 sm:max-w-[min(100%,20rem)]">
-          <MessageEmbedList embeds={embeds} inBubble isMe={isMe} />
+          <MessageEmbedList embeds={embeds} isMe={isMe} />
         </div>
         <MessageEmbedTimeFooter time={messageTime} isMe={isMe} isRead={isRead} />
       </div>

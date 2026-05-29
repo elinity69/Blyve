@@ -353,6 +353,16 @@ html[data-swipe-back-lock='1'] [data-chat-messages-scroll] {
   overscroll-behavior: none;
 }
 
+/* Mobile messages preview: fixed shell, scroll only inside the list column */
+[data-messages-preview-shell] {
+  overscroll-behavior: none;
+}
+
+[data-messages-preview-scroll] {
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
 /* Compact voice message player inside chat bubbles */
 .voice-message-audio {
   display: block;

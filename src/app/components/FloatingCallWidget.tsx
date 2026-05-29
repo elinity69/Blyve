@@ -236,10 +236,12 @@ export function FloatingCallWidget({
     originX: number;
     originY: number;
     moved: boolean;
+    pointerId: number | null;
   } | null>(null);
   const pipContentRef = useRef<HTMLDivElement | null>(null);
   const jitsiSurfaceRef = useRef<HTMLDivElement | null>(null);
   const hasStreamRef = useRef(false);
+  const lastPipOpenTapAtRef = useRef(0);
   const onEnterFullscreenRef = useRef(onEnterFullscreen);
   const onOpenInChatRef = useRef(onOpenInChat);
   const onClosePipRef = useRef(onClosePip);
@@ -247,6 +249,10 @@ export function FloatingCallWidget({
   onEnterFullscreenRef.current = onEnterFullscreen;
   onOpenInChatRef.current = onOpenInChat;
   onClosePipRef.current = onClosePip;
+
+  const openCallWindowFromPip = useCallback(() => {
+    onOpenInChatRef.current();
+  }, []);
 
   const displayParticipants = stageParticipants;
 
@@ -343,49 +349,22 @@ export function FloatingCallWidget({
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  useEffect(() => {
-    const element = pipContentRef.current;
-    if (!element || isFullscreen) return;
-
-    const handleDoubleClick = (event: MouseEvent) => {
-      const target = event.target as HTMLElement;
-      if (target.closest('button, [data-call-controls]')) return;
-      event.preventDefault();
-      event.stopPropagation();
-      onOpenInChatRef.current();
-    };
-
-    element.addEventListener('dblclick', handleDoubleClick, true);
-
-    let lastTap = 0;
-    const handleTouchEnd = (event: TouchEvent) => {
-      const target = event.target as HTMLElement;
-      if (target.closest('button, [data-call-controls]')) return;
-      const now = Date.now();
-      if (now - lastTap < 400) {
-        lastTap = 0;
-        event.preventDefault();
-        onOpenInChatRef.current();
+  const registerPipOpenTap = useCallback(
+    (event: React.MouseEvent | React.PointerEvent) => {
+      if ((event.target as HTMLElement).closest('button, [data-call-controls], [data-pip-avatar]')) {
         return;
       }
-      lastTap = now;
-    };
-
-    element.addEventListener('touchend', handleTouchEnd, { capture: true });
-    return () => {
-      element.removeEventListener('dblclick', handleDoubleClick, true);
-      element.removeEventListener('touchend', handleTouchEnd, { capture: true });
-    };
-  }, [isFullscreen]);
-
-  const handleDoubleActivate = useCallback(
-    (event: React.MouseEvent) => {
-      if ((event.target as HTMLElement).closest('button, [data-call-controls]')) return;
-      event.preventDefault();
-      event.stopPropagation();
-      onOpenInChat();
+      const now = Date.now();
+      if (now - lastPipOpenTapAtRef.current < 360) {
+        lastPipOpenTapAtRef.current = 0;
+        event.preventDefault();
+        event.stopPropagation();
+        openCallWindowFromPip();
+        return;
+      }
+      lastPipOpenTapAtRef.current = now;
     },
-    [onOpenInChat]
+    [openCallWindowFromPip]
   );
 
   const openPipVolumeMenu = useCallback(
@@ -423,7 +402,7 @@ export function FloatingCallWidget({
 
   const handleDragPointerDown = (event: React.PointerEvent) => {
     if (isFullscreen) return;
-    if ((event.target as HTMLElement).closest('button, [data-call-controls]')) {
+    if ((event.target as HTMLElement).closest('button, [data-call-controls], [data-pip-avatar]')) {
       return;
     }
     dragRef.current = {
@@ -432,24 +411,48 @@ export function FloatingCallWidget({
       originX: position.x,
       originY: position.y,
       moved: false,
+      pointerId: event.pointerId,
     };
-    (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
   };
 
   const handleDragPointerMove = (event: React.PointerEvent) => {
     if (!dragRef.current || isFullscreen) return;
     const dx = event.clientX - dragRef.current.startX;
     const dy = event.clientY - dragRef.current.startY;
-    if (Math.abs(dx) > 4 || Math.abs(dy) > 4) {
+    if (!dragRef.current.moved && (Math.abs(dx) > 6 || Math.abs(dy) > 6)) {
       dragRef.current.moved = true;
+      const handle = event.currentTarget as HTMLElement;
+      if (dragRef.current.pointerId != null) {
+        try {
+          handle.setPointerCapture(dragRef.current.pointerId);
+        } catch {
+          // best effort
+        }
+      }
     }
+    if (!dragRef.current.moved) return;
     setPosition(clampPosition(dragRef.current.originX + dx, dragRef.current.originY + dy));
   };
 
   const handleDragPointerUp = (event: React.PointerEvent) => {
     if (!dragRef.current) return;
+    const wasDrag = dragRef.current.moved;
     dragRef.current = null;
+    if (wasDrag) {
+      event.stopPropagation();
+      return;
+    }
+    registerPipOpenTap(event);
+  };
+
+  const handlePipDoubleClick = (event: React.MouseEvent) => {
+    if ((event.target as HTMLElement).closest('button, [data-call-controls], [data-pip-avatar]')) {
+      return;
+    }
+    event.preventDefault();
     event.stopPropagation();
+    lastPipOpenTapAtRef.current = 0;
+    openCallWindowFromPip();
   };
 
   const avatarOverlay =
@@ -561,12 +564,12 @@ export function FloatingCallWidget({
           {!isFullscreen ? (
             <div
               data-pip-drag-handle
-              className="absolute inset-0 z-[35] cursor-grab touch-none active:cursor-grabbing"
+              className="absolute inset-0 z-[35] cursor-grab touch-manipulation active:cursor-grabbing"
               onPointerDown={handleDragPointerDown}
               onPointerMove={handleDragPointerMove}
               onPointerUp={handleDragPointerUp}
               onPointerCancel={handleDragPointerUp}
-              onDoubleClick={handleDoubleActivate}
+              onDoubleClick={handlePipDoubleClick}
             />
           ) : null}
           {!isFullscreen ? (

@@ -65,6 +65,12 @@ export function NavigationStack({ children, onBack }: NavigationStackProps) {
     directionLockedRef.current = false;
     isVerticalScrollRef.current = false;
     setSwipeBackLock(false);
+
+    // Swipe-back only from the left edge — avoids translating the shell during list scroll.
+    if (startX > 48) {
+      directionLockedRef.current = true;
+      isVerticalScrollRef.current = true;
+    }
   };
 
   const handleTouchMove = (e: React.TouchEvent) => {
@@ -81,7 +87,7 @@ export function NavigationStack({ children, onBack }: NavigationStackProps) {
       if (absDeltaX > 10 || absDeltaY > 10) {
         directionLockedRef.current = true;
 
-        if (absDeltaY > absDeltaX * 1.3) {
+        if (absDeltaY > absDeltaX * 1.85) {
           isVerticalScrollRef.current = true;
           setSwipeBackLock(false);
           return;
@@ -191,15 +197,16 @@ export function NavigationStack({ children, onBack }: NavigationStackProps) {
         onTouchCancel={handleTouchEnd}
         style={{
           position: 'fixed',
-          top: `var(${MOBILE_VV_CSS.offsetTop}, 0px)`,
+          top: 0,
           left: 0,
           right: 0,
           height: `var(${MOBILE_VV_CSS.height}, 100dvh)`,
+          paddingBottom: `var(${MOBILE_VV_CSS.bottomInset}, 0px)`,
           bottom: 'auto',
           zIndex: 10,
           backgroundColor: 'var(--color-background, #0d0d0d)',
           boxShadow: '-5px 0 20px rgba(0,0,0,0.15)',
-          transform: `translateX(${translateX}px)`,
+          transform: translateX > 0 ? `translateX(${translateX}px)` : undefined,
           willChange: swipeBackLocked ? 'transform' : 'auto',
           overflow: 'hidden',
           touchAction: swipeBackLocked ? 'none' : 'pan-y',

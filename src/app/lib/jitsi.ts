@@ -1,4 +1,4 @@
-import { assertServerAuthorizedRoom } from './jitsiCall';
+import { assertServerAuthorizedRoom, resolveJitsiExternalRoomName } from './jitsiCall';
 import { markJitsiMicGranted } from './jitsiMicStorage';
 import { isMobileWebBrowser, isScreenShareSupported } from './screenShareSupport';
 import { BLYVE_MEDIA_MESSAGE, BLYVE_SPEAKING_MESSAGE, parseBlyveMediaMessage, parseBlyveSpeakingMessage } from './callAudioLevels';
@@ -285,17 +285,18 @@ export async function mountJitsiMeetingFromServerJoin(
   const { container, sessionId, domain, roomName, displayName, callType, userId, jwt, jitsiAppId, skipInitialGUM } =
     options;
   const resolvedDomain = domain.trim();
-  const resolvedRoom = roomName.trim();
+  const authorizedRoom = roomName.trim();
   const resolvedSessionId = sessionId.trim();
 
   if (!resolvedSessionId) {
     throw new Error('Jitsi session id is required for authorized mount');
   }
-  if (!resolvedDomain || !resolvedRoom) {
+  if (!resolvedDomain || !authorizedRoom) {
     throw new Error('Jitsi domain and room must come from authorized join response');
   }
 
-  assertServerAuthorizedRoom(resolvedRoom, resolvedSessionId);
+  assertServerAuthorizedRoom(authorizedRoom, resolvedSessionId);
+  const resolvedRoom = resolveJitsiExternalRoomName(authorizedRoom, jitsiAppId);
   const resolvedJwt = jwt.trim();
   if (!resolvedJwt) {
     throw new Error(
@@ -606,8 +607,10 @@ export async function mountJitsiMeetingFromServerJoin(
       if (
         lower.includes('not allowed') ||
         lower.includes('room does not exist') ||
+        lower.includes('conference not found') ||
         lower.includes('connectionerror') ||
         lower.includes('authentication') ||
+        lower.includes('unauthorized') ||
         lower.includes('jwt') ||
         lower.includes('token')
       ) {

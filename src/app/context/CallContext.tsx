@@ -33,6 +33,7 @@ import { markJitsiMicGranted, shouldSkipJitsiPrejoin } from '../lib/jitsiMicStor
 import { premiumCallAudio } from '../lib/callAudio/ensurePremiumCallAudio';
 import { isScreenShareSupported } from '../lib/screenShareSupport';
 import { filterJoinedStageParticipants, mergeCallParticipants } from '../lib/callParticipants';
+import { releaseVoiceMemoStream } from '../lib/voiceMemoMedia';
 
 function isProfileUserId(id: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
@@ -64,6 +65,7 @@ function notifyMicrophoneAccessResult(micAccess: MicrophoneAccessResult) {
 }
 
 async function ensureMicrophoneForCall(): Promise<void> {
+  releaseVoiceMemoStream();
   if (shouldSkipJitsiPrejoin()) {
     markJitsiMicGranted();
     await premiumCallAudio.prepareForCall();

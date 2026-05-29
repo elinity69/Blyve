@@ -1,6 +1,7 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { AnimatePresence } from 'framer-motion';
 import { NavigationStack } from '../components/NavigationStack';
+import { MOBILE_VV_CSS } from '../lib/mobileViewport';
 
 interface UseEdgeBackNavigationProps {
   baseContent: React.ReactNode;
@@ -122,6 +123,7 @@ export function useEdgeBackNavigation({
     return (
       <>
         <div
+          data-messages-preview-shell
           onTouchStart={handleBaseTouchStart}
           onTouchMove={handleBaseTouchMove}
           onTouchEnd={handleBaseTouchEnd}
@@ -131,12 +133,12 @@ export function useEdgeBackNavigation({
             top: 0,
             left: 0,
             right: 0,
-            bottom: 0,
+            height: `var(${MOBILE_VV_CSS.height}, 100dvh)`,
+            paddingBottom: `var(${MOBILE_VV_CSS.bottomInset}, 0px)`,
             zIndex: 0,
-            transform: 'translateX(0)',
             pointerEvents: hasOverlay ? 'none' : 'auto',
             touchAction: hasOverlay ? 'none' : 'pan-y',
-            willChange: hasOverlay ? 'auto' : 'auto',
+            overflow: 'hidden',
           }}
         >
           {baseContent}
