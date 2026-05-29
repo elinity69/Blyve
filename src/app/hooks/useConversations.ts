@@ -27,20 +27,7 @@ export function useConversations() {
 
       if (convsError) throw convsError;
 
-      // 2. Load My Views (Last time I opened each chat)
-      const { data: viewsData, error: viewsError } = await supabase
-        .from('conversation_views')
-        .select('conversation_id, last_viewed_at')
-        .eq('user_id', user.id);
-
-      if (viewsError) {
-        console.warn('conversation_views:', viewsError.message);
-      }
-
-      const viewsMap = new Map();
-      viewsData?.forEach((v) => viewsMap.set(v.conversation_id, v.last_viewed_at));
-
-      // 3. Load Blocked Users (two queries — stable vs .or() on some PostgREST versions)
+      // 2. Load Blocked Users (two queries — stable vs .or() on some PostgREST versions)
       const [asBlocker, asBlocked] = await Promise.all([
         supabase
           .from('blocked_users')
@@ -94,45 +81,25 @@ export function useConversations() {
         }
       }
 
-      const enrichedConversations = await Promise.all(
-        visibleConvs.map(async (conv) => {
-          const otherUserId = conv.user1_id === user.id ? conv.user2_id : conv.user1_id;
-          const profile = profileMap.get(otherUserId);
-          const lastViewedAt = viewsMap.get(conv.id);
+      const enrichedConversations = visibleConvs.map((conv) => {
+        const otherUserId = conv.user1_id === user.id ? conv.user2_id : conv.user1_id;
+        const profile = profileMap.get(otherUserId);
 
-          let unreadCount = 0;
-          if (conv.last_message) {
-            const query = supabase
-              .from('messages')
-              .select('*', { count: 'exact', head: true })
-              .eq('conversation_id', conv.id)
-              .neq('sender_id', user.id);
-
-            if (lastViewedAt) {
-              query.gt('created_at', lastViewedAt);
-            }
-
-            const { count } = await query;
-            unreadCount = count || 0;
-          }
-
-          return {
-            ...conv,
-            other_user: {
-              id: otherUserId,
-              name: profile?.display_name || profile?.name || 'Unknown',
-              display_name: profile?.display_name || profile?.name || undefined,
-              username: profile?.username || undefined,
-              imageUrl: profile?.images?.[0] || profile?.avatar_url,
-              is_online: false,
-              ghost_mode: profile?.ghost_mode || false,
-              age: profile?.age,
-            },
-            unread_count: unreadCount,
-            has_messages: !!conv.last_message,
-          };
-        })
-      );
+        return {
+          ...conv,
+          other_user: {
+            id: otherUserId,
+            name: profile?.display_name || profile?.name || 'Unknown',
+            display_name: profile?.display_name || profile?.name || undefined,
+            username: profile?.username || undefined,
+            imageUrl: profile?.images?.[0] || profile?.avatar_url,
+            is_online: false,
+            ghost_mode: profile?.ghost_mode || false,
+            age: profile?.age,
+          },
+          has_messages: !!conv.last_message,
+        };
+      });
 
       const validConvs = enrichedConversations.filter(Boolean) as Conversation[];
 
@@ -249,16 +216,6 @@ export function useConversations() {
               scheduleReload();
             }
           }
-        )
-        .on(
-          'postgres_changes',
-          {
-            event: '*',
-            schema: 'public',
-            table: 'conversation_views',
-            filter: `user_id=eq.${user.id}`,
-          },
-          () => scheduleReload()
         )
         .subscribe((status) => {
           console.log(`📡 Conversation preview channel: ${status}`);

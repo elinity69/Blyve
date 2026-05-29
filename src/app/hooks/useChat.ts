@@ -5,7 +5,11 @@ import { getCachedUser, resolveAuthUser, subscribeAuth } from '../lib/authSessio
 import { api } from '../lib/api';
 import { useAppData } from '../context/AppDataContext';
 import { RealtimeChannel } from '@supabase/supabase-js';
-import { dispatchConversationPreviewUpdate, dispatchUnreadRefreshRequest } from '../lib/messageEvents';
+import {
+  dispatchConversationPreviewUpdate,
+  dispatchConversationUnreadCleared,
+  dispatchUnreadRefreshRequest,
+} from '../lib/messageEvents';
 import { NotificationManager } from '../lib/notifications';
 import { getUnreadBatchKey, isMessageReadReceiptUpdate } from '../lib/messageReadReceipts';
 import {
@@ -44,7 +48,6 @@ export interface Conversation {
     is_online?: boolean;
     age?: number;
   };
-  unread_count: number;
   has_messages: boolean;
 }
 
@@ -108,10 +111,11 @@ export function useChat(conversationId: string | null, onMessageSent?: (conversa
     if (ghostModeRef.current) return;
 
     const unreadKey = getUnreadBatchKey(messagesRef.current, userId);
-    if (!unreadKey) return;
-    if (lastPatchedUnreadKeyRef.current === unreadKey) return;
+    const syncedKey = unreadKey || `synced:${conversationId}`;
+    if (lastPatchedUnreadKeyRef.current === syncedKey) return;
 
     markAsReadInFlightRef.current = true;
+    dispatchConversationUnreadCleared(conversationId);
 
     try {
       const user = await resolveAuthUser();
@@ -140,14 +144,16 @@ export function useChat(conversationId: string | null, onMessageSent?: (conversa
         throw updateError;
       }
 
-      lastPatchedUnreadKeyRef.current = unreadKey;
+      lastPatchedUnreadKeyRef.current = syncedKey;
 
-      setMessages((prev) => applyReadStateToDmMessages(prev, conversationId, user.id, readAt));
+      if (unreadKey) {
+        setMessages((prev) => applyReadStateToDmMessages(prev, conversationId, user.id, readAt));
 
-      queryClient.setQueryData<Message[]>(dmMessagesQueryKey(conversationId), (cached) => {
-        if (!cached?.length) return cached;
-        return applyReadStateToDmMessages(cached, conversationId, user.id, readAt);
-      });
+        queryClient.setQueryData<Message[]>(dmMessagesQueryKey(conversationId), (cached) => {
+          if (!cached?.length) return cached;
+          return applyReadStateToDmMessages(cached, conversationId, user.id, readAt);
+        });
+      }
 
       dispatchUnreadRefreshRequest({ exceptConversationId: conversationId });
     } catch (err) {

@@ -1784,7 +1784,10 @@ export function MessagesScreen() {
               <div className="divide-y divide-gray-200 dark:divide-white/5">
                 {conversations.map((conv) => {
                   const otherUser = conv.other_user;
-                  const unreadCount = unreadByConversation[conv.id] || 0;
+                  const unreadCount =
+                    conv.id === selectedConversationId
+                      ? 0
+                      : unreadByConversation[conv.id] || 0;
                   const imageUrl = otherUser.imageUrl ? getOptimizedImageUrl(otherUser.imageUrl, 200) : undefined;
                   const isSelected = conv.id === selectedConversationId;
                   const actionUser = {

@@ -21,15 +21,31 @@ export function dispatchConversationPreviewUpdate(
 import { NotificationManager } from './notifications';
 
 let lastUnreadRefreshDispatchAt = 0;
+let lastUnreadClearDispatchAt = 0;
+
+/** Optimistically zero a conversation in UnreadContext (no server refetch). */
+export function dispatchConversationUnreadCleared(conversationId: string) {
+  const now = Date.now();
+  if (now - lastUnreadClearDispatchAt < 100) {
+    return;
+  }
+  lastUnreadClearDispatchAt = now;
+  window.dispatchEvent(
+    new CustomEvent('conversation-unread-cleared', {
+      detail: { conversationId },
+    })
+  );
+}
 
 export function dispatchUnreadRefreshRequest(options?: {
-  /** Skip list-wide unread refetch while this DM is open (prevents remount/refetch loops). */
+  /** While this DM is open: clear local unread only (no list refetch — avoids loops). */
   exceptConversationId?: string;
 }) {
   if (
     options?.exceptConversationId &&
     NotificationManager.getActiveConversationId() === options.exceptConversationId
   ) {
+    dispatchConversationUnreadCleared(options.exceptConversationId);
     return;
   }
 

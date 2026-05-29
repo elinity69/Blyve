@@ -320,7 +320,6 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
             is_online: false,
             ghost_mode: profile?.ghost_mode || false,
           },
-          unread_count: 0,
           has_messages: !!conv.last_message,
         };
       });
