@@ -397,10 +397,10 @@ export function JitsiCallView({
 
     return () => {
       disposed = true;
-      handleRef.current?.dispose();
+      const handle = handleRef.current;
       handleRef.current = null;
       remoteCountRef.current = 0;
-      container.innerHTML = '';
+      handle?.dispose();
     };
   }, [credentials, callType, userId]);
 

@@ -108,14 +108,22 @@ export function PersistentJitsiMeeting({
 
   useLayoutEffect(() => {
     const host = hostRef.current;
-    if (!host) return;
+    const fallback = fallbackSlotRef.current;
+    if (!host || !fallback) return;
 
-    const target = visualSlotEl ?? fallbackSlotRef.current;
-    if (!target) return;
+    const target = visualSlotEl ?? fallback;
 
     if (host.parentElement !== target) {
       target.appendChild(host);
     }
+
+    return () => {
+      // Reparent back into React's tree before unmount — appendChild to chat anchors
+      // moves nodes outside the fiber parent and causes removeChild NotFoundError.
+      if (host.parentElement !== fallback) {
+        fallback.appendChild(host);
+      }
+    };
   }, [visualSlotEl, layout, sessionId, mountKey]);
 
   return (

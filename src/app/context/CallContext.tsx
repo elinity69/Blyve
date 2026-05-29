@@ -10,6 +10,7 @@
   useRef,
   useState,
 } from 'react';
+import { flushSync } from 'react-dom';
 import { supabase } from '../lib/supabase';
 import { getCachedUser, subscribeAuth } from '../lib/authSession';
 import { api } from '../lib/api';
@@ -383,7 +384,9 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     jitsiHandleRef.current?.dispose();
     jitsiHandleRef.current = null;
     jitsiActiveSessionRef.current = null;
-    setJitsiJoinRequest(null);
+    flushSync(() => {
+      setJitsiJoinRequest(null);
+    });
 
     setConnectionState('disconnected');
     setIsMuted(false);
@@ -1189,7 +1192,9 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     (error: unknown) => {
       jitsiHandleRef.current?.dispose();
       jitsiHandleRef.current = null;
-      setJitsiJoinRequest(null);
+      flushSync(() => {
+        setJitsiJoinRequest(null);
+      });
       const uiError = toUserFacingCallError(error);
       toast.error('Join failed', uiError);
       setErrorMessage(uiError);

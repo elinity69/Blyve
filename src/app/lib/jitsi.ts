@@ -801,8 +801,12 @@ export async function mountJitsiMeetingFromServerJoin(
     }
   };
 
+  let disposed = false;
+
   return {
     dispose: () => {
+      if (disposed) return;
+      disposed = true;
       for (const timeoutId of ensureUnmuteTimeoutIds) {
         window.clearTimeout(timeoutId);
       }
