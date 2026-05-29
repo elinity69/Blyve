@@ -2,6 +2,13 @@ import { assertServerAuthorizedRoom } from './jitsiCall';
 import { markJitsiMicGranted } from './jitsiMicStorage';
 import { isMobileWebBrowser, isScreenShareSupported } from './screenShareSupport';
 import { BLYVE_MEDIA_MESSAGE, BLYVE_SPEAKING_MESSAGE, parseBlyveMediaMessage, parseBlyveSpeakingMessage } from './callAudioLevels';
+import {
+  applyJitsiNoiseSuppression,
+  buildJitsiNoiseSuppressionConfigOverwrite,
+  registerJitsiMeetingApi,
+  reinforceJitsiNoiseSuppressionOnUnmute,
+  unregisterJitsiMeetingApi,
+} from './callAudio/jitsiAudioBridge';
 
 export interface JitsiRemoteMediaState {
   remoteVideoActive: boolean;
@@ -386,6 +393,7 @@ export async function mountJitsiMeetingFromServerJoin(
             },
           }
         : {}),
+      ...buildJitsiNoiseSuppressionConfigOverwrite(),
     },
     interfaceConfigOverwrite: {
       TOOLBAR_BUTTONS: [],
@@ -400,6 +408,9 @@ export async function mountJitsiMeetingFromServerJoin(
       ENABLE_BROWSER_WARNING_PAGE: false,
     },
   });
+
+  registerJitsiMeetingApi(api);
+  applyJitsiNoiseSuppression();
 
   patchJitsiIframePermissions(container, resolvedDomain);
   window.requestAnimationFrame(() => patchJitsiIframePermissions(container, resolvedDomain));
@@ -567,6 +578,7 @@ export async function mountJitsiMeetingFromServerJoin(
     localParticipantId = payload.id ?? null;
     options.onConferenceJoined?.(payload);
     options.onConnectionEstablished?.();
+    applyJitsiNoiseSuppression();
     scheduleRemoteMediaSnapshot(800);
     scheduleEnsureAudioUnmuted();
   });
@@ -730,7 +742,11 @@ export async function mountJitsiMeetingFromServerJoin(
   });
   api.addListener('audioMuteStatusChanged', (...args: unknown[]) => {
     const payload = args[0] as { muted?: boolean } | undefined;
-    options.onAudioMuteChanged?.(Boolean(payload?.muted));
+    const muted = Boolean(payload?.muted);
+    if (!muted) {
+      reinforceJitsiNoiseSuppressionOnUnmute();
+    }
+    options.onAudioMuteChanged?.(muted);
   });
   api.addListener('videoMuteStatusChanged', (...args: unknown[]) => {
     const payload = args[0] as { muted?: boolean } | undefined;
@@ -797,6 +813,7 @@ export async function mountJitsiMeetingFromServerJoin(
       }
       stopObservingIframe?.();
       stopObservingIframe = null;
+      unregisterJitsiMeetingApi();
       try {
         api.dispose();
       } catch {

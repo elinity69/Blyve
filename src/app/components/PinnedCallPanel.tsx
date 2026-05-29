@@ -1,5 +1,6 @@
-import React, { useEffect, useLayoutEffect, useMemo, useState } from 'react';
-import { Mic, PhoneOff } from 'lucide-react';import { useTranslation } from 'react-i18next';
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { Mic, PhoneOff } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { useAppData } from '../context/AppDataContext';
 import { useCall } from '../context/CallContext';
 import { isJitsiCallProvider } from '../lib/callProvider';
@@ -8,7 +9,6 @@ import { shouldSkipJitsiPrejoin } from '../lib/jitsiMicStorage';
 import { dedupeCallParticipants, filterJoinedStageParticipants } from '../lib/callParticipants';
 import { checkMicrophonePermission } from '../lib/mediaPermissions';
 import { CallParticipantStage } from './CallParticipantStage';
-import { JitsiCallView } from './JitsiCallView';
 
 interface PinnedCallPanelProps {
   currentUserId: string;
@@ -27,7 +27,7 @@ function connectionLabel(state: string, t: (key: string) => string) {
   }
 }
 
-export function PinnedCallPanel({ currentUserId }: PinnedCallPanelProps) {
+export function PinnedCallPanel(_props: PinnedCallPanelProps) {
   const { t } = useTranslation();
   const { currentUserProfile, conversations } = useAppData();
   const {
@@ -43,38 +43,24 @@ export function PinnedCallPanel({ currentUserId }: PinnedCallPanelProps) {
     remoteParticipantCount,
     setParticipantVolume,
     toggleMute,
-    toggleCamera,
-    toggleScreenShare,
-    hangUp,
     errorMessage,
     canRetryConnection,
     retryAttempt,
     isAutoRetrying,
     retryConnection,
     registerPinnedCallHost,
+    registerCallHostAnchor,
     callDisplayMode,
     callPinned,
-    toggleCallPinned,
-    setCallDisplayMode,
-    expandCallToFullscreen,
-    enterCallPip,
-    jitsiSession,
-    jitsiMountKey,
-    jitsiHandlers,
     speakingParticipantId,
     localIdentity,
   } = useCall();
 
+  const callHostAnchorRef = useRef<HTMLDivElement>(null);
+
   const [micPermissionGranted, setMicPermissionGranted] = useState(
     () => shouldSkipJitsiPrejoin()
   );
-  const [remoteStreamDetected, setRemoteStreamDetected] = useState(false);
-
-  useEffect(() => {
-    if (state !== 'in_call') {
-      setRemoteStreamDetected(false);
-    }
-  }, [state]);
 
   useEffect(() => {
     let cancelled = false;
@@ -104,6 +90,15 @@ export function PinnedCallPanel({ currentUserId }: PinnedCallPanelProps) {
     registerPinnedCallHost(true);
     return () => registerPinnedCallHost(false);
   }, [callDisplayMode, callPinned, registerPinnedCallHost, state]);
+
+  useLayoutEffect(() => {
+    if (!isPinnedHost || state !== 'in_call') {
+      registerCallHostAnchor(null);
+      return () => registerCallHostAnchor(null);
+    }
+    registerCallHostAnchor(callHostAnchorRef.current);
+    return () => registerCallHostAnchor(null);
+  }, [isPinnedHost, registerCallHostAnchor, state]);
 
   const callTitle = useMemo(() => {
     if (!activeCall) return t('call.inCall');
@@ -161,8 +156,7 @@ export function PinnedCallPanel({ currentUserId }: PinnedCallPanelProps) {
     isCameraEnabled ||
     isScreenShareEnabled ||
     remoteVideoActive ||
-    remoteScreenShareActive ||
-    remoteStreamDetected;
+    remoteScreenShareActive;
   const showAvatarStage =
     state === 'in_call' && connectionState === 'connected' && !showVideoSurface;
   const showStreamAvatars =
@@ -175,70 +169,14 @@ export function PinnedCallPanel({ currentUserId }: PinnedCallPanelProps) {
     isJitsiCallProvider() &&
     !micPermissionGranted;
 
+  const showEmbeddedHost = isJitsiCallProvider() && isPinnedHost;
+
   return (
     <div className="relative shrink-0">
-      {state === 'in_call' && isJitsiCallProvider() && jitsiSession && isPinnedHost ? (        <JitsiCallView
-          key={`pinned:${jitsiSession.sessionId}:${jitsiMountKey}`}
-          sessionId={jitsiSession.sessionId}
-          inviteToken={jitsiSession.inviteToken}
-          callType={jitsiSession.callType}
-          userId={currentUserId}
-          mountKey={jitsiMountKey}
-          layout="embedded"
-          mediaActive={showVideoSurface}
-          streamMode={showStreamAvatars}
-          connectionState={connectionState}
-          isMuted={isMuted}
-          isCameraEnabled={isCameraEnabled}
-          isScreenShareEnabled={isScreenShareEnabled}
-          hideJitsiVideo={showAvatarStage}
-          onRemoteStreamActiveChange={setRemoteStreamDetected}
-          onExpandedChange={(expanded) => {
-            if (expanded) expandCallToFullscreen();
-            else setCallDisplayMode('embedded');
-          }}
-          onJoinResolved={jitsiHandlers.onJoinResolved}
-          onJoinError={jitsiHandlers.onJoinError}
-          onReady={jitsiHandlers.onReady}
-          onConnectionEstablished={jitsiHandlers.onConnectionEstablished}
-          onReadyToClose={jitsiHandlers.onReadyToClose}
-          onParticipantCountChange={jitsiHandlers.onParticipantCountChange}
-          onAudioMuteChanged={jitsiHandlers.onAudioMuteChanged}
-          onVideoMuteChanged={jitsiHandlers.onVideoMuteChanged}
-          onScreenShareChanged={jitsiHandlers.onScreenShareChanged}
-          onScreenShareError={jitsiHandlers.onScreenShareError}
-          onDominantSpeakerChanged={jitsiHandlers.onDominantSpeakerChanged}
-          onConferenceJoined={jitsiHandlers.onConferenceJoined}
-          onRemoteParticipantJoined={jitsiHandlers.onRemoteParticipantJoined}
-          onRemoteMediaChanged={jitsiHandlers.onRemoteMediaChanged}
-          onRemoteMediaSync={jitsiHandlers.onRemoteMediaSync}
-          onRemoteSpeakingChanged={jitsiHandlers.onRemoteSpeakingChanged}
-          onHangUp={() => void hangUp()}
-          onToggleMute={() => void toggleMute()}
-          onToggleCamera={() => void toggleCamera()}
-          onToggleScreenShare={toggleScreenShare}
-          onMinimizeToPip={() => enterCallPip(true)}
-          onTogglePin={toggleCallPinned}
-          callPinned={callPinned}
-          overlay={
-            showAvatarStage ? (
-              <CallParticipantStage
-                variant="center"
-                participants={stageParticipants}
-                speakingParticipantId={speakingParticipantId}
-                participantVolumes={participantVolumes}
-                onParticipantVolumeChange={setParticipantVolume}
-              />
-            ) : showStreamAvatars ? (
-              <CallParticipantStage
-                variant="stream"
-                participants={stageParticipants}
-                speakingParticipantId={speakingParticipantId}
-                participantVolumes={participantVolumes}
-                onParticipantVolumeChange={setParticipantVolume}
-              />
-            ) : null
-          }
+      {showEmbeddedHost ? (
+        <div
+          ref={callHostAnchorRef}
+          className="relative min-h-[200px] w-full shrink-0 overflow-hidden border-t border-white/10 bg-[#0b0b0b]"
         />
       ) : (
         <div className="flex h-[min(32vh,300px)] min-h-[200px] w-full items-center justify-center border-t border-white/10 bg-[#0b0b0b] px-4">
@@ -252,8 +190,33 @@ export function PinnedCallPanel({ currentUserId }: PinnedCallPanelProps) {
         </div>
       )}
 
+      {showEmbeddedHost && showAvatarStage ? (
+        <div className="pointer-events-none absolute inset-0 z-[5]">
+          <CallParticipantStage
+            variant="center"
+            participants={stageParticipants}
+            speakingParticipantId={speakingParticipantId}
+            participantVolumes={participantVolumes}
+            onParticipantVolumeChange={setParticipantVolume}
+          />
+        </div>
+      ) : null}
+
+      {showEmbeddedHost && showStreamAvatars ? (
+        <div className="pointer-events-none absolute inset-0 z-[5]">
+          <CallParticipantStage
+            variant="stream"
+            participants={stageParticipants}
+            speakingParticipantId={speakingParticipantId}
+            participantVolumes={participantVolumes}
+            onParticipantVolumeChange={setParticipantVolume}
+          />
+        </div>
+      ) : null}
+
       {(errorMessage || canRetryConnection) && state === 'in_call' ? (
-        <div className="absolute inset-x-3 top-3 z-30 space-y-2">          {errorMessage ? (
+        <div className="absolute inset-x-3 top-3 z-30 space-y-2">
+          {errorMessage ? (
             <div className="rounded-lg border border-red-400/40 bg-red-500/90 px-3 py-2 shadow-lg">
               <p className="text-xs text-white">{errorMessage}</p>
             </div>

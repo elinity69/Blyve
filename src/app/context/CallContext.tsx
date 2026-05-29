@@ -29,6 +29,7 @@ import { isJitsiCallProvider } from '../lib/callProvider';
 import { toJitsiCallError, type JitsiJoinCredentials } from '../lib/jitsiCall';
 import { requestMicrophoneAccess, hasMicrophonePermission, type MicrophoneAccessResult } from '../lib/mediaPermissions';
 import { markJitsiMicGranted, shouldSkipJitsiPrejoin } from '../lib/jitsiMicStorage';
+import { premiumCallAudio } from '../lib/callAudio/ensurePremiumCallAudio';
 import { isScreenShareSupported } from '../lib/screenShareSupport';
 import { filterJoinedStageParticipants, mergeCallParticipants } from '../lib/callParticipants';
 
@@ -60,9 +61,14 @@ function notifyMicrophoneAccessResult(micAccess: MicrophoneAccessResult) {
 async function ensureMicrophoneForCall(): Promise<void> {
   if (shouldSkipJitsiPrejoin() || (await hasMicrophonePermission())) {
     markJitsiMicGranted();
+    await premiumCallAudio.prepareForCall();
     return;
   }
-  notifyMicrophoneAccessResult(await requestMicrophoneAccess());
+  const micAccess = await requestMicrophoneAccess();
+  notifyMicrophoneAccessResult(micAccess);
+  if (micAccess.ok) {
+    await premiumCallAudio.prepareForCall();
+  }
 }
 
 interface CallParty {
@@ -171,6 +177,7 @@ interface CallContextValue {
   openCallInPanel: () => void;
   registerEmbeddedCallHost: (conversationId: string | null) => void;
   registerEmbeddedVoiceHost: (groupId: string | null, channelId: string | null) => void;
+  registerCallHostAnchor: (element: HTMLElement | null) => void;
   embeddedCallConversationId: string | null;
   embeddedVoiceGroupId: string | null;
   embeddedVoiceChannelId: string | null;
@@ -280,6 +287,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   const [embeddedVoiceChannelId, setEmbeddedVoiceChannelId] = useState<string | null>(null);
   const [callPinned, setCallPinned] = useState(false);
   const [pinnedCallHostActive, setPinnedCallHostActive] = useState(false);
+  const [callHostAnchorEl, setCallHostAnchorEl] = useState<HTMLElement | null>(null);
   const [speakingParticipantId, setSpeakingParticipantId] = useState<string | null>(null);
   const embeddedHostRef = useRef<string | null>(null);
   const embeddedVoiceHostRef = useRef<{ groupId: string; channelId: string } | null>(null);
@@ -372,6 +380,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const resetMedia = useCallback(async () => {
+    premiumCallAudio.release();
     jitsiHandleRef.current?.dispose();
     jitsiHandleRef.current = null;
     jitsiActiveSessionRef.current = null;
@@ -1113,6 +1122,9 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   );
 
   const handleJitsiReady = useCallback((handle: JitsiHandle) => {
+    if (jitsiHandleRef.current === handle) {
+      return;
+    }
     if (jitsiHandleRef.current && jitsiHandleRef.current !== handle) {
       jitsiHandleRef.current.dispose();
     }
@@ -1495,6 +1507,16 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     [state]
   );
 
+  const registerCallHostAnchor = useCallback((element: HTMLElement | null) => {
+    setCallHostAnchorEl(element);
+  }, []);
+
+  useEffect(() => {
+    if (state !== 'in_call') {
+      setCallHostAnchorEl(null);
+    }
+  }, [state]);
+
   useEffect(() => {
     isMutedRef.current = isMuted;
   }, [isMuted]);
@@ -1756,7 +1778,10 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       onParticipantCountChange: setRemoteParticipantCount,
       onAudioMuteChanged: (muted: boolean) => {
         setIsMuted(muted);
-        if (!muted) markJitsiMicGranted();
+        if (!muted) {
+          markJitsiMicGranted();
+          premiumCallAudio.onJitsiAudioUnmuted();
+        }
       },
       onVideoMuteChanged: (muted: boolean) => {
         const camera = !muted;
@@ -1816,31 +1841,15 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   const embeddedJitsiActive =
     embeddedDmJitsiActive || embeddedVoiceJitsiActive || embeddedPinnedJitsiActive;
 
-  const prevEmbeddedJitsiActiveRef = useRef<boolean | null>(null);
-  useLayoutEffect(() => {
-    if (prevEmbeddedJitsiActiveRef.current === null) {
-      prevEmbeddedJitsiActiveRef.current = embeddedJitsiActive;
-      return;
-    }
-    if (
-      prevEmbeddedJitsiActiveRef.current !== embeddedJitsiActive &&
-      state === 'in_call' &&
-      jitsiJoinRequest
-    ) {
-      prevEmbeddedJitsiActiveRef.current = embeddedJitsiActive;
-      jitsiHandleRef.current?.dispose();
-      jitsiHandleRef.current = null;
-      setJitsiMountKey((key) => key + 1);
-    }
-  }, [embeddedJitsiActive, jitsiJoinRequest, state]);
-
   const showGlobalCallHost =
-    isJitsiCallProvider() &&
-    !!jitsiJoinRequest &&
-    state === 'in_call' &&
-    !callPinned &&
-    !embeddedJitsiActive &&
-    (callDisplayMode === 'pip' || callDisplayMode === 'fullscreen');
+    isJitsiCallProvider() && !!jitsiJoinRequest && state === 'in_call';
+
+  const globalCallDisplayMode: 'pip' | 'fullscreen' | 'embedded' =
+    callDisplayMode === 'fullscreen'
+      ? 'fullscreen'
+      : callDisplayMode === 'embedded' && embeddedJitsiActive && callHostAnchorEl
+        ? 'embedded'
+        : 'pip';
 
   const floatingStageParticipants = useMemo((): CallStageParticipant[] => {
     const remotes = activeCall?.participants ?? [];
@@ -1897,6 +1906,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       openCallInPanel,
       registerEmbeddedCallHost,
       registerEmbeddedVoiceHost,
+      registerCallHostAnchor,
       embeddedCallConversationId,
       embeddedVoiceGroupId,
       embeddedVoiceChannelId,
@@ -1953,6 +1963,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       openCallInPanel,
       registerEmbeddedCallHost,
       registerEmbeddedVoiceHost,
+      registerCallHostAnchor,
       embeddedCallConversationId,
       embeddedVoiceGroupId,
       embeddedVoiceChannelId,
@@ -1985,8 +1996,17 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       </Suspense>
       {showGlobalCallHost ? (
         <FloatingCallWidget
-          displayMode={callDisplayMode === 'fullscreen' ? 'fullscreen' : 'pip'}
+          displayMode={globalCallDisplayMode}
+          hostAnchorEl={globalCallDisplayMode === 'embedded' ? callHostAnchorEl : null}
           activeCall={activeCall}
+          callPinned={callPinned}
+          onExpandedChange={(expanded) => {
+            if (expanded) expandCallToFullscreen();
+            else if (embeddedJitsiActive) setCallDisplayMode('embedded');
+            else enterCallPip();
+          }}
+          onMinimizeToPip={enterCallPip}
+          onTogglePin={toggleCallPinned}
           localIdentity={localIdentity}
           sessionId={jitsiJoinRequest!.sessionId}
           inviteToken={jitsiJoinRequest!.inviteToken}

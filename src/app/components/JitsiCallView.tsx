@@ -15,6 +15,7 @@ import {
 import { useTranslation } from 'react-i18next';
 import { mountJitsiMeetingFromServerJoin, type CallMediaType, type JitsiHandle } from '../lib/jitsi';
 import { fetchJitsiJoinCredentials, type JitsiJoinCredentials } from '../lib/jitsiCall';
+import { premiumCallAudio } from '../lib/callAudio/ensurePremiumCallAudio';
 import { isScreenShareSupported } from '../lib/screenShareSupport';
 import { shouldSkipJitsiPrejoin } from '../lib/jitsiMicStorage';
 
@@ -327,6 +328,7 @@ export function JitsiCallView({
 
     void (async () => {
       try {
+        await premiumCallAudio.prepareForCall();
         const handle = await mountJitsiMeetingFromServerJoin({
           container,
           sessionId: credentials.sessionId,

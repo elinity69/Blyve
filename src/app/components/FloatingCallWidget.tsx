@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Minimize2, User, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useAppData } from '../context/AppDataContext';
@@ -25,7 +26,9 @@ interface FloatingCallActiveCall {
 }
 
 interface FloatingCallWidgetProps {
-  displayMode: 'pip' | 'fullscreen';
+  displayMode: 'pip' | 'fullscreen' | 'embedded';
+  hostAnchorEl?: HTMLElement | null;
+  callPinned?: boolean;
   activeCall: FloatingCallActiveCall | null;
   localIdentity: string | null;
   sessionId: string;
@@ -75,6 +78,9 @@ interface FloatingCallWidgetProps {
   onOpenInChat: () => void;
   onClosePip: () => void;
   onEnterFullscreen: () => void;
+  onExpandedChange?: (expanded: boolean) => void;
+  onMinimizeToPip?: () => void;
+  onTogglePin?: () => void;
 }
 
 function clampPosition(x: number, y: number) {
@@ -135,6 +141,8 @@ function PipAvatar({
 
 export function FloatingCallWidget({
   displayMode,
+  hostAnchorEl = null,
+  callPinned = false,
   activeCall,
   localIdentity,
   sessionId,
@@ -176,6 +184,9 @@ export function FloatingCallWidget({
   onOpenInChat,
   onClosePip,
   onEnterFullscreen,
+  onExpandedChange,
+  onMinimizeToPip,
+  onTogglePin,
 }: FloatingCallWidgetProps) {
   const { t } = useTranslation();
   const { currentUserProfile, conversations } = useAppData();
@@ -272,8 +283,18 @@ export function FloatingCallWidget({
 
   hasStreamRef.current = hasStream;
 
+  const isEmbedded = displayMode === 'embedded';
   const isFullscreen = displayMode === 'fullscreen';
-  const layout: JitsiCallLayout = isFullscreen ? 'standalone' : 'pip';
+  const layout: JitsiCallLayout = isEmbedded ? 'embedded' : isFullscreen ? 'standalone' : 'pip';
+
+  const showVideoSurface =
+    isCameraEnabled ||
+    isScreenShareEnabled ||
+    remoteVideoActive ||
+    remoteScreenShareActive ||
+    remoteStreamActive;
+  const showAvatarStage = connectionState === 'connected' && !showVideoSurface;
+  const showStreamAvatars = connectionState === 'connected' && showVideoSurface;
 
   const handleRemoteMediaChanged = useCallback(
     (state: { remoteVideoActive: boolean; remoteScreenShareActive: boolean }) => {
@@ -402,13 +423,19 @@ export function FloatingCallWidget({
       userId={userId}
       mountKey={mountKey}
       layout={layout}
-      mediaActive={hasStream}
+      mediaActive={isEmbedded ? showVideoSurface : hasStream}
+      streamMode={isEmbedded ? showStreamAvatars : undefined}
+      hideJitsiVideo={isEmbedded ? showAvatarStage : undefined}
       connectionState={connectionState}
       isMuted={isMuted}
       isCameraEnabled={isCameraEnabled}
       isScreenShareEnabled={isScreenShareEnabled}
-      overlay={avatarOverlay}
+      overlay={isEmbedded ? null : avatarOverlay}
       onRemoteStreamActiveChange={setRemoteStreamActive}
+      onExpandedChange={isEmbedded ? onExpandedChange : undefined}
+      onMinimizeToPip={isEmbedded ? onMinimizeToPip : undefined}
+      onTogglePin={isEmbedded ? onTogglePin : undefined}
+      callPinned={isEmbedded ? callPinned : undefined}
       onJoinResolved={onJoinResolved}
       onJoinError={onJoinError}
       onReady={onReady}
@@ -429,9 +456,16 @@ export function FloatingCallWidget({
       onToggleMute={onToggleMute}
       onToggleCamera={onToggleCamera}
       onToggleScreenShare={onToggleScreenShare}
-      compactControls
+      compactControls={!isEmbedded}
     />
   );
+
+  if (isEmbedded && hostAnchorEl) {
+    return createPortal(
+      <div className="relative h-full min-h-[200px] w-full">{jitsiView}</div>,
+      hostAnchorEl
+    );
+  }
 
   return (
     <div

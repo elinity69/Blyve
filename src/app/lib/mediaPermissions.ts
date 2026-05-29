@@ -1,4 +1,5 @@
 import { markJitsiMicGranted, shouldSkipJitsiPrejoin } from './jitsiMicStorage';
+import { getPremiumMicConstraintsForPreflight } from './callAudio/browserCapabilities';
 
 export type MicrophoneAccessResult =
   | { ok: true }
@@ -70,7 +71,7 @@ export async function requestMicrophoneAccess(): Promise<MicrophoneAccessResult>
   }
 
   try {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+    const stream = await navigator.mediaDevices.getUserMedia(getPremiumMicConstraintsForPreflight());
     stream.getTracks().forEach((track) => track.stop());
     markJitsiMicGranted();
     return { ok: true };

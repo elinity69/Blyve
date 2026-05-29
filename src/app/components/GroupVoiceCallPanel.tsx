@@ -1,4 +1,4 @@
-import React, { useEffect, useLayoutEffect, useMemo, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Mic, PhoneOff } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useAppData } from '../context/AppDataContext';
@@ -9,7 +9,6 @@ import { shouldSkipJitsiPrejoin } from '../lib/jitsiMicStorage';
 import { dedupeCallParticipants, filterJoinedStageParticipants } from '../lib/callParticipants';
 import { checkMicrophonePermission } from '../lib/mediaPermissions';
 import { CallParticipantStage } from './CallParticipantStage';
-import { JitsiCallView } from './JitsiCallView';
 
 interface GroupVoiceCallPanelProps {
   groupId: string;
@@ -46,8 +45,6 @@ export function GroupVoiceCallPanel({ groupId, channelId, currentUserId }: Group
     remoteParticipantCount,
     setParticipantVolume,
     toggleMute,
-    toggleCamera,
-    toggleScreenShare,
     hangUp,
     isVoiceChannelActive,
     errorMessage,
@@ -59,28 +56,17 @@ export function GroupVoiceCallPanel({ groupId, channelId, currentUserId }: Group
     embeddedVoiceGroupId,
     embeddedVoiceChannelId,
     callDisplayMode,
-    setCallDisplayMode,
-    expandCallToFullscreen,
-    enterCallPip,
     callPinned,
-    toggleCallPinned,
-    jitsiSession,
-    jitsiMountKey,
-    jitsiHandlers,
+    registerCallHostAnchor,
     speakingParticipantId,
     localIdentity,
   } = useCall();
 
+  const callHostAnchorRef = useRef<HTMLDivElement>(null);
+
   const [micPermissionGranted, setMicPermissionGranted] = useState(
     () => shouldSkipJitsiPrejoin()
   );
-  const [remoteStreamDetected, setRemoteStreamDetected] = useState(false);
-
-  useEffect(() => {
-    if (state !== 'in_call') {
-      setRemoteStreamDetected(false);
-    }
-  }, [state]);
 
   useEffect(() => {
     let cancelled = false;
@@ -116,6 +102,15 @@ export function GroupVoiceCallPanel({ groupId, channelId, currentUserId }: Group
     registerEmbeddedVoiceHost(null, null);
     return undefined;
   }, [callPinned, channelId, groupId, isActiveVoiceCall, registerEmbeddedVoiceHost, state]);
+
+  useLayoutEffect(() => {
+    if (!isEmbeddedVoiceHost || state !== 'in_call') {
+      registerCallHostAnchor(null);
+      return () => registerCallHostAnchor(null);
+    }
+    registerCallHostAnchor(callHostAnchorRef.current);
+    return () => registerCallHostAnchor(null);
+  }, [isEmbeddedVoiceHost, registerCallHostAnchor, state]);
 
   const stageParticipants = useMemo(() => {
     const localName =
@@ -165,8 +160,7 @@ export function GroupVoiceCallPanel({ groupId, channelId, currentUserId }: Group
     isCameraEnabled ||
     isScreenShareEnabled ||
     remoteVideoActive ||
-    remoteScreenShareActive ||
-    remoteStreamDetected;
+    remoteScreenShareActive;
   const showAvatarStage =
     state === 'in_call' && connectionState === 'connected' && !showVideoSurface;
   const showStreamAvatars =
@@ -179,78 +173,15 @@ export function GroupVoiceCallPanel({ groupId, channelId, currentUserId }: Group
     isJitsiCallProvider() &&
     !micPermissionGranted;
 
+  const showEmbeddedHost =
+    state === 'in_call' && isJitsiCallProvider() && isEmbeddedVoiceHost;
+
   return (
     <div className="relative shrink-0">
-      {state === 'in_call' && isJitsiCallProvider() && jitsiSession && isEmbeddedVoiceHost ? (
-        <JitsiCallView
-          key={`${jitsiSession.sessionId}:${jitsiMountKey}`}
-          sessionId={jitsiSession.sessionId}
-          inviteToken={jitsiSession.inviteToken}
-          callType={jitsiSession.callType}
-          userId={currentUserId}
-          mountKey={jitsiMountKey}
-          layout="embedded"
-          mediaActive={showVideoSurface}
-          streamMode={showStreamAvatars}
-          connectionState={connectionState}
-          isMuted={isMuted}
-          isCameraEnabled={isCameraEnabled}
-          isScreenShareEnabled={isScreenShareEnabled}
-          hideJitsiVideo={showAvatarStage}
-          onRemoteStreamActiveChange={setRemoteStreamDetected}
-          onExpandedChange={(expanded) => {
-            if (expanded) expandCallToFullscreen();
-            else if (
-              embeddedVoiceGroupId === groupId &&
-              embeddedVoiceChannelId === channelId
-            ) {
-              setCallDisplayMode('embedded');
-            } else {
-              enterCallPip();
-            }
-          }}
-          onJoinResolved={jitsiHandlers.onJoinResolved}
-          onJoinError={jitsiHandlers.onJoinError}
-          onReady={jitsiHandlers.onReady}
-          onConnectionEstablished={jitsiHandlers.onConnectionEstablished}
-          onReadyToClose={jitsiHandlers.onReadyToClose}
-          onParticipantCountChange={jitsiHandlers.onParticipantCountChange}
-          onAudioMuteChanged={jitsiHandlers.onAudioMuteChanged}
-          onVideoMuteChanged={jitsiHandlers.onVideoMuteChanged}
-          onScreenShareChanged={jitsiHandlers.onScreenShareChanged}
-          onScreenShareError={jitsiHandlers.onScreenShareError}
-          onDominantSpeakerChanged={jitsiHandlers.onDominantSpeakerChanged}
-          onConferenceJoined={jitsiHandlers.onConferenceJoined}
-          onRemoteParticipantJoined={jitsiHandlers.onRemoteParticipantJoined}
-          onRemoteMediaChanged={jitsiHandlers.onRemoteMediaChanged}
-          onRemoteMediaSync={jitsiHandlers.onRemoteMediaSync}
-          onRemoteSpeakingChanged={jitsiHandlers.onRemoteSpeakingChanged}
-          onHangUp={() => void hangUp()}
-          onToggleMute={() => void toggleMute()}
-          onToggleCamera={() => void toggleCamera()}
-          onToggleScreenShare={toggleScreenShare}
-          onMinimizeToPip={enterCallPip}
-          onTogglePin={toggleCallPinned}
-          callPinned={callPinned}
-          overlay={
-            showAvatarStage ? (
-              <CallParticipantStage
-                variant="center"
-                participants={stageParticipants}
-                speakingParticipantId={speakingParticipantId}
-                participantVolumes={participantVolumes}
-                onParticipantVolumeChange={setParticipantVolume}
-              />
-            ) : showStreamAvatars ? (
-              <CallParticipantStage
-                variant="stream"
-                participants={stageParticipants}
-                speakingParticipantId={speakingParticipantId}
-                participantVolumes={participantVolumes}
-                onParticipantVolumeChange={setParticipantVolume}
-              />
-            ) : null
-          }
+      {showEmbeddedHost ? (
+        <div
+          ref={callHostAnchorRef}
+          className="relative min-h-[200px] w-full shrink-0 overflow-hidden border-b border-white/10 bg-[#0b0b0b]"
         />
       ) : (
         <div className="flex h-[min(32vh,300px)] min-h-[200px] w-full items-center justify-center border-b border-white/10 bg-[#0b0b0b] px-4">
@@ -263,6 +194,30 @@ export function GroupVoiceCallPanel({ groupId, channelId, currentUserId }: Group
           </div>
         </div>
       )}
+
+      {showEmbeddedHost && showAvatarStage ? (
+        <div className="pointer-events-none absolute inset-0 z-[5]">
+          <CallParticipantStage
+            variant="center"
+            participants={stageParticipants}
+            speakingParticipantId={speakingParticipantId}
+            participantVolumes={participantVolumes}
+            onParticipantVolumeChange={setParticipantVolume}
+          />
+        </div>
+      ) : null}
+
+      {showEmbeddedHost && showStreamAvatars ? (
+        <div className="pointer-events-none absolute inset-0 z-[5]">
+          <CallParticipantStage
+            variant="stream"
+            participants={stageParticipants}
+            speakingParticipantId={speakingParticipantId}
+            participantVolumes={participantVolumes}
+            onParticipantVolumeChange={setParticipantVolume}
+          />
+        </div>
+      ) : null}
 
       {(errorMessage || canRetryConnection) && state === 'in_call' ? (
         <div className="absolute inset-x-3 top-3 z-30 space-y-2">
