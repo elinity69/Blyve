@@ -6,10 +6,9 @@ import { useMobileViewportDriver } from '../hooks/useMobileViewportInsets';
 interface NavigationStackProps {
   children: React.ReactNode;
   onBack: () => void;
-  onEdgeDragProgress?: (progress: number) => void;
 }
 
-export function NavigationStack({ children, onBack, onEdgeDragProgress }: NavigationStackProps) {
+export function NavigationStack({ children, onBack }: NavigationStackProps) {
   const [isMobile, setIsMobile] = useState(false);
   const [translateX, setTranslateX] = useState(0);
   const [swipeBackLocked, setSwipeBackLocked] = useState(false);
@@ -20,7 +19,6 @@ export function NavigationStack({ children, onBack, onEdgeDragProgress }: Naviga
   const isVerticalScrollRef = useRef(false);
   const isDraggingRef = useRef(false);
   const animationFrameRef = useRef<number | null>(null);
-  const enterAnimationStateRef = useRef<'idle' | 'running' | 'done'>('idle');
   useMobileViewportDriver(isMobile);
 
   const setSwipeBackLock = (locked: boolean) => {
@@ -113,7 +111,6 @@ export function NavigationStack({ children, onBack, onEdgeDragProgress }: Naviga
       const constrainedDelta = Math.min(positiveDeltaX, window.innerWidth);
 
       setTranslateX(constrainedDelta);
-      onEdgeDragProgress?.(constrainedDelta);
     }
   };
 
@@ -137,38 +134,31 @@ export function NavigationStack({ children, onBack, onEdgeDragProgress }: Naviga
     }
   };
 
-  // ✅ Animation to complete (back gesture)
   const animateToComplete = (startValue: number) => {
     const targetValue = window.innerWidth;
     const startTime = performance.now();
-    const duration = 200; // Fixed duration for consistency
+    const duration = 200;
 
     const animate = (currentTime: number) => {
       const elapsed = currentTime - startTime;
       const progress = Math.min(elapsed / duration, 1);
-      
-      // Ease-out cubic
       const eased = 1 - Math.pow(1 - progress, 3);
       const currentValue = startValue + (targetValue - startValue) * eased;
-      
+
       setTranslateX(currentValue);
-      onEdgeDragProgress?.(currentValue);
-      
+
       if (progress < 1) {
         animationFrameRef.current = requestAnimationFrame(animate);
       } else {
-        // ✅ Animation complete → trigger callback
         onBack();
         setTranslateX(0);
-        onEdgeDragProgress?.(0);
         animationFrameRef.current = null;
       }
     };
-    
+
     animationFrameRef.current = requestAnimationFrame(animate);
   };
 
-  // ✅ Animation to zero (cancel gesture)
   const animateToZero = (startValue: number) => {
     const startTime = performance.now();
     const duration = 200;
@@ -176,84 +166,20 @@ export function NavigationStack({ children, onBack, onEdgeDragProgress }: Naviga
     const animate = (currentTime: number) => {
       const elapsed = currentTime - startTime;
       const progress = Math.min(elapsed / duration, 1);
-      
-      // Ease-out cubic
       const eased = 1 - Math.pow(1 - progress, 3);
       const currentValue = startValue * (1 - eased);
-      
+
       setTranslateX(currentValue);
-      onEdgeDragProgress?.(currentValue);
-      
+
       if (progress < 1) {
         animationFrameRef.current = requestAnimationFrame(animate);
       } else {
         animationFrameRef.current = null;
       }
     };
-    
-    animationFrameRef.current = requestAnimationFrame(animate);
-  };
-
-  // ✅ Animation in (clone of back animation, reversed)
-  const animateIn = (startValue: number, callback?: () => void) => {
-    const targetValue = 0;
-    const startTime = performance.now();
-    const duration = 200; // Same duration as back
-
-    const animate = (currentTime: number) => {
-      const elapsed = currentTime - startTime;
-      const progress = Math.min(elapsed / duration, 1);
-
-      // Ease-out cubic (same as back)
-      const eased = 1 - Math.pow(1 - progress, 3);
-      const currentValue = startValue + (targetValue - startValue) * eased;
-
-      setTranslateX(currentValue);
-      onEdgeDragProgress?.(currentValue);
-
-      if (progress < 1) {
-        animationFrameRef.current = requestAnimationFrame(animate);
-      } else {
-        animationFrameRef.current = null;
-        callback?.();
-      }
-    };
 
     animationFrameRef.current = requestAnimationFrame(animate);
   };
-
-  // ✅ Animate in once on mount (guarded)
-  useEffect(() => {
-    if (!isMobile) return;
-    if (enterAnimationStateRef.current !== 'idle') return;
-
-    // Cancel any ongoing animation before starting
-    if (animationFrameRef.current) {
-      cancelAnimationFrame(animationFrameRef.current);
-      animationFrameRef.current = null;
-    }
-
-    enterAnimationStateRef.current = 'running';
-    const startValue = window.innerWidth;
-    setTranslateX(startValue);
-    onEdgeDragProgress?.(startValue);
-
-    animateIn(startValue, () => {
-      enterAnimationStateRef.current = 'done';
-      setTranslateX(0);
-      onEdgeDragProgress?.(0);
-    });
-
-    return () => {
-      if (animationFrameRef.current) {
-        cancelAnimationFrame(animationFrameRef.current);
-        animationFrameRef.current = null;
-      }
-      if (enterAnimationStateRef.current === 'running') {
-        enterAnimationStateRef.current = 'idle';
-      }
-    };
-  }, [isMobile, onEdgeDragProgress]);
 
   if (isMobile) {
     return (
@@ -271,7 +197,7 @@ export function NavigationStack({ children, onBack, onEdgeDragProgress }: Naviga
           height: `var(${MOBILE_VV_CSS.height}, 100dvh)`,
           bottom: 'auto',
           zIndex: 10,
-          backgroundColor: 'var(--color-background, white)',
+          backgroundColor: 'var(--color-background, #0d0d0d)',
           boxShadow: '-5px 0 20px rgba(0,0,0,0.15)',
           transform: `translateX(${translateX}px)`,
           willChange: swipeBackLocked ? 'transform' : 'auto',
@@ -289,18 +215,17 @@ export function NavigationStack({ children, onBack, onEdgeDragProgress }: Naviga
     );
   }
 
-  // DESKTOP: Slide animation
   return (
     <motion.div
       initial={{ x: '100%' }}
       animate={{ x: 0 }}
       exit={{ x: '100%' }}
-      transition={{ 
+      transition={{
         type: 'tween',
         duration: 0.25,
-        ease: 'easeOut'
+        ease: 'easeOut',
       }}
-      style={{ 
+      style={{
         position: 'fixed',
         top: 0,
         left: 0,
@@ -310,7 +235,7 @@ export function NavigationStack({ children, onBack, onEdgeDragProgress }: Naviga
         backgroundColor: 'var(--color-background, white)',
         boxShadow: '-5px 0 20px rgba(0,0,0,0.15)',
         overflowY: 'auto',
-        WebkitOverflowScrolling: 'touch'
+        WebkitOverflowScrolling: 'touch',
       }}
     >
       {children}

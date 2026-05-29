@@ -25,9 +25,10 @@ function clearReinforceTimers() {
 }
 
 function scheduleNoiseSuppressionReinforcement() {
-  if (!activeApi || !callAudioSessionActive) return;
+  if (!callAudioSessionActive) return;
   clearReinforceTimers();
-  for (const delayMs of [0, 400, 1200, 2500, 5000]) {
+  const delays = activeApi ? [0, 400, 1200, 2500, 5000] : [200, 800, 2000];
+  for (const delayMs of delays) {
     reinforceTimeoutIds.push(
       window.setTimeout(() => {
         const applied = enableJitsiNoiseSuppression(activeApi);

@@ -159,7 +159,15 @@ function LinkPreviewEmbed({ url }: { url: string }) {
   );
 }
 
-function MessageEmbedItem({ embed, inBubble }: { embed: ParsedEmbed; inBubble?: boolean }) {
+function MessageEmbedItem({
+  embed,
+  inBubble,
+  isMe,
+}: {
+  embed: ParsedEmbed;
+  inBubble?: boolean;
+  isMe?: boolean;
+}) {
   let content: ReactNode = null;
 
   switch (embed.kind) {
@@ -179,7 +187,7 @@ function MessageEmbedItem({ embed, inBubble }: { embed: ParsedEmbed; inBubble?: 
       );
       break;
     case 'audio':
-      content = <MessageAudioEmbed src={embed.url} inBubble={inBubble} />;
+      content = <MessageAudioEmbed src={embed.url} inBubble={inBubble} isMe={isMe} />;
       break;
     case 'file':
       content = <MessageFileEmbed url={embed.url} />;
@@ -217,9 +225,10 @@ interface MessageEmbedListProps {
   embeds: ParsedEmbed[];
   /** Inside a chat bubble — no extra chrome, no URL footers. */
   inBubble?: boolean;
+  isMe?: boolean;
 }
 
-export function MessageEmbedList({ embeds, inBubble = false }: MessageEmbedListProps) {
+export function MessageEmbedList({ embeds, inBubble = false, isMe = false }: MessageEmbedListProps) {
   if (embeds.length === 0) return null;
 
   return (
@@ -236,6 +245,7 @@ export function MessageEmbedList({ embeds, inBubble = false }: MessageEmbedListP
           key={`${embed.kind}-${embed.url}`}
           embed={embed}
           inBubble={inBubble}
+          isMe={isMe}
         />
       ))}
     </div>

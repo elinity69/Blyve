@@ -41,7 +41,7 @@ export function ChatMessageBody({
       <div className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}>
         <MessageBubble position={bubblePosition} isMe={isMe} time={messageTime} isRead={isRead}>
           {replyQuote ? <MessageReplyQuote quote={replyQuote} isMe={isMe} /> : null}
-          <MessageEmbedList embeds={embeds} inBubble />
+          <MessageEmbedList embeds={embeds} inBubble isMe={isMe} />
         </MessageBubble>
       </div>
     );
@@ -60,7 +60,7 @@ export function ChatMessageBody({
             embeds={embeds}
           />
         ) : null}
-        {embeds.length > 0 ? <MessageEmbedList embeds={embeds} inBubble /> : null}
+        {embeds.length > 0 ? <MessageEmbedList embeds={embeds} inBubble isMe={isMe} /> : null}
       </MessageBubble>
     </div>
   );

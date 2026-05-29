@@ -421,30 +421,42 @@ export function MessagesScreen() {
   const lastPushedGroupIdRef = useRef<string | null>(null);
   const lastPushedVoiceKeyRef = useRef<string | null>(null);
   const pendingConversationIdRef = useRef<string | null>(null);
+  const lastOpenedConversationIdRef = useRef<string | null>(null);
 
-  const openConversationById = React.useCallback((conversationId: string) => {
-    setSelectedGroup(null);
-    setSelectedChannelId(null);
-    lastPushedGroupIdRef.current = null;
-    const conv = conversations.find((c) => c.id === conversationId);
-    if (!conv) {
-      pendingConversationIdRef.current = conversationId;
-      return;
-    }
-    pendingConversationIdRef.current = null;
-    const otherUser = conv.other_user;
-    const imageUrl = otherUser.imageUrl ? getOptimizedImageUrl(otherUser.imageUrl, 200) : undefined;
-    setSelectedConversationId(conv.id);
-    setSelectedOtherUser({
-      id: otherUser.id,
-      name: otherUser.name,
-      display_name: otherUser.display_name,
-      username: otherUser.username,
-      imageUrl,
-      is_online: otherUser.is_online,
-      age: otherUser.age,
-    });
-  }, [conversations]);
+  const openDmChat = React.useCallback(
+    (conv: Conversation) => {
+      const otherUser = conv.other_user;
+      const imageUrl = otherUser.imageUrl ? getOptimizedImageUrl(otherUser.imageUrl, 200) : undefined;
+      lastOpenedConversationIdRef.current = conv.id;
+      setSelectedGroup(null);
+      setSelectedChannelId(null);
+      lastPushedGroupIdRef.current = null;
+      setSelectedConversationId(conv.id);
+      setSelectedOtherUser({
+        id: otherUser.id,
+        name: otherUser.name,
+        display_name: otherUser.display_name,
+        username: otherUser.username,
+        imageUrl,
+        is_online: otherUser.is_online,
+        age: otherUser.age,
+      });
+    },
+    []
+  );
+
+  const openConversationById = React.useCallback(
+    (conversationId: string) => {
+      const conv = conversations.find((c) => c.id === conversationId);
+      if (!conv) {
+        pendingConversationIdRef.current = conversationId;
+        return;
+      }
+      pendingConversationIdRef.current = null;
+      openDmChat(conv);
+    },
+    [conversations, openDmChat]
+  );
 
   const loadFriends = React.useCallback(async () => {
     try {
@@ -1464,6 +1476,12 @@ export function MessagesScreen() {
   }, [profilePreviewUserId]);
 
   const [baseContent, setBaseContent] = useState<React.ReactNode>(<div />);
+  const reopenLastConversation = React.useCallback(() => {
+    const conversationId = lastOpenedConversationIdRef.current;
+    if (!conversationId || !currentUserId) return;
+    openConversationById(conversationId);
+  }, [currentUserId, openConversationById]);
+
   const { pushScreen, popScreen, clearStack, renderLayers } = useEdgeBackNavigation({
     baseContent,
     onStackChange: (stackDepth) => {
@@ -1476,7 +1494,8 @@ export function MessagesScreen() {
           lastPushedGroupIdRef.current = null;
         }
       }
-    }
+    },
+    onForwardSwipe: reopenLastConversation,
   });
   const pushScreenRef = useRef(pushScreen);
   const popScreenRef = useRef(popScreen);
@@ -1806,20 +1825,7 @@ export function MessagesScreen() {
                       isSelected={isSelected}
                       isTyping={isConversationTyping(conv.id)}
                       formatLastMessageTime={formatLastMessageTime}
-                      onOpenChat={() => {
-                        setSelectedGroup(null);
-                        lastPushedGroupIdRef.current = null;
-                        setSelectedConversationId(conv.id);
-                        setSelectedOtherUser({
-                          id: otherUser.id,
-                          name: otherUser.name,
-                          display_name: otherUser.display_name,
-                          username: otherUser.username,
-                          imageUrl,
-                          is_online: otherUser.is_online,
-                          age: otherUser.age,
-                        });
-                      }}
+                      onOpenChat={() => openDmChat(conv)}
                       onPrefetch={() => {
                         void prefetchDmMessages(queryClient, conv.id);
                       }}

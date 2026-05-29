@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { FileText, ExternalLink } from 'lucide-react';
 import { openExternalLink } from '../../lib/openExternalLink';
+import { VoiceMessagePlayer } from './VoiceMessagePlayer';
 
 export function MessageVideoEmbed({
   src,
@@ -48,17 +49,17 @@ export function MessageVideoEmbed({
   );
 }
 
-export function MessageAudioEmbed({ src, inBubble = false }: { src: string; inBubble?: boolean }) {
+export function MessageAudioEmbed({
+  src,
+  inBubble = false,
+  isMe = false,
+}: {
+  src: string;
+  inBubble?: boolean;
+  isMe?: boolean;
+}) {
   if (inBubble) {
-    return (
-      <audio
-        src={src}
-        controls
-        preload="metadata"
-        className="voice-message-audio h-9 w-[min(100%,15rem)] min-w-[11rem] max-w-full"
-        onPointerDown={(e) => e.stopPropagation()}
-      />
-    );
+    return <VoiceMessagePlayer src={src} isMe={isMe} />;
   }
 
   return (
@@ -66,7 +67,7 @@ export function MessageAudioEmbed({ src, inBubble = false }: { src: string; inBu
       className="mt-1.5 w-full min-w-[12rem] max-w-full sm:max-w-[min(100%,20rem)]"
       onPointerDown={(e) => e.stopPropagation()}
     >
-      <audio src={src} controls preload="metadata" className="w-full" />
+      <VoiceMessagePlayer src={src} isMe={isMe} />
     </div>
   );
 }

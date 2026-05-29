@@ -98,7 +98,7 @@ export function useChat(conversationId: string | null, onMessageSent?: (conversa
     staleTime: 1000 * 60 * 10,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
-    refetchOnMount: 'always',
+    refetchOnMount: true,
     retry: 2,
   });
 
@@ -183,13 +183,21 @@ export function useChat(conversationId: string | null, onMessageSent?: (conversa
       prevConversationIdRef.current = conversationId;
       lastPatchedUnreadKeyRef.current = '';
       initialMarkDoneRef.current = null;
-      setMessages([]);
       setHasMore(true);
       setLoadingMore(false);
       setError(null);
+
+      const cached = queryClient.getQueryData<Message[]>(dmMessagesQueryKey(conversationId));
+      if (cached?.length) {
+        setMessages(cached);
+        setLoading(false);
+      } else {
+        setMessages([]);
+        setLoading(isPending);
+      }
     }
 
-    if (isPending) {
+    if (isPending && messagesRef.current.length === 0) {
       setLoading(true);
       return;
     }

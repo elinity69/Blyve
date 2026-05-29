@@ -1,13 +1,9 @@
 import React from 'react';
-import { createPortal } from 'react-dom';
 import { JitsiCallView, type JitsiCallLayout } from './JitsiCallView';
 import type { CallMediaType, JitsiHandle } from '../lib/jitsi';
 import type { JitsiJoinCredentials } from '../lib/jitsiCall';
 
 interface PersistentJitsiMeetingProps {
-  visualSlotEl?: HTMLElement | null;
-  /** PiP/fullscreen: render inside parent shell (no portal) to avoid iframe remounts. */
-  renderInline?: boolean;
   sessionId: string;
   inviteToken?: string;
   callType: CallMediaType;
@@ -59,12 +55,8 @@ interface PersistentJitsiMeetingProps {
   forceShowControls?: boolean;
 }
 
-/**
- * Keeps a single Jitsi iframe mounted. PiP/fullscreen render inline; embedded hosts use a portal.
- */
+/** Single always-inline Jitsi host — parent positions this layer over PiP or embedded slots. */
 export function PersistentJitsiMeeting({
-  visualSlotEl,
-  renderInline = false,
   sessionId,
   inviteToken,
   callType,
@@ -107,7 +99,7 @@ export function PersistentJitsiMeeting({
   compactControls,
   forceShowControls,
 }: PersistentJitsiMeetingProps) {
-  const meeting = (
+  return (
     <div className="h-full w-full min-h-0 min-w-0">
       <JitsiCallView
         sessionId={sessionId}
@@ -154,12 +146,4 @@ export function PersistentJitsiMeeting({
       />
     </div>
   );
-
-  if (renderInline) {
-    return <div className="absolute inset-0 h-full w-full min-h-0 min-w-0">{meeting}</div>;
-  }
-
-  if (!visualSlotEl) return null;
-
-  return createPortal(meeting, visualSlotEl);
 }

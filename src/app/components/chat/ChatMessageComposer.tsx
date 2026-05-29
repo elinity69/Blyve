@@ -18,6 +18,7 @@ import { useIsMobile } from '../ui/use-mobile';
 import { CHAT_MEDIA_ACCEPT } from '../../lib/mediaUpload';
 import { validateChatMediaFile } from '../../lib/mediaTypes';
 import { toast } from '../../lib/toast';
+import { acquireVoiceMemoStream, releaseVoiceMemoStream } from '../../lib/voiceMemoMedia';
 
 interface ChatMessageComposerProps {
   value: string;
@@ -58,6 +59,7 @@ export function ChatMessageComposer({
   const rootRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const voiceStreamRef = useRef<MediaStream | null>(null);
   const voiceChunksRef = useRef<Blob[]>([]);
   const isMobile = useIsMobile();
   useMobileViewportDriver(isMobile);
@@ -187,37 +189,58 @@ export function ChatMessageComposer({
       const recorder = mediaRecorderRef.current;
       if (!recorder || recorder.state === 'inactive') {
         setRecording(false);
+        releaseVoiceMemoStream();
+        voiceStreamRef.current = null;
         return;
       }
       const done = new Promise<Blob>((resolve) => {
-        recorder.onstop = () => {
-          const blob = new Blob(voiceChunksRef.current, {
-            type: recorder.mimeType || 'audio/webm',
-          });
-          voiceChunksRef.current = [];
-          resolve(blob);
-        };
+        recorder.addEventListener(
+          'stop',
+          () => {
+            const blob = new Blob(voiceChunksRef.current, {
+              type: recorder.mimeType || 'audio/webm',
+            });
+            voiceChunksRef.current = [];
+            resolve(blob);
+          },
+          { once: true },
+        );
       });
       recorder.stop();
       mediaRecorderRef.current = null;
       setRecording(false);
+      releaseVoiceMemoStream();
+      voiceStreamRef.current = null;
 
-      if (send) {
-        const blob = await done;
-        if (blob.size > 0) {
-          await onSendVoiceMemo(blob);
-        }
-      } else {
-        await done;
+      const blob = await done;
+      if (send && blob.size > 0) {
+        await onSendVoiceMemo(blob);
       }
     },
     [onSendVoiceMemo],
   );
 
+  useEffect(() => {
+    return () => {
+      const recorder = mediaRecorderRef.current;
+      if (recorder && recorder.state !== 'inactive') {
+        recorder.stop();
+      }
+      mediaRecorderRef.current = null;
+      releaseVoiceMemoStream();
+      voiceStreamRef.current = null;
+    };
+  }, []);
+
   const startRecording = useCallback(async () => {
     if (busy || recording) return;
+    const stream = await acquireVoiceMemoStream();
+    if (!stream) {
+      toast.error(t('chat.voiceMemoFailedTitle'), t('chat.voiceMemoMicDenied'));
+      return;
+    }
+    voiceStreamRef.current = stream;
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
         ? 'audio/webm;codecs=opus'
         : MediaRecorder.isTypeSupported('audio/webm')
@@ -231,18 +254,19 @@ export function ChatMessageComposer({
         if (e.data.size > 0) voiceChunksRef.current.push(e.data);
       };
       recorder.onerror = () => {
-        stream.getTracks().forEach((tr) => tr.stop());
+        mediaRecorderRef.current = null;
         setRecording(false);
+        releaseVoiceMemoStream();
+        voiceStreamRef.current = null;
         toast.error(t('chat.voiceMemoFailedTitle'), t('chat.voiceMemoFailedBody'));
-      };
-      recorder.onstop = () => {
-        stream.getTracks().forEach((tr) => tr.stop());
       };
       mediaRecorderRef.current = recorder;
       recorder.start(200);
       setRecording(true);
     } catch {
-      toast.error(t('chat.voiceMemoFailedTitle'), t('chat.voiceMemoMicDenied'));
+      releaseVoiceMemoStream();
+      voiceStreamRef.current = null;
+      toast.error(t('chat.voiceMemoFailedTitle'), t('chat.voiceMemoFailedBody'));
     }
   }, [busy, recording, t]);
 

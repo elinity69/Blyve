@@ -603,7 +603,7 @@ export function ChatScreen({
         }}
       >
         {loading && messages.length === 0 ? (
-          <div className="flex h-full items-center justify-center">
+          <div className="flex h-full items-center justify-center bg-white dark:bg-[#0d0d0d] md:dark:bg-[#0e0e0e]">
             <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
           </div>
         ) : error ? (
@@ -648,12 +648,13 @@ export function ChatScreen({
                 <motion.div
                   key={msg.id}
                   data-message-id={msg.id}
-                  initial={isNewlyLoaded ? { opacity: 0, y: -8 } : false}
+                  initial={isNewlyLoaded ? { opacity: 0, y: -6 } : false}
                   animate={{ opacity: 1, y: 0 }}
-                  transition={{
-                    duration: 0.25,
-                    ease: [0.25, 0.1, 0.25, 1]
-                  }}
+                  transition={
+                    isNewlyLoaded
+                      ? { duration: 0.18, ease: [0.25, 0.1, 0.25, 1] }
+                      : { duration: 0 }
+                  }
                   className={getChatMessageRowClass(isGroupStart, isNewSender)}
                 >
                   <MessageRowReplyWrapper
