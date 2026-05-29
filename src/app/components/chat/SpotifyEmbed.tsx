@@ -13,9 +13,10 @@ import { EmbedVolumeBar } from './EmbedVolumeBar';
 interface SpotifyEmbedProps {
   type: 'track' | 'album' | 'playlist' | 'episode' | 'show';
   id: string;
+  inBubble?: boolean;
 }
 
-export function SpotifyEmbed({ type, id }: SpotifyEmbedProps) {
+export function SpotifyEmbed({ type, id, inBubble = false }: SpotifyEmbedProps) {
   const hostRef = useRef<HTMLDivElement>(null);
   const controllerRef = useRef<SpotifyEmbedController | null>(null);
   const pausedByMuteRef = useRef(false);
@@ -81,7 +82,9 @@ export function SpotifyEmbed({ type, id }: SpotifyEmbedProps) {
 
   if (apiFailed) {
     return (
-      <div className="overflow-hidden rounded-xl border border-black/10 dark:border-white/10">
+      <div
+        className={`overflow-hidden rounded-xl ${inBubble ? '' : 'border border-black/10 dark:border-white/10'}`}
+      >
         <iframe
           src={`https://open.spotify.com/embed/${type}/${id}?utm_source=generator`}
           title="Spotify embed"
@@ -97,7 +100,9 @@ export function SpotifyEmbed({ type, id }: SpotifyEmbedProps) {
 
   return (
     <div
-      className="overflow-hidden rounded-xl border border-black/10 dark:border-white/10 bg-[#121212]"
+      className={`overflow-hidden rounded-xl bg-[#121212] ${
+        inBubble ? '' : 'border border-black/10 dark:border-white/10'
+      }`}
       onClick={(event) => event.stopPropagation()}
       onMouseDown={(event) => event.stopPropagation()}
     >

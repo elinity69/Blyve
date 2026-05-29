@@ -306,6 +306,23 @@ export function useChat(conversationId: string | null, onMessageSent?: (conversa
           );
         }
       )
+      .on(
+        'postgres_changes',
+        {
+          event: 'DELETE',
+          schema: 'public',
+          table: 'messages',
+          filter: `conversation_id=eq.${conversationId}`,
+        },
+        (payload) => {
+          const deletedId = (payload.old as { id?: string })?.id;
+          if (!deletedId) return;
+          setMessages((prev) => prev.filter((m) => m.id !== deletedId));
+          queryClient.setQueryData<Message[]>(dmMessagesQueryKey(conversationId), (cached) =>
+            cached ? cached.filter((m) => m.id !== deletedId) : cached
+          );
+        }
+      )
       .subscribe();
 
     channelRef.current = channel;
@@ -427,6 +444,40 @@ export function useChat(conversationId: string | null, onMessageSent?: (conversa
     }
   }, [conversationId, loadingMore, hasMore, pageSize]);
 
+  const deleteMessage = useCallback(
+    async (messageId: string): Promise<boolean> => {
+      if (!conversationId) return false;
+
+      try {
+        setError(null);
+        const result = await api.deleteMessageSafe(messageId);
+        if (!result?.success) {
+          throw new Error(result?.message || 'Failed to delete message');
+        }
+
+        setMessages((prev) => prev.filter((m) => m.id !== messageId));
+        queryClient.setQueryData<Message[]>(dmMessagesQueryKey(conversationId), (cached) =>
+          cached ? cached.filter((m) => m.id !== messageId) : cached
+        );
+
+        if (result.conversation_id) {
+          dispatchConversationPreviewUpdate(
+            result.conversation_id,
+            result.last_message || '',
+            result.last_message_at || new Date().toISOString()
+          );
+        }
+
+        return true;
+      } catch (err: unknown) {
+        console.error('Error deleting message:', err);
+        setError((err as Error).message || 'Failed to delete message');
+        return false;
+      }
+    },
+    [conversationId, queryClient]
+  );
+
   return {
     messages,
     loading,
@@ -435,6 +486,7 @@ export function useChat(conversationId: string | null, onMessageSent?: (conversa
     sending,
     error,
     sendMessage,
+    deleteMessage,
     markAsRead,
     loadOlderMessages,
     reload: () => queryClient.invalidateQueries({ queryKey: dmMessagesQueryKey(conversationId!) }),

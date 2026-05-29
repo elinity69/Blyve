@@ -2,10 +2,11 @@ import { MEDIA_EMBED_IFRAME_ALLOW } from '../../lib/mediaEmbedAllow';
 
 interface YouTubeEmbedProps {
   videoId: string;
+  inBubble?: boolean;
 }
 
 /** Plain iframe embed — no YouTube IFrame API (avoids postMessage noise on localhost). */
-export function YouTubeEmbed({ videoId }: YouTubeEmbedProps) {
+export function YouTubeEmbed({ videoId, inBubble = false }: YouTubeEmbedProps) {
   const origin = encodeURIComponent(
     typeof window !== 'undefined' ? window.location.origin : ''
   );
@@ -13,7 +14,9 @@ export function YouTubeEmbed({ videoId }: YouTubeEmbedProps) {
 
   return (
     <div
-      className="overflow-hidden rounded-xl border border-black/10 dark:border-white/10 bg-black"
+      className={`overflow-hidden rounded-xl bg-black ${
+        inBubble ? '' : 'border border-black/10 dark:border-white/10'
+      }`}
       onClick={(event) => event.stopPropagation()}
       onMouseDown={(event) => event.stopPropagation()}
     >

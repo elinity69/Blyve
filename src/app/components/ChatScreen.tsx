@@ -27,6 +27,7 @@ import { useLongPress } from '../hooks/useLongPress';
 import { MessageReplyComposerBar } from './chat/MessageReplyComposerBar';
 import { ChatMessageComposer } from './chat/ChatMessageComposer';
 import { useChatMediaSend } from '../hooks/useChatMediaSend';
+import { MessageContextMenuWrapper } from './chat/MessageContextMenu';
 import { MessageRowReplyWrapper } from './chat/MessageRowReplyWrapper';
 import { MessageRowReplyButton } from './chat/MessageRowReplyButton';
 import {
@@ -80,7 +81,17 @@ export function ChatScreen({
 }: ChatScreenProps) {
   const { t, i18n } = useTranslation();
   const [conversationActionsMenu, setConversationActionsMenu] = useState<ConversationActionTarget | null>(null);
-  const { messages, loading, loadingMore, hasMore, sending, error, sendMessage, loadOlderMessages } = useChat(conversationId);
+  const {
+    messages,
+    loading,
+    loadingMore,
+    hasMore,
+    sending,
+    error,
+    sendMessage,
+    deleteMessage,
+    loadOlderMessages,
+  } = useChat(conversationId);
   const { currentUserProfile } = useAppData();
   const {
     startDirectCall,
@@ -662,6 +673,20 @@ export function ChatScreen({
                       setReplyTarget(buildReplyTarget(msg, getSenderLabel(msg.sender_id)))
                     }
                   >
+                    <MessageContextMenuWrapper
+                      canDelete={isMe}
+                      onReply={() =>
+                        setReplyTarget(buildReplyTarget(msg, getSenderLabel(msg.sender_id)))
+                      }
+                      onDelete={() => {
+                        const confirmed = window.confirm(t('chat.deleteMessageConfirm'));
+                        if (!confirmed) return;
+                        void deleteMessage(msg.id).then((ok) => {
+                          if (ok) toast.success(t('chat.deleteMessageSuccess'));
+                          else toast.error(t('chat.deleteMessageFailedTitle'));
+                        });
+                      }}
+                    >
                     <div className={`flex w-full flex-col ${isMe ? 'items-end' : 'items-start'}`}>
                       <div
                         className={`${
@@ -709,6 +734,7 @@ export function ChatScreen({
                         </div>
                       </div>
                     </div>
+                    </MessageContextMenuWrapper>
                   </MessageRowReplyWrapper>
                 </motion.div>
               );

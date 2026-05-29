@@ -427,6 +427,20 @@ export class ApiClient {
     return data;
   }
 
+  async deleteMessageSafe(messageId: string) {
+    const { data, error } = await supabase.rpc('delete_message_safe', {
+      p_message_id: messageId,
+    });
+    if (error) throw error;
+    return data as {
+      success?: boolean;
+      message?: string;
+      conversation_id?: string;
+      last_message?: string | null;
+      last_message_at?: string | null;
+    };
+  }
+
   /** Presigned R2 upload — credentials stay on the edge function only. */
   async requestUploadPresign(body: {
     mimeType: string;

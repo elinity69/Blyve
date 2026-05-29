@@ -44,10 +44,12 @@ async function fetchLinkPreview(url: string): Promise<LinkPreviewData | null> {
   return promise;
 }
 
-function TenorEmbed({ id }: { id: string }) {
+function TenorEmbed({ id, inBubble = false }: { id: string; inBubble?: boolean }) {
   return (
     <div
-      className="aspect-video w-full max-h-80 overflow-hidden rounded-xl border border-black/10 dark:border-white/10 bg-black/5 dark:bg-white/5"
+      className={`aspect-video w-full max-h-80 overflow-hidden rounded-xl bg-black/5 dark:bg-white/5 ${
+        inBubble ? '' : 'border border-black/10 dark:border-white/10'
+      }`}
       onPointerDown={(event) => event.stopPropagation()}
       onClick={(event) => event.stopPropagation()}
     >
@@ -62,7 +64,13 @@ function TenorEmbed({ id }: { id: string }) {
   );
 }
 
-function LinkPreviewCard({ preview }: { preview: LinkPreviewData }) {
+function LinkPreviewCard({
+  preview,
+  inBubble = false,
+}: {
+  preview: LinkPreviewData;
+  inBubble?: boolean;
+}) {
   const hostname = (() => {
     try {
       return new URL(preview.url).hostname.replace(/^www\./, '');
@@ -74,10 +82,12 @@ function LinkPreviewCard({ preview }: { preview: LinkPreviewData }) {
   return (
     <button
       type="button"
-      className="flex w-full cursor-pointer overflow-hidden rounded-xl border border-black/10 bg-[#f2f3f5] p-0 text-left transition-colors hover:bg-[#ebedef] dark:border-white/10 dark:bg-[#2b2d31] dark:hover:bg-[#313338]"
+      className={`flex w-full cursor-pointer overflow-hidden rounded-xl bg-[#f2f3f5] p-0 text-left transition-colors hover:bg-[#ebedef] dark:bg-[#2b2d31] dark:hover:bg-[#313338] ${
+        inBubble ? '' : 'border border-black/10 dark:border-white/10'
+      }`}
       onClick={(event) => openExternalLink(event, preview.url)}
     >
-      <div className="w-1 shrink-0 bg-orange-500" aria-hidden />
+      {!inBubble ? <div className="w-1 shrink-0 bg-orange-500" aria-hidden /> : null}
       <div className="flex min-w-0 flex-1 gap-3 p-3">
         <div className="min-w-0 flex-1">
           <p className="truncate text-[11px] font-semibold uppercase tracking-wide text-orange-600 dark:text-orange-400">
@@ -111,7 +121,7 @@ function LinkPreviewCard({ preview }: { preview: LinkPreviewData }) {
   );
 }
 
-function LinkPreviewEmbed({ url }: { url: string }) {
+function LinkPreviewEmbed({ url, inBubble = false }: { url: string; inBubble?: boolean }) {
   const [preview, setPreview] = useState<LinkPreviewData | null | undefined>(
     previewCache.get(url)
   );
@@ -128,11 +138,15 @@ function LinkPreviewEmbed({ url }: { url: string }) {
 
   if (preview === undefined) {
     return (
-      <div className="h-16 animate-pulse rounded-xl border border-black/10 bg-black/5 dark:border-white/10 dark:bg-white/5" />
+      <div
+        className={`h-16 animate-pulse rounded-xl bg-black/5 dark:bg-white/5 ${
+          inBubble ? '' : 'border border-black/10 dark:border-white/10'
+        }`}
+      />
     );
   }
 
-  if (preview) return <LinkPreviewCard preview={preview} />;
+  if (preview) return <LinkPreviewCard preview={preview} inBubble={inBubble} />;
 
   let hostname = url;
   try {
@@ -144,10 +158,12 @@ function LinkPreviewEmbed({ url }: { url: string }) {
   return (
     <button
       type="button"
-      className="flex w-full cursor-pointer overflow-hidden rounded-xl border border-black/10 bg-[#f2f3f5] p-3 text-left transition-colors hover:bg-[#ebedef] dark:border-white/10 dark:bg-[#2b2d31] dark:hover:bg-[#313338]"
+      className={`flex w-full cursor-pointer overflow-hidden rounded-xl bg-[#f2f3f5] p-3 text-left transition-colors hover:bg-[#ebedef] dark:bg-[#2b2d31] dark:hover:bg-[#313338] ${
+        inBubble ? '' : 'border border-black/10 dark:border-white/10'
+      }`}
       onClick={(event) => openExternalLink(event, url)}
     >
-      <div className="w-1 shrink-0 rounded-full bg-orange-500" aria-hidden />
+      {!inBubble ? <div className="w-1 shrink-0 rounded-full bg-orange-500" aria-hidden /> : null}
       <div className="min-w-0 pl-3">
         <p className="truncate text-sm font-semibold text-gray-900 dark:text-white">{hostname}</p>
         <p className="mt-0.5 flex items-center gap-1 truncate text-xs text-gray-500 dark:text-gray-400">
@@ -178,6 +194,7 @@ function MessageEmbedItem({
           src={embed.imageUrl || embed.url}
           openUrl={embed.url}
           alt="Shared image"
+          inBubble={inBubble}
         />
       );
       break;
@@ -190,22 +207,24 @@ function MessageEmbedItem({
       content = <MessageAudioEmbed src={embed.url} inBubble={inBubble} isMe={isMe} />;
       break;
     case 'file':
-      content = <MessageFileEmbed url={embed.url} />;
+      content = <MessageFileEmbed url={embed.url} inBubble={inBubble} />;
       break;
     case 'youtube':
-      content = embed.youtubeId ? <YouTubeEmbed videoId={embed.youtubeId} /> : null;
+      content = embed.youtubeId ? (
+        <YouTubeEmbed videoId={embed.youtubeId} inBubble={inBubble} />
+      ) : null;
       break;
     case 'spotify':
       content =
         embed.spotifyType && embed.spotifyId ? (
-          <SpotifyEmbed type={embed.spotifyType} id={embed.spotifyId} />
+          <SpotifyEmbed type={embed.spotifyType} id={embed.spotifyId} inBubble={inBubble} />
         ) : null;
       break;
     case 'tenor':
-      content = embed.tenorId ? <TenorEmbed id={embed.tenorId} /> : null;
+      content = embed.tenorId ? <TenorEmbed id={embed.tenorId} inBubble={inBubble} /> : null;
       break;
     case 'link':
-      content = <LinkPreviewEmbed url={embed.url} />;
+      content = <LinkPreviewEmbed url={embed.url} inBubble={inBubble} />;
       break;
     default:
       content = null;

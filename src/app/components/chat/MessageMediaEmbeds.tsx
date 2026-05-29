@@ -19,7 +19,7 @@ export function MessageVideoEmbed({
         controls
         playsInline
         preload="metadata"
-        className="max-h-48 w-full min-w-[12rem] max-w-[min(100%,16rem)] rounded-lg"
+        className="max-h-48 w-full min-w-[12rem] max-w-[min(100%,16rem)] rounded-xl"
         onPointerDown={(e) => e.stopPropagation()}
       />
     );
@@ -75,9 +75,11 @@ export function MessageAudioEmbed({
 export function MessageFileEmbed({
   url,
   filename,
+  inBubble = false,
 }: {
   url: string;
   filename?: string;
+  inBubble?: boolean;
 }) {
   let label = filename || url;
   try {
@@ -91,7 +93,9 @@ export function MessageFileEmbed({
   return (
     <button
       type="button"
-      className="mt-1.5 flex w-full max-w-full items-center gap-3 rounded-xl border border-black/10 bg-[#f2f3f5] p-3 text-left transition-colors hover:bg-[#ebedef] dark:border-white/10 dark:bg-[#2b2d31] dark:hover:bg-[#313338] sm:max-w-[min(100%,24rem)]"
+      className={`flex w-full max-w-full items-center gap-3 rounded-xl bg-[#f2f3f5] p-3 text-left transition-colors hover:bg-[#ebedef] dark:bg-[#2b2d31] dark:hover:bg-[#313338] ${
+        inBubble ? 'sm:max-w-[min(100%,20rem)]' : 'mt-1.5 border border-black/10 dark:border-white/10 sm:max-w-[min(100%,24rem)]'
+      }`}
       onClick={(e) => openExternalLink(e, url)}
       onPointerDown={(e) => e.stopPropagation()}
     >
@@ -105,14 +109,28 @@ export function MessageFileEmbed({
   );
 }
 
-export function MessageImageEmbed({ src, openUrl, alt }: { src: string; openUrl: string; alt: string }) {
+export function MessageImageEmbed({
+  src,
+  openUrl,
+  alt,
+  inBubble = false,
+}: {
+  src: string;
+  openUrl: string;
+  alt: string;
+  inBubble?: boolean;
+}) {
   const [failed, setFailed] = useState(false);
   if (failed) return null;
 
   return (
     <button
       type="button"
-      className="mt-1.5 block w-full max-w-full cursor-pointer overflow-hidden rounded-xl border border-black/10 p-0 dark:border-white/10 sm:max-w-[min(100%,24rem)]"
+      className={
+        inBubble
+          ? 'block w-full max-w-full cursor-pointer overflow-hidden rounded-xl p-0 sm:max-w-[min(100%,20rem)]'
+          : 'mt-1.5 block w-full max-w-full cursor-pointer overflow-hidden rounded-xl border border-black/10 p-0 dark:border-white/10 sm:max-w-[min(100%,24rem)]'
+      }
       onClick={(event) => openExternalLink(event, openUrl)}
       onPointerDown={(e) => e.stopPropagation()}
       aria-label={alt}
@@ -121,7 +139,9 @@ export function MessageImageEmbed({ src, openUrl, alt }: { src: string; openUrl:
         src={src}
         alt={alt}
         draggable={false}
-        className="pointer-events-none max-h-80 w-full object-contain bg-black/5 dark:bg-white/5"
+        className={`pointer-events-none w-full object-contain ${
+          inBubble ? 'max-h-80 rounded-xl' : 'max-h-80 bg-black/5 dark:bg-white/5'
+        }`}
         loading="lazy"
         onError={() => setFailed(true)}
       />

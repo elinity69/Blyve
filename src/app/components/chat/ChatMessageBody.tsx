@@ -1,5 +1,6 @@
 import { MessageBubble } from './MessageBubble';
 import { MessageEmbedList } from './MessageEmbedList';
+import { MessageEmbedTimeFooter } from './MessageEmbedTimeFooter';
 import { MessageReplyQuote } from './MessageReplyQuote';
 import type { ReplyQuoteData } from '../../lib/messageReply';
 import type { MessageGroupPosition } from '../../lib/messageGrouping';
@@ -38,11 +39,16 @@ export function ChatMessageBody({
 
   if (mediaOnly) {
     return (
-      <div className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}>
-        <MessageBubble position={bubblePosition} isMe={isMe} time={messageTime} isRead={isRead}>
-          {replyQuote ? <MessageReplyQuote quote={replyQuote} isMe={isMe} /> : null}
+      <div className={`flex max-w-full flex-col ${isMe ? 'items-end' : 'items-start'}`}>
+        {replyQuote ? (
+          <div className="mb-1 max-w-full">
+            <MessageReplyQuote quote={replyQuote} isMe={isMe} />
+          </div>
+        ) : null}
+        <div className="max-w-full min-w-0 sm:max-w-[min(100%,20rem)]">
           <MessageEmbedList embeds={embeds} inBubble isMe={isMe} />
-        </MessageBubble>
+        </div>
+        <MessageEmbedTimeFooter time={messageTime} isMe={isMe} isRead={isRead} />
       </div>
     );
   }
