@@ -629,21 +629,7 @@ app.get("/groups", async (c) => {
 
     const { data: memberships, error: membershipError } = await supabase
       .from("group_members")
-      .select(`
-        id,
-        role,
-        joined_at,
-        group:group_id (
-          id,
-          name,
-          description,
-          creator_id,
-          is_private,
-          icon_url,
-          created_at,
-          updated_at
-        )
-      `)
+      .select("id, role, joined_at, group_id")
       .eq("user_id", user.id)
       .order("joined_at", { ascending: false });
 
@@ -651,7 +637,39 @@ app.get("/groups", async (c) => {
       return c.json({ error: membershipError.message }, 500);
     }
 
-    return c.json({ groups: memberships || [] });
+    const rows = memberships || [];
+    const groupIds = rows
+      .map((row) => row.group_id as string | null)
+      .filter((id): id is string => Boolean(id));
+
+    if (groupIds.length === 0) {
+      return c.json({ groups: [] });
+    }
+
+    const { data: groupRows, error: groupsError } = await adminSupabase
+      .from("groups")
+      .select("id, name, description, creator_id, is_private, icon_url, created_at, updated_at")
+      .in("id", groupIds);
+
+    if (groupsError) {
+      return c.json({ error: groupsError.message }, 500);
+    }
+
+    const groupById = new Map((groupRows || []).map((group) => [group.id, group]));
+    const groups = rows
+      .map((membership) => {
+        const group = groupById.get(membership.group_id as string);
+        if (!group) return null;
+        return {
+          id: membership.id,
+          role: membership.role,
+          joined_at: membership.joined_at,
+          group,
+        };
+      })
+      .filter((entry) => entry !== null);
+
+    return c.json({ groups });
   } catch (error) {
     console.error("GET /groups failed:", error);
     return c.json({ error: "Failed to fetch groups" }, 500);

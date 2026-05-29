@@ -1,7 +1,12 @@
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { Reply, Trash2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { useLongPress } from '../../hooks/useLongPress';
+
+const MENU_Z_BACKDROP = 400;
+const MENU_Z_PANEL = 401;
+const OPEN_GRACE_MS = 320;
 
 interface MessageContextMenuProps {
   x: number;
@@ -22,7 +27,12 @@ function MessageContextMenu({
 }: MessageContextMenuProps) {
   const { t } = useTranslation();
   const menuRef = useRef<HTMLDivElement>(null);
+  const openedAtRef = useRef(Date.now());
   const [position, setPosition] = useState({ x, y });
+
+  useLayoutEffect(() => {
+    openedAtRef.current = Date.now();
+  }, [x, y]);
 
   useLayoutEffect(() => {
     const menu = menuRef.current;
@@ -45,6 +55,7 @@ function MessageContextMenu({
 
   useEffect(() => {
     const handlePointerDown = (event: PointerEvent) => {
+      if (Date.now() - openedAtRef.current < OPEN_GRACE_MS) return;
       if (menuRef.current?.contains(event.target as Node)) return;
       onClose();
     };
@@ -52,10 +63,10 @@ function MessageContextMenu({
       if (event.key === 'Escape') onClose();
     };
 
-    window.addEventListener('pointerdown', handlePointerDown);
+    window.addEventListener('pointerdown', handlePointerDown, true);
     window.addEventListener('keydown', handleKeyDown);
     return () => {
-      window.removeEventListener('pointerdown', handlePointerDown);
+      window.removeEventListener('pointerdown', handlePointerDown, true);
       window.removeEventListener('keydown', handleKeyDown);
     };
   }, [onClose]);
@@ -66,7 +77,8 @@ function MessageContextMenu({
     <>
       <button
         type="button"
-        className="fixed inset-0 z-[300] cursor-default bg-transparent"
+        className="fixed inset-0 cursor-default bg-black/10"
+        style={{ zIndex: MENU_Z_BACKDROP }}
         aria-label="Close message menu"
         onClick={onClose}
         onContextMenu={(event) => {
@@ -76,9 +88,10 @@ function MessageContextMenu({
       />
       <div
         ref={menuRef}
-        className="fixed z-[301] min-w-[180px] max-w-[min(92vw,280px)] overflow-hidden rounded-xl border border-gray-200 bg-white shadow-xl dark:border-white/10 dark:bg-[#1e1f22]"
-        style={{ left: position.x, top: position.y }}
+        className="fixed min-w-[180px] max-w-[min(92vw,280px)] overflow-hidden rounded-xl border border-gray-200 bg-white shadow-2xl dark:border-white/10 dark:bg-[#1e1f22]"
+        style={{ left: position.x, top: position.y, zIndex: MENU_Z_PANEL }}
         role="menu"
+        onPointerDown={(event) => event.stopPropagation()}
         onClick={(event) => event.stopPropagation()}
         onContextMenu={(event) => event.preventDefault()}
       >
@@ -131,6 +144,14 @@ export function MessageContextMenuWrapper({
 }: MessageContextMenuWrapperProps) {
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
 
+  const openMenu = useCallback((clientX: number, clientY: number) => {
+    setMenu({ x: clientX, y: clientY });
+  }, []);
+
+  const longPress = useLongPress((event) => {
+    openMenu(event.clientX, event.clientY);
+  });
+
   return (
     <>
       <div
@@ -138,8 +159,9 @@ export function MessageContextMenuWrapper({
         onContextMenuCapture={(event) => {
           event.preventDefault();
           event.stopPropagation();
-          setMenu({ x: event.clientX, y: event.clientY });
+          openMenu(event.clientX, event.clientY);
         }}
+        {...longPress}
       >
         {children}
       </div>
