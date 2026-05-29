@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase';
 import { initAuthSession, resolveAuthUser } from '../lib/authSession';
 import { RealtimeChannel } from '@supabase/supabase-js';
 import { Conversation } from './useChat';
+import { onAppForeground, shouldResubscribeRealtimeChannel } from '../lib/realtimeReconnect';
 
 export function useConversations() {
   const [conversations, setConversations] = useState<Conversation[]>([]);
@@ -10,6 +11,12 @@ export function useConversations() {
   const [error, setError] = useState<string | null>(null);
   const channelRef = useRef<RealtimeChannel | null>(null);
   const reloadTimeoutRef = useRef<number | null>(null);
+  const conversationsRef = useRef<Conversation[]>([]);
+  const loadConversationsRef = useRef<() => Promise<void>>(async () => {});
+  const resubscribeTimeoutRef = useRef<number | null>(null);
+  const channelHealthyRef = useRef(false);
+
+  conversationsRef.current = conversations;
 
   const loadConversations = useCallback(async () => {
     try {
@@ -118,11 +125,25 @@ export function useConversations() {
     }
   }, []);
 
+  loadConversationsRef.current = loadConversations;
+
+  const scheduleReload = useCallback(() => {
+    if (reloadTimeoutRef.current) return;
+
+    reloadTimeoutRef.current = window.setTimeout(() => {
+      reloadTimeoutRef.current = null;
+      void loadConversationsRef.current();
+    }, 500);
+  }, []);
+
   const applyConversationPreview = useCallback(
     (conversationId: string, content: string, created_at: string) => {
-      setConversations((prev) => {
-        if (!prev.some((c) => c.id === conversationId)) return prev;
+      if (!conversationsRef.current.some((c) => c.id === conversationId)) {
+        scheduleReload();
+        return;
+      }
 
+      setConversations((prev) => {
         const updated = prev.map((conv) => {
           if (conv.id !== conversationId) return conv;
           const currentLast = new Date(conv.last_message_at || 0).getTime();
@@ -144,29 +165,83 @@ export function useConversations() {
         });
       });
     },
-    []
+    [scheduleReload]
   );
 
-  const scheduleReload = useCallback(() => {
-    if (reloadTimeoutRef.current) return;
+  const handleConversationChange = useCallback(
+    (payload: { new: Record<string, unknown> }) => {
+      const updated = payload.new as {
+        id?: string;
+        last_message?: string;
+        last_message_at?: string;
+      };
 
-    reloadTimeoutRef.current = window.setTimeout(() => {
-      reloadTimeoutRef.current = null;
-      void loadConversations();
-    }, 500);
-  }, [loadConversations]);
+      if (updated?.id && updated.last_message && updated.last_message_at) {
+        applyConversationPreview(
+          updated.id,
+          updated.last_message,
+          updated.last_message_at
+        );
+        return;
+      }
+
+      scheduleReload();
+    },
+    [applyConversationPreview, scheduleReload]
+  );
 
   useEffect(() => {
     void loadConversations();
-    let channel: RealtimeChannel | null = null;
+    let cancelled = false;
+
+    const scheduleResubscribe = (setupFn: () => Promise<void>) => {
+      if (resubscribeTimeoutRef.current) {
+        window.clearTimeout(resubscribeTimeoutRef.current);
+      }
+      resubscribeTimeoutRef.current = window.setTimeout(() => {
+        resubscribeTimeoutRef.current = null;
+        if (!cancelled) {
+          void setupFn();
+        }
+      }, 800);
+    };
 
     const setupPreviewChannel = async () => {
       const session = await initAuthSession();
       const user = session?.user;
-      if (!user) return;
+      if (!user || cancelled) return;
 
-      channel = supabase
+      if (channelRef.current) {
+        supabase.removeChannel(channelRef.current);
+        channelRef.current = null;
+      }
+
+      const channel = supabase
         .channel(`preview_list_${user.id}`)
+        .on(
+          'postgres_changes',
+          {
+            event: 'INSERT',
+            schema: 'public',
+            table: 'conversations',
+            filter: `user1_id=eq.${user.id}`,
+          },
+          () => {
+            scheduleReload();
+          }
+        )
+        .on(
+          'postgres_changes',
+          {
+            event: 'INSERT',
+            schema: 'public',
+            table: 'conversations',
+            filter: `user2_id=eq.${user.id}`,
+          },
+          () => {
+            scheduleReload();
+          }
+        )
         .on(
           'postgres_changes',
           {
@@ -175,22 +250,7 @@ export function useConversations() {
             table: 'conversations',
             filter: `user1_id=eq.${user.id}`,
           },
-          (payload) => {
-            const updated = payload.new as {
-              id?: string;
-              last_message?: string;
-              last_message_at?: string;
-            };
-            if (updated?.id && updated.last_message && updated.last_message_at) {
-              applyConversationPreview(
-                updated.id,
-                updated.last_message,
-                updated.last_message_at
-              );
-            } else {
-              scheduleReload();
-            }
-          }
+          handleConversationChange
         )
         .on(
           'postgres_changes',
@@ -200,35 +260,47 @@ export function useConversations() {
             table: 'conversations',
             filter: `user2_id=eq.${user.id}`,
           },
-          (payload) => {
-            const updated = payload.new as {
-              id?: string;
-              last_message?: string;
-              last_message_at?: string;
-            };
-            if (updated?.id && updated.last_message && updated.last_message_at) {
-              applyConversationPreview(
-                updated.id,
-                updated.last_message,
-                updated.last_message_at
-              );
-            } else {
-              scheduleReload();
-            }
-          }
+          handleConversationChange
         )
         .subscribe((status) => {
-          console.log(`📡 Conversation preview channel: ${status}`);
+          if (status === 'SUBSCRIBED') {
+            channelHealthyRef.current = true;
+            return;
+          }
+
+          if (shouldResubscribeRealtimeChannel(status)) {
+            channelHealthyRef.current = false;
+            scheduleResubscribe(setupPreviewChannel);
+            return;
+          }
+
+          if (import.meta.env.DEV) {
+            console.log(`📡 Conversation preview channel: ${status}`);
+          }
         });
 
       channelRef.current = channel;
     };
 
-    setupPreviewChannel().catch((err) =>
-      console.error('Error setting up preview channel:', err)
-    );
+    void setupPreviewChannel();
+
+    const unsubscribeForeground = onAppForeground(() => {
+      scheduleReload();
+      if (!channelHealthyRef.current) {
+        scheduleResubscribe(setupPreviewChannel);
+      }
+    });
+
+    const handleListReload = () => {
+      scheduleReload();
+    };
+
+    window.addEventListener('conversation-list-reload-requested', handleListReload);
 
     return () => {
+      cancelled = true;
+      unsubscribeForeground();
+      window.removeEventListener('conversation-list-reload-requested', handleListReload);
       if (channelRef.current) {
         supabase.removeChannel(channelRef.current);
         channelRef.current = null;
@@ -237,8 +309,12 @@ export function useConversations() {
         window.clearTimeout(reloadTimeoutRef.current);
         reloadTimeoutRef.current = null;
       }
+      if (resubscribeTimeoutRef.current) {
+        window.clearTimeout(resubscribeTimeoutRef.current);
+        resubscribeTimeoutRef.current = null;
+      }
     };
-  }, [applyConversationPreview, loadConversations, scheduleReload]);
+  }, [handleConversationChange, loadConversations, scheduleReload]);
 
   useEffect(() => {
     const handlePreviewUpdate = (event: Event) => {

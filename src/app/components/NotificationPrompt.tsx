@@ -4,7 +4,11 @@ import { Bell, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { NotificationManager } from '../lib/notifications';
 
-export const NotificationPrompt = () => {
+interface NotificationPromptProps {
+  userId?: string | null;
+}
+
+export const NotificationPrompt = ({ userId }: NotificationPromptProps) => {
   const { t } = useTranslation();
   const [isVisible, setIsVisible] = useState(false);
 
@@ -26,7 +30,11 @@ export const NotificationPrompt = () => {
   }, []);
 
   const handleEnable = async () => {
-    await NotificationManager.requestPermission();
+    if (userId) {
+      await NotificationManager.enablePushNotifications(userId);
+    } else {
+      await NotificationManager.requestPermission();
+    }
     localStorage.setItem('notification-asked', 'true');
     setIsVisible(false);
   };

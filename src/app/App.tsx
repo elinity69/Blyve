@@ -532,6 +532,11 @@ function AppContent({ onUserIdChange }: AppContentProps = {}) {
   useTypingRealtime(isAuthenticated && currentUserId ? currentUserId : null);
 
   useEffect(() => {
+    if (!isAuthenticated || !currentUserId) return;
+    void NotificationManager.syncPushSubscription(currentUserId);
+  }, [isAuthenticated, currentUserId]);
+
+  useEffect(() => {
     if (!isAuthenticated) return;
 
     NotificationManager.resetActiveConversationTracking();
@@ -577,12 +582,31 @@ function AppContent({ onUserIdChange }: AppContentProps = {}) {
       }
     };
 
+    const handleNotificationClick = (event: CustomEvent) => {
+      const { conversationId } = event.detail ?? {};
+      if (conversationId) {
+        openConversationInMessages(conversationId);
+      }
+    };
+
+    const handleServiceWorkerMessage = (event: MessageEvent) => {
+      const data = event.data;
+      if (!data || data.type !== 'notification-click') return;
+      if (data.conversationId) {
+        openConversationInMessages(String(data.conversationId));
+      }
+    };
+
+    window.addEventListener('notification-click', handleNotificationClick as EventListener);
     window.addEventListener('toast-conversation-click', handleToastConversationClick as EventListener);
     window.addEventListener('navigate-to-conversation', handleNavigateToConversation as EventListener);
+    navigator.serviceWorker?.addEventListener('message', handleServiceWorkerMessage);
 
     return () => {
+      window.removeEventListener('notification-click', handleNotificationClick as EventListener);
       window.removeEventListener('toast-conversation-click', handleToastConversationClick as EventListener);
       window.removeEventListener('navigate-to-conversation', handleNavigateToConversation as EventListener);
+      navigator.serviceWorker?.removeEventListener('message', handleServiceWorkerMessage);
     };
   }, []);
 
@@ -807,7 +831,7 @@ function AppContent({ onUserIdChange }: AppContentProps = {}) {
       <Toaster />
       
       {/* Notification Permission Prompt */}
-      {isAuthenticated && <NotificationPrompt />}
+      {isAuthenticated && <NotificationPrompt userId={currentUserId} />}
     </div>
   );
 }

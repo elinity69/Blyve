@@ -6,9 +6,24 @@ import { useMobileViewportDriver } from '../hooks/useMobileViewportInsets';
 interface NavigationStackProps {
   children: React.ReactNode;
   onBack: () => void;
+  skipEnterAnimation?: boolean;
 }
 
-export function NavigationStack({ children, onBack }: NavigationStackProps) {
+const shellStyle = {
+  position: 'fixed' as const,
+  top: `var(${MOBILE_VV_CSS.offsetTop}, 0px)`,
+  left: 0,
+  right: 0,
+  height: `var(${MOBILE_VV_CSS.height}, 100dvh)`,
+  paddingBottom: `var(${MOBILE_VV_CSS.bottomInset}, 0px)`,
+  bottom: 'auto' as const,
+  zIndex: 10,
+  backgroundColor: 'var(--color-background, #0d0d0d)',
+  boxShadow: '-5px 0 20px rgba(0,0,0,0.15)',
+  overflow: 'hidden' as const,
+};
+
+export function NavigationStack({ children, onBack, skipEnterAnimation = false }: NavigationStackProps) {
   const [isMobile, setIsMobile] = useState(false);
   const [translateX, setTranslateX] = useState(0);
   const [swipeBackLocked, setSwipeBackLocked] = useState(false);
@@ -187,28 +202,27 @@ export function NavigationStack({ children, onBack }: NavigationStackProps) {
     animationFrameRef.current = requestAnimationFrame(animate);
   };
 
+  const isSwipeDragging = translateX > 0 || swipeBackLocked;
+
   if (isMobile) {
     return (
-      <div
+      <motion.div
+        initial={skipEnterAnimation ? false : { x: '100%' }}
+        animate={{ x: translateX }}
+        exit={{ x: '100%' }}
+        transition={
+          isSwipeDragging
+            ? { duration: 0 }
+            : { type: 'tween', duration: 0.28, ease: [0.32, 0.72, 0, 1] }
+        }
         onTouchStart={handleTouchStart}
         onTouchMove={handleTouchMove}
         onTouchMoveCapture={handleTouchMove}
         onTouchEnd={handleTouchEnd}
         onTouchCancel={handleTouchEnd}
         style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          height: `var(${MOBILE_VV_CSS.height}, 100dvh)`,
-          paddingBottom: `var(${MOBILE_VV_CSS.bottomInset}, 0px)`,
-          bottom: 'auto',
-          zIndex: 10,
-          backgroundColor: 'var(--color-background, #0d0d0d)',
-          boxShadow: '-5px 0 20px rgba(0,0,0,0.15)',
-          transform: translateX > 0 ? `translateX(${translateX}px)` : undefined,
+          ...shellStyle,
           willChange: swipeBackLocked ? 'transform' : 'auto',
-          overflow: 'hidden',
           touchAction: swipeBackLocked ? 'none' : 'pan-y',
         }}
       >
@@ -218,7 +232,7 @@ export function NavigationStack({ children, onBack }: NavigationStackProps) {
         >
           {children}
         </div>
-      </div>
+      </motion.div>
     );
   }
 
@@ -229,18 +243,14 @@ export function NavigationStack({ children, onBack }: NavigationStackProps) {
       exit={{ x: '100%' }}
       transition={{
         type: 'tween',
-        duration: 0.25,
-        ease: 'easeOut',
+        duration: 0.28,
+        ease: [0.32, 0.72, 0, 1],
       }}
       style={{
-        position: 'fixed',
+        ...shellStyle,
         top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
-        zIndex: 10,
-        backgroundColor: 'var(--color-background, white)',
-        boxShadow: '-5px 0 20px rgba(0,0,0,0.15)',
+        height: '100%',
+        paddingBottom: 0,
         overflowY: 'auto',
         WebkitOverflowScrolling: 'touch',
       }}

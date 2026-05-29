@@ -3,6 +3,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useToast } from '../context/ToastContext';
 import {
   dispatchConversationPreviewUpdate,
+  dispatchConversationListReloadRequested,
   dispatchUnreadRefreshRequest,
   type MessageEventPayload,
 } from '../lib/messageEvents';
@@ -10,6 +11,7 @@ import { isMessageReadReceiptUpdate } from '../lib/messageReadReceipts';
 import { NotificationManager } from '../lib/notifications';
 import { supabase } from '../lib/supabase';
 import { debounce } from '../lib/requestThrottle';
+import { onAppForeground, shouldResubscribeRealtimeChannel } from '../lib/realtimeReconnect';
 import { appendDmMessageToCache } from '../lib/chatMessages';
 import type { Message } from './useChat';
 
@@ -22,9 +24,9 @@ interface GroupMessageEventPayload {
   created_at: string;
 }
 
-const MAX_REALTIME_CONVERSATIONS = 30;
+const MAX_REALTIME_CONVERSATIONS = 50;
 const MAX_REALTIME_GROUPS = 30;
-const MEMBERSHIP_RELOAD_MS = 60_000;
+const MEMBERSHIP_RELOAD_MS = 15_000;
 
 /**
  * Filtered realtime hub for message events (no global table listeners).
@@ -56,6 +58,8 @@ export function useMessageRealtime(currentUserId: string | null) {
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const lastConversationIdsLoadRef = useRef(0);
   const lastGroupIdsLoadRef = useRef(0);
+  const channelHealthyRef = useRef(false);
+  const resubscribeTimeoutRef = useRef<number | null>(null);
 
   useEffect(() => {
     if (!currentUserId) return;
@@ -99,6 +103,13 @@ export function useMessageRealtime(currentUserId: string | null) {
     };
 
     const handleMessageInsert = async (message: MessageEventPayload) => {
+      const isKnownConversation = conversationIdsRef.current.has(message.conversation_id);
+      if (!isKnownConversation) {
+        dispatchConversationListReloadRequested();
+        await loadConversationIds(true);
+        subscribeFilteredChannel();
+      }
+
       const activeConversationId = NotificationManager.getActiveConversationId();
       const isChatOpen = activeConversationId === message.conversation_id;
 
@@ -239,6 +250,31 @@ export function useMessageRealtime(currentUserId: string | null) {
 
       const channel = supabase.channel(`message-realtime-${currentUserId}`);
 
+      channel.on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'conversations',
+          filter: `user1_id=eq.${currentUserId}`,
+        },
+        () => {
+          void refreshMembershipAndResubscribe();
+        }
+      );
+      channel.on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'conversations',
+          filter: `user2_id=eq.${currentUserId}`,
+        },
+        () => {
+          void refreshMembershipAndResubscribe();
+        }
+      );
+
       for (const conversationId of [...conversationIdsRef.current].slice(
         0,
         MAX_REALTIME_CONVERSATIONS
@@ -297,7 +333,25 @@ export function useMessageRealtime(currentUserId: string | null) {
         );
       }
 
-      channel.subscribe();
+      channel.subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          channelHealthyRef.current = true;
+          return;
+        }
+
+        if (shouldResubscribeRealtimeChannel(status)) {
+          channelHealthyRef.current = false;
+          if (resubscribeTimeoutRef.current) {
+            window.clearTimeout(resubscribeTimeoutRef.current);
+          }
+          resubscribeTimeoutRef.current = window.setTimeout(() => {
+            resubscribeTimeoutRef.current = null;
+            if (!cancelled) {
+              void refreshMembershipAndResubscribe();
+            }
+          }, 800);
+        }
+      });
       channelRef.current = channel;
     };
 
@@ -310,18 +364,28 @@ export function useMessageRealtime(currentUserId: string | null) {
     const refreshMembershipAndResubscribe = debounce(async () => {
       await Promise.all([loadConversationIds(true), loadGroupIds(true)]);
       if (cancelled) return;
+      dispatchConversationListReloadRequested();
       subscribeFilteredChannel();
     }, 1000);
 
     void setup();
+
+    const unsubscribeForeground = onAppForeground(() => {
+      void refreshMembershipAndResubscribe();
+    });
 
     window.addEventListener('conversation-opened', refreshMembershipAndResubscribe);
     window.addEventListener('conversation-closed', refreshMembershipAndResubscribe);
 
     return () => {
       cancelled = true;
+      unsubscribeForeground();
       window.removeEventListener('conversation-opened', refreshMembershipAndResubscribe);
       window.removeEventListener('conversation-closed', refreshMembershipAndResubscribe);
+      if (resubscribeTimeoutRef.current) {
+        window.clearTimeout(resubscribeTimeoutRef.current);
+        resubscribeTimeoutRef.current = null;
+      }
       if (channelRef.current) {
         supabase.removeChannel(channelRef.current);
         channelRef.current = null;

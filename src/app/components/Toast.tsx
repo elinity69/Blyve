@@ -2,6 +2,7 @@ import { motion } from 'framer-motion';
 import { CheckCircle, XCircle, Info, AlertTriangle, X, MessageCircle } from 'lucide-react';
 import { useEffect, useState, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useIsMdUp } from './ui/use-mobile';
 
 interface ToastProps {
   id: string;
@@ -52,6 +53,7 @@ export const Toast = ({
   onClick,
 }: ToastProps) => {
   const { t } = useTranslation();
+  const isDesktop = useIsMdUp();
   const Icon = ICONS[type];
   const isMessage = variant === 'message' || !!conversationId;
   const toastDuration = duration || (isMessage ? 6000 : DURATIONS[type]);
@@ -93,7 +95,16 @@ export const Toast = ({
     };
   }, [id, remainingTime, isPaused, onClose]);
 
-  const topPosition = `calc(12px + env(safe-area-inset-top, 0px) + ${index * 92}px)`;
+  const stackOffset = index * 92;
+  const positionStyle: React.CSSProperties = isDesktop
+    ? {
+        bottom: `calc(16px + env(safe-area-inset-bottom, 0px) + ${stackOffset}px)`,
+        top: 'auto',
+      }
+    : {
+        top: `calc(12px + env(safe-area-inset-top, 0px) + ${stackOffset}px)`,
+        bottom: 'auto',
+      };
   const isInteractive = Boolean(conversationId || onClick);
 
   const glassStyle: React.CSSProperties = isDark
@@ -116,19 +127,30 @@ export const Toast = ({
 
   return (
     <motion.div
-      initial={{ y: -24, opacity: 0, scale: 0.96, filter: 'blur(8px)' }}
+      initial={{
+        y: isDesktop ? 24 : -24,
+        opacity: 0,
+        scale: 0.96,
+        filter: 'blur(8px)',
+      }}
       animate={{ y: 0, opacity: 1, scale: 1, filter: 'blur(0px)' }}
-      exit={{ opacity: 0, scale: 0.98, y: -8, filter: 'blur(4px)' }}
+      exit={{
+        opacity: 0,
+        scale: 0.98,
+        y: isDesktop ? 8 : -8,
+        filter: 'blur(4px)',
+      }}
       transition={{ type: 'spring', stiffness: 420, damping: 32, mass: 0.75 }}
       whileHover={{ scale: 1.015 }}
       onHoverStart={() => setIsPaused(true)}
       onHoverEnd={() => setIsPaused(false)}
       drag="y"
-      dragConstraints={{ top: -140, bottom: 0 }}
+      dragConstraints={isDesktop ? { top: 0, bottom: 140 } : { top: -140, bottom: 0 }}
       dragElastic={0.08}
       onDragStart={() => setIsPaused(true)}
       onDragEnd={(_, info) => {
-        if (info.offset.y <= -100) {
+        const dismissThreshold = isDesktop ? 100 : -100;
+        if (isDesktop ? info.offset.y >= dismissThreshold : info.offset.y <= dismissThreshold) {
           onClose(id);
           return;
         }
@@ -136,8 +158,10 @@ export const Toast = ({
       }}
       className="fixed z-[10050] w-[calc(100%-24px)] max-w-[420px] left-1/2 -translate-x-1/2 md:left-auto md:right-4 md:translate-x-0 pointer-events-auto"
       style={{
-        top: topPosition,
-        transition: 'top 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+        ...positionStyle,
+        transition: isDesktop
+          ? 'bottom 0.3s cubic-bezier(0.4, 0, 0.2, 1)'
+          : 'top 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
       }}
     >
       <div

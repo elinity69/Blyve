@@ -3,6 +3,8 @@
  * Handles browser notifications when app is in background
  */
 
+import { subscribeToWebPush, unsubscribeFromWebPush } from './webPush';
+
 const MUTE_SOUND_IN_CHAT_KEY = 'mute_notification_sound_in_chat_conversations';
 const MUTE_NOTIFICATIONS_IN_GROUP_KEY = 'mute_notifications_in_group_servers';
 
@@ -213,6 +215,30 @@ export class NotificationManager {
       console.error('Error requesting notification permission:', error);
       return false;
     }
+  }
+
+  /**
+   * Request permission and register Web Push subscription (PWA, production only).
+   */
+  static async enablePushNotifications(userId: string): Promise<boolean> {
+    const granted = await this.requestPermission();
+    if (!granted) return false;
+    return subscribeToWebPush(userId);
+  }
+
+  /**
+   * Remove Web Push subscription for this browser.
+   */
+  static async disablePushNotifications(): Promise<void> {
+    await unsubscribeFromWebPush();
+  }
+
+  /**
+   * Re-sync push subscription when permission is already granted (e.g. after login).
+   */
+  static async syncPushSubscription(userId: string): Promise<void> {
+    if (this.getPermission() !== 'granted') return;
+    await subscribeToWebPush(userId);
   }
 
   /**

@@ -1,7 +1,6 @@
 import {
   useCallback,
   useEffect,
-  useLayoutEffect,
   useRef,
   useState,
   type DragEvent,
@@ -56,14 +55,13 @@ export function ChatMessageComposer({
   onDropActiveChange,
 }: ChatMessageComposerProps) {
   const { t } = useTranslation();
-  const rootRef = useRef<HTMLDivElement>(null);
+  const [inVisualViewportShell, setInVisualViewportShell] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const voiceStreamRef = useRef<MediaStream | null>(null);
   const voiceChunksRef = useRef<Blob[]>([]);
   const isMobile = useIsMobile();
   useMobileViewportDriver(isMobile);
-  const [inVisualViewportShell, setInVisualViewportShell] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [recording, setRecording] = useState(false);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
@@ -77,10 +75,8 @@ export function ChatMessageComposer({
   const showSendButton = hasText && !recording;
   const showMicButton = !hasText && !recording && !mediaUploading;
 
-  useLayoutEffect(() => {
-    setInVisualViewportShell(
-      !!rootRef.current?.closest('[data-visual-viewport-shell]'),
-    );
+  const assignRootRef = useCallback((node: HTMLDivElement | null) => {
+    setInVisualViewportShell(!!node?.closest('[data-visual-viewport-shell]'));
   }, []);
 
   useEffect(() => {
@@ -272,8 +268,8 @@ export function ChatMessageComposer({
 
   return (
     <div
-      ref={rootRef}
-      className={`relative z-20 shrink-0 border-t border-gray-200 blyve-border-subtle blyve-screen-bg px-4 pt-2 ${
+      ref={assignRootRef}
+      className={`relative z-20 mt-auto shrink-0 border-t border-gray-200 blyve-border-subtle blyve-screen-bg px-4 pt-2 ${
         dropActive ? 'ring-2 ring-inset ring-orange-400/60' : ''
       }`}
       style={{ paddingBottom: composerPaddingBottom }}

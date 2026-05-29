@@ -18,6 +18,11 @@ export function dispatchConversationPreviewUpdate(
   );
 }
 
+/** Reload the DM conversation list (new chats, membership changes). */
+export function dispatchConversationListReloadRequested() {
+  window.dispatchEvent(new CustomEvent('conversation-list-reload-requested'));
+}
+
 import { NotificationManager } from './notifications';
 
 let lastUnreadRefreshDispatchAt = 0;

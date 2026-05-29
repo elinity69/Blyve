@@ -1560,6 +1560,7 @@ export function MessagesScreen() {
   const reopenLastConversation = React.useCallback(() => {
     const conversationId = lastOpenedConversationIdRef.current;
     if (!conversationId || !currentUserId) return;
+    lastPushedChatIdRef.current = conversationId;
     openConversationById(conversationId);
   }, [currentUserId, openConversationById]);
 

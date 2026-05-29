@@ -19,6 +19,7 @@ import {
   fetchDmMessages,
   mergeDmMessagesById,
 } from '../lib/chatMessages';
+import { onAppForeground, shouldResubscribeRealtimeChannel } from '../lib/realtimeReconnect';
 
 export interface Message {
   id: string;
@@ -64,6 +65,7 @@ export function useChat(conversationId: string | null, onMessageSent?: (conversa
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const channelRef = useRef<RealtimeChannel | null>(null);
+  const resubscribeTimeoutRef = useRef<number | null>(null);
   const currentUserIdRef = useRef<string | null>(null);
   const messagesRef = useRef<Message[]>([]);
   const markAsReadInFlightRef = useRef(false);
@@ -91,6 +93,7 @@ export function useChat(conversationId: string | null, onMessageSent?: (conversa
     isPending,
     isFetched,
     error: queryError,
+    refetch: refetchMessages,
   } = useQuery({
     queryKey: dmMessagesQueryKey(conversationId!),
     enabled: !!conversationId,
@@ -237,109 +240,143 @@ export function useChat(conversationId: string | null, onMessageSent?: (conversa
       return;
     }
 
-    const channel = supabase
-      .channel(`messages:${conversationId}`)
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'messages',
-          filter: `conversation_id=eq.${conversationId}`,
-        },
-        (payload) => {
-          const newMessage = payload.new as Message;
-          setMessages((prev) => {
-            if (prev.some((m) => m.id === newMessage.id)) {
-              return prev;
+    let cancelled = false;
+
+    const subscribeMessagesChannel = () => {
+      if (cancelled) return;
+
+      if (channelRef.current) {
+        supabase.removeChannel(channelRef.current);
+        channelRef.current = null;
+      }
+
+      const channel = supabase
+        .channel(`messages:${conversationId}`)
+        .on(
+          'postgres_changes',
+          {
+            event: 'INSERT',
+            schema: 'public',
+            table: 'messages',
+            filter: `conversation_id=eq.${conversationId}`,
+          },
+          (payload) => {
+            const newMessage = payload.new as Message;
+            setMessages((prev) => {
+              if (prev.some((m) => m.id === newMessage.id)) {
+                return prev;
+              }
+              return [...prev, newMessage];
+            });
+
+            queryClient.setQueryData<Message[]>(dmMessagesQueryKey(conversationId), (cached) => {
+              const base = cached ?? messagesRef.current;
+              if (base.some((m) => m.id === newMessage.id)) return base;
+              return mergeDmMessagesById(base, [newMessage]);
+            });
+
+            dispatchConversationPreviewUpdate(
+              newMessage.conversation_id,
+              newMessage.content,
+              newMessage.created_at
+            );
+
+            if (newMessage.sender_id !== currentUserIdRef.current) {
+              lastPatchedUnreadKeyRef.current = '';
+              void markAsReadRef.current();
+              dispatchUnreadRefreshRequest({ exceptConversationId: conversationId });
             }
-            return [...prev, newMessage];
-          });
-
-          queryClient.setQueryData<Message[]>(dmMessagesQueryKey(conversationId), (cached) => {
-            const base = cached ?? messagesRef.current;
-            if (base.some((m) => m.id === newMessage.id)) return base;
-            return mergeDmMessagesById(base, [newMessage]);
-          });
-
-          dispatchConversationPreviewUpdate(
-            newMessage.conversation_id,
-            newMessage.content,
-            newMessage.created_at
-          );
-
-          if (newMessage.sender_id !== currentUserIdRef.current) {
-            lastPatchedUnreadKeyRef.current = '';
-            void markAsReadRef.current();
-            dispatchUnreadRefreshRequest({ exceptConversationId: conversationId });
           }
-        }
-      )
-      .on(
-        'postgres_changes',
-        {
-          event: 'UPDATE',
-          schema: 'public',
-          table: 'messages',
-          filter: `conversation_id=eq.${conversationId}`,
-        },
-        (payload) => {
-          if (
-            isMessageReadReceiptUpdate(
-              payload.old as Record<string, unknown> | undefined,
-              payload.new as Record<string, unknown> | undefined
-            )
-          ) {
+        )
+        .on(
+          'postgres_changes',
+          {
+            event: 'UPDATE',
+            schema: 'public',
+            table: 'messages',
+            filter: `conversation_id=eq.${conversationId}`,
+          },
+          (payload) => {
+            if (
+              isMessageReadReceiptUpdate(
+                payload.old as Record<string, unknown> | undefined,
+                payload.new as Record<string, unknown> | undefined
+              )
+            ) {
+              const updatedMessage = payload.new as Message;
+              setMessages((prev) =>
+                prev.map((m) => (m.id === updatedMessage.id ? updatedMessage : m))
+              );
+              queryClient.setQueryData<Message[]>(
+                dmMessagesQueryKey(conversationId),
+                (cached) => {
+                  if (!cached?.length) return cached;
+                  return cached.map((m) =>
+                    m.id === updatedMessage.id ? updatedMessage : m
+                  );
+                }
+              );
+              return;
+            }
+
             const updatedMessage = payload.new as Message;
             setMessages((prev) =>
               prev.map((m) => (m.id === updatedMessage.id ? updatedMessage : m))
             );
-            queryClient.setQueryData<Message[]>(
-              dmMessagesQueryKey(conversationId),
-              (cached) => {
-                if (!cached?.length) return cached;
-                return cached.map((m) =>
-                  m.id === updatedMessage.id ? updatedMessage : m
-                );
-              }
-            );
-            return;
           }
+        )
+        .on(
+          'postgres_changes',
+          {
+            event: 'DELETE',
+            schema: 'public',
+            table: 'messages',
+            filter: `conversation_id=eq.${conversationId}`,
+          },
+          (payload) => {
+            const deletedId = (payload.old as { id?: string })?.id;
+            if (!deletedId) return;
+            setMessages((prev) => prev.filter((m) => m.id !== deletedId));
+            queryClient.setQueryData<Message[]>(dmMessagesQueryKey(conversationId), (cached) =>
+              cached ? cached.filter((m) => m.id !== deletedId) : cached
+            );
+          }
+        )
+        .subscribe((status) => {
+          if (shouldResubscribeRealtimeChannel(status)) {
+            if (resubscribeTimeoutRef.current) {
+              window.clearTimeout(resubscribeTimeoutRef.current);
+            }
+            resubscribeTimeoutRef.current = window.setTimeout(() => {
+              resubscribeTimeoutRef.current = null;
+              subscribeMessagesChannel();
+            }, 800);
+          }
+        });
 
-          const updatedMessage = payload.new as Message;
-          setMessages((prev) =>
-            prev.map((m) => (m.id === updatedMessage.id ? updatedMessage : m))
-          );
-        }
-      )
-      .on(
-        'postgres_changes',
-        {
-          event: 'DELETE',
-          schema: 'public',
-          table: 'messages',
-          filter: `conversation_id=eq.${conversationId}`,
-        },
-        (payload) => {
-          const deletedId = (payload.old as { id?: string })?.id;
-          if (!deletedId) return;
-          setMessages((prev) => prev.filter((m) => m.id !== deletedId));
-          queryClient.setQueryData<Message[]>(dmMessagesQueryKey(conversationId), (cached) =>
-            cached ? cached.filter((m) => m.id !== deletedId) : cached
-          );
-        }
-      )
-      .subscribe();
+      channelRef.current = channel;
+    };
 
-    channelRef.current = channel;
+    subscribeMessagesChannel();
+
+    const unsubscribeForeground = onAppForeground(() => {
+      void refetchMessages();
+      subscribeMessagesChannel();
+    });
 
     return () => {
+      cancelled = true;
+      unsubscribeForeground();
+      if (resubscribeTimeoutRef.current) {
+        window.clearTimeout(resubscribeTimeoutRef.current);
+        resubscribeTimeoutRef.current = null;
+      }
       if (channelRef.current) {
         supabase.removeChannel(channelRef.current);
         channelRef.current = null;
       }
     };
-  }, [conversationId, queryClient]);
+  }, [conversationId, queryClient, refetchMessages]);
 
   const sendMessage = useCallback(
     async (

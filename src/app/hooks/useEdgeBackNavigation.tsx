@@ -1,7 +1,13 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
-import { AnimatePresence } from 'framer-motion';
+import { AnimatePresence, motion } from 'framer-motion';
 import { NavigationStack } from '../components/NavigationStack';
 import { MOBILE_VV_CSS } from '../lib/mobileViewport';
+
+interface StackScreen {
+  id: string;
+  content: React.ReactNode;
+  skipEnterAnimation?: boolean;
+}
 
 interface UseEdgeBackNavigationProps {
   baseContent: React.ReactNode;
@@ -10,15 +16,29 @@ interface UseEdgeBackNavigationProps {
   onForwardSwipe?: () => void;
 }
 
+const previewShellStyle = {
+  position: 'fixed' as const,
+  top: `var(${MOBILE_VV_CSS.offsetTop}, 0px)`,
+  left: 0,
+  right: 0,
+  height: `var(${MOBILE_VV_CSS.height}, 100dvh)`,
+  paddingBottom: `var(${MOBILE_VV_CSS.bottomInset}, 0px)`,
+  zIndex: 0,
+  overflow: 'hidden' as const,
+};
+
 export function useEdgeBackNavigation({
   baseContent,
   onStackChange,
   onForwardSwipe,
 }: UseEdgeBackNavigationProps) {
-  const [stack, setStack] = useState<Array<{ id: string; content: React.ReactNode }>>([]);
+  const [stack, setStack] = useState<StackScreen[]>([]);
+  const [forwardDragX, setForwardDragX] = useState(0);
   const stackIdCounter = useRef(0);
   const onStackChangeRef = useRef(onStackChange);
   const onForwardSwipeRef = useRef(onForwardSwipe);
+  const lastScreenCacheRef = useRef<StackScreen | null>(null);
+  const forwardAnimFrameRef = useRef<number | null>(null);
   onStackChangeRef.current = onStackChange;
   onForwardSwipeRef.current = onForwardSwipe;
 
@@ -32,17 +52,29 @@ export function useEdgeBackNavigation({
   });
 
   useEffect(() => {
+    if (stack.length > 0) {
+      lastScreenCacheRef.current = stack[stack.length - 1];
+    }
     onStackChangeRef.current?.(stack.length);
     if (stack.length > 0) {
       window.dispatchEvent(new CustomEvent('mobile-chat-stack-open'));
+      setForwardDragX(0);
     } else {
       window.dispatchEvent(new CustomEvent('mobile-chat-stack-close'));
     }
-  }, [stack.length]);
+  }, [stack]);
+
+  useEffect(() => {
+    return () => {
+      if (forwardAnimFrameRef.current) {
+        cancelAnimationFrame(forwardAnimFrameRef.current);
+      }
+    };
+  }, []);
 
   const pushScreen = useCallback((content: React.ReactNode, id?: string) => {
     const screenId = id || `screen-${++stackIdCounter.current}`;
-    setStack((prev) => [...prev, { id: screenId, content }]);
+    setStack((prev) => [...prev, { id: screenId, content, skipEnterAnimation: false }]);
   }, []);
 
   const popScreen = useCallback(() => {
@@ -53,8 +85,36 @@ export function useEdgeBackNavigation({
     setStack([]);
   }, []);
 
+  const animateForwardDrag = useCallback(
+    (from: number, to: number, onDone?: () => void) => {
+      if (forwardAnimFrameRef.current) {
+        cancelAnimationFrame(forwardAnimFrameRef.current);
+      }
+      const startTime = performance.now();
+      const duration = 220;
+
+      const animate = (now: number) => {
+        const progress = Math.min((now - startTime) / duration, 1);
+        const eased = 1 - Math.pow(1 - progress, 3);
+        const value = from + (to - from) * eased;
+        setForwardDragX(value);
+
+        if (progress < 1) {
+          forwardAnimFrameRef.current = requestAnimationFrame(animate);
+        } else {
+          forwardAnimFrameRef.current = null;
+          setForwardDragX(to);
+          onDone?.();
+        }
+      };
+
+      forwardAnimFrameRef.current = requestAnimationFrame(animate);
+    },
+    []
+  );
+
   const handleBaseTouchStart = (event: React.TouchEvent) => {
-    if (stack.length > 0 || !onForwardSwipeRef.current) return;
+    if (stack.length > 0 || !onForwardSwipeRef.current || !lastScreenCacheRef.current) return;
     const touch = event.touches[0];
     forwardDragRef.current = {
       startX: touch.clientX,
@@ -67,7 +127,7 @@ export function useEdgeBackNavigation({
   };
 
   const handleBaseTouchMove = (event: React.TouchEvent) => {
-    if (stack.length > 0 || !onForwardSwipeRef.current) return;
+    if (stack.length > 0 || !onForwardSwipeRef.current || !lastScreenCacheRef.current) return;
     const touch = event.touches[0];
     const drag = forwardDragRef.current;
     const deltaX = touch.clientX - drag.startX;
@@ -94,18 +154,20 @@ export function useEdgeBackNavigation({
 
     if (drag.isVerticalScroll || !drag.isDragging) return;
     drag.currentX = touch.clientX;
+
+    const positiveDelta = Math.max(0, drag.currentX - drag.startX);
+    setForwardDragX(Math.min(positiveDelta, window.innerWidth));
+
     if (event.cancelable) event.preventDefault();
   };
 
   const handleBaseTouchEnd = () => {
-    if (stack.length > 0 || !onForwardSwipeRef.current) return;
+    if (stack.length > 0 || !onForwardSwipeRef.current || !lastScreenCacheRef.current) return;
     const drag = forwardDragRef.current;
     if (!drag.isDragging) return;
 
     const deltaX = Math.max(0, drag.currentX - drag.startX);
-    if (deltaX > window.innerWidth * 0.28) {
-      onForwardSwipeRef.current();
-    }
+    const threshold = window.innerWidth * 0.28;
 
     forwardDragRef.current = {
       startX: 0,
@@ -115,10 +177,25 @@ export function useEdgeBackNavigation({
       isVerticalScroll: false,
       isDragging: false,
     };
+
+    if (deltaX > threshold) {
+      animateForwardDrag(deltaX, window.innerWidth, () => {
+        const cached = lastScreenCacheRef.current;
+        if (cached) {
+          setStack([{ ...cached, skipEnterAnimation: true }]);
+        }
+        onForwardSwipeRef.current?.();
+      });
+    } else {
+      animateForwardDrag(deltaX, 0);
+    }
   };
 
   const renderLayers = useCallback(() => {
     const hasOverlay = stack.length > 0;
+    const cachedScreen = lastScreenCacheRef.current;
+    const showForwardPreview =
+      !hasOverlay && forwardDragX > 0 && cachedScreen != null && onForwardSwipeRef.current;
 
     return (
       <>
@@ -129,27 +206,47 @@ export function useEdgeBackNavigation({
           onTouchEnd={handleBaseTouchEnd}
           onTouchCancel={handleBaseTouchEnd}
           style={{
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            right: 0,
-            height: `var(${MOBILE_VV_CSS.height}, 100dvh)`,
-            paddingBottom: `var(${MOBILE_VV_CSS.bottomInset}, 0px)`,
-            zIndex: 0,
+            ...previewShellStyle,
             pointerEvents: hasOverlay ? 'none' : 'auto',
-            touchAction: hasOverlay ? 'none' : 'pan-y',
-            overflow: 'hidden',
+            touchAction: hasOverlay || showForwardPreview ? 'none' : 'pan-y',
+            overscrollBehavior: 'none',
           }}
         >
           {baseContent}
         </div>
+
+        {showForwardPreview ? (
+          <motion.div
+            key="forward-chat-preview"
+            style={{
+              ...previewShellStyle,
+              zIndex: 5,
+              backgroundColor: 'var(--color-background, #0d0d0d)',
+              boxShadow: '-5px 0 20px rgba(0,0,0,0.15)',
+              pointerEvents: 'none',
+              transform: `translateX(${Math.max(0, window.innerWidth - forwardDragX)}px)`,
+              willChange: 'transform',
+            }}
+          >
+            <div
+              data-visual-viewport-shell
+              className="flex h-full min-h-0 w-full flex-col overflow-hidden"
+            >
+              {cachedScreen.content}
+            </div>
+          </motion.div>
+        ) : null}
 
         <AnimatePresence mode="sync">
           {stack.map((screen, index) => {
             if (index !== stack.length - 1) return null;
 
             return (
-              <NavigationStack key={screen.id} onBack={popScreen}>
+              <NavigationStack
+                key={screen.id}
+                onBack={popScreen}
+                skipEnterAnimation={screen.skipEnterAnimation}
+              >
                 {screen.content}
               </NavigationStack>
             );
@@ -157,7 +254,7 @@ export function useEdgeBackNavigation({
         </AnimatePresence>
       </>
     );
-  }, [stack, baseContent, popScreen]);
+  }, [stack, baseContent, popScreen, forwardDragX]);
 
   return {
     pushScreen,

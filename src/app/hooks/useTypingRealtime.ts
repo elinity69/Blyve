@@ -75,11 +75,13 @@ export function useTypingRealtime(currentUserId: string | null) {
 
     window.addEventListener('conversation-opened', onConversationOpened);
     window.addEventListener('conversation-closed', debouncedSync);
+    window.addEventListener('conversation-list-reload-requested', debouncedSync);
 
     return () => {
       cancelled = true;
       window.removeEventListener('conversation-opened', onConversationOpened);
       window.removeEventListener('conversation-closed', debouncedSync);
+      window.removeEventListener('conversation-list-reload-requested', debouncedSync);
       for (const unsub of unsubByConversationRef.current.values()) {
         unsub();
       }
