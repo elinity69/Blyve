@@ -362,7 +362,18 @@ export async function mountJitsiMeetingFromServerJoin(
         'notify.mutedRemotelyTitle',
         'notify.mutedRemotelyDescription',
       ],
-      disabledSounds: ['TALK_WHILE_MUTED_SOUND', 'ASKED_TO_UNMUTE_SOUND'],
+      disabledSounds: [
+        'TALK_WHILE_MUTED_SOUND',
+        'ASKED_TO_UNMUTE_SOUND',
+        'PARTICIPANT_JOINED_SOUND',
+        'PARTICIPANT_LEFT_SOUND',
+        'RECORDING_ON_SOUND',
+        'RECORDING_OFF_SOUND',
+        'OUTGOING_CALL_EXPIRED_SOUND',
+        'OUTGOING_CALL_REJECTED_SOUND',
+        'OUTGOING_CALL_RINGING_SOUND',
+        'OUTGOING_CALL_START_SOUND',
+      ],
       flags: {
         'notifications.enabled': false,
       },
@@ -427,6 +438,7 @@ export async function mountJitsiMeetingFromServerJoin(
   let userRequestedAudioMute = false;
   const ensureUnmuteTimeoutIds: number[] = [];
   let conferenceJoined = false;
+  let connectionEstablishedNotified = false;
 
   const setAudioMuted = (muted: boolean) => {
     try {
@@ -577,7 +589,10 @@ export async function mountJitsiMeetingFromServerJoin(
     const payload = readJitsiParticipantPayload(args[0]);
     localParticipantId = payload.id ?? null;
     options.onConferenceJoined?.(payload);
-    options.onConnectionEstablished?.();
+    if (!connectionEstablishedNotified) {
+      connectionEstablishedNotified = true;
+      options.onConnectionEstablished?.();
+    }
     applyJitsiNoiseSuppression();
     scheduleRemoteMediaSnapshot(800);
     scheduleEnsureAudioUnmuted();

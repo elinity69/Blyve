@@ -1,11 +1,13 @@
-import React, { useCallback, useState } from 'react';
+import React from 'react';
 import { createPortal } from 'react-dom';
 import { JitsiCallView, type JitsiCallLayout } from './JitsiCallView';
 import type { CallMediaType, JitsiHandle } from '../lib/jitsi';
 import type { JitsiJoinCredentials } from '../lib/jitsiCall';
 
 interface PersistentJitsiMeetingProps {
-  visualSlotEl: HTMLElement | null;
+  visualSlotEl?: HTMLElement | null;
+  /** PiP/fullscreen: render inside parent shell (no portal) to avoid iframe remounts. */
+  renderInline?: boolean;
   sessionId: string;
   inviteToken?: string;
   callType: CallMediaType;
@@ -58,10 +60,11 @@ interface PersistentJitsiMeetingProps {
 }
 
 /**
- * Keeps a single Jitsi iframe mounted while moving it between PiP / embedded / fullscreen slots via React portals.
+ * Keeps a single Jitsi iframe mounted. PiP/fullscreen render inline; embedded hosts use a portal.
  */
 export function PersistentJitsiMeeting({
   visualSlotEl,
+  renderInline = false,
   sessionId,
   inviteToken,
   callType,
@@ -104,13 +107,6 @@ export function PersistentJitsiMeeting({
   compactControls,
   forceShowControls,
 }: PersistentJitsiMeetingProps) {
-  const [fallbackEl, setFallbackEl] = useState<HTMLDivElement | null>(null);
-  const assignFallbackRef = useCallback((node: HTMLDivElement | null) => {
-    setFallbackEl(node);
-  }, []);
-
-  const portalTarget = visualSlotEl ?? fallbackEl;
-
   const meeting = (
     <div className="h-full w-full min-h-0 min-w-0">
       <JitsiCallView
@@ -159,18 +155,11 @@ export function PersistentJitsiMeeting({
     </div>
   );
 
-  return (
-    <>
-      <div
-        ref={assignFallbackRef}
-        aria-hidden={!!visualSlotEl}
-        className={
-          visualSlotEl
-            ? 'pointer-events-none fixed -left-[9999px] top-0 h-px w-px overflow-hidden opacity-0'
-            : 'h-full w-full min-h-0 min-w-0'
-        }
-      />
-      {portalTarget ? createPortal(meeting, portalTarget) : null}
-    </>
-  );
+  if (renderInline) {
+    return <div className="absolute inset-0 h-full w-full min-h-0 min-w-0">{meeting}</div>;
+  }
+
+  if (!visualSlotEl) return null;
+
+  return createPortal(meeting, visualSlotEl);
 }

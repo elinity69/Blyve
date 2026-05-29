@@ -7,8 +7,14 @@ import { getOptimizedImageUrl } from '../lib/images';
 import type { CallMediaType, JitsiHandle } from '../lib/jitsi';
 import type { JitsiJoinCredentials } from '../lib/jitsiCall';
 import type { CallStageParticipant } from './CallParticipantStage';
+import {
+  CallParticipantVolumeMenu,
+  VOLUME_MENU_HEIGHT,
+  VOLUME_MENU_WIDTH,
+} from './CallParticipantVolumeMenu';
 import type { JitsiCallLayout } from './JitsiCallView';
 import { PersistentJitsiMeeting } from './PersistentJitsiMeeting';
+import { useIsMobile } from './ui/use-mobile';
 
 const PIP_SIZE = 136;
 const PIP_MARGIN = 12;
@@ -108,34 +114,66 @@ function PipAvatar({
   participant,
   isSpeaking,
   sizeClass,
+  onOpenVolumeMenu,
 }: {
   participant: CallStageParticipant;
   isSpeaking: boolean;
   sizeClass: string;
+  onOpenVolumeMenu?: (event: React.MouseEvent) => void;
 }) {
+  const isMobile = useIsMobile();
   const src = participant.avatarUrl
     ? getOptimizedImageUrl(participant.avatarUrl, 240) || participant.avatarUrl
     : undefined;
+  const interactive = !participant.isLocal && onOpenVolumeMenu;
+
+  const avatarBody = src ? (
+    <img
+      src={src}
+      alt={participant.name}
+      className={`rounded-full object-cover ${sizeClass}`}
+      draggable={false}
+    />
+  ) : (
+    <div
+      className={`flex items-center justify-center rounded-full bg-[#2f3136] text-white/70 ${sizeClass}`}
+    >
+      <User className="h-1/2 w-1/2 min-h-[1rem] min-w-[1rem]" />
+    </div>
+  );
+
+  if (!interactive) {
+    return (
+      <div
+        className={`rounded-full ${isSpeaking ? 'ring-2 ring-[#23a559]' : 'ring-1 ring-white/15'}`}
+      >
+        {avatarBody}
+      </div>
+    );
+  }
 
   return (
-    <div
-      className={`rounded-full ${isSpeaking ? 'ring-2 ring-[#23a559]' : 'ring-1 ring-white/15'}`}
+    <button
+      type="button"
+      onContextMenu={
+        !isMobile
+          ? (event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              onOpenVolumeMenu(event);
+            }
+          : undefined
+      }
+      onClick={(event) => {
+        if (isMobile) onOpenVolumeMenu(event);
+      }}
+      className={`rounded-full ${
+        isSpeaking ? 'ring-2 ring-[#23a559]' : 'ring-1 ring-white/15'
+      } ${isMobile ? 'cursor-pointer' : 'cursor-context-menu'} hover:ring-white/25`}
+      aria-label={`Volume for ${participant.name}`}
     >
-      {src ? (
-        <img
-          src={src}
-          alt={participant.name}
-          className={`rounded-full object-cover ${sizeClass}`}
-          draggable={false}
-        />
-      ) : (
-        <div
-          className={`flex items-center justify-center rounded-full bg-[#2f3136] text-white/70 ${sizeClass}`}
-        >
-          <User className="h-1/2 w-1/2 min-h-[1rem] min-w-[1rem]" />
-        </div>
-      )}
-    </div>
+      {avatarBody}
+    </button>
   );
 }
 
@@ -158,8 +196,8 @@ export function FloatingCallWidget({
   remoteScreenShareActive,
   stageParticipants: _stageParticipants,
   speakingParticipantId,
-  participantVolumes: _participantVolumes,
-  onParticipantVolumeChange: _onParticipantVolumeChange,
+  participantVolumes,
+  onParticipantVolumeChange,
   onJoinResolved,
   onJoinError,
   onReady,
@@ -190,6 +228,13 @@ export function FloatingCallWidget({
 }: FloatingCallWidgetProps) {
   const { t } = useTranslation();
   const { currentUserProfile, conversations } = useAppData();
+  const isMobile = useIsMobile();
+  const [volumeMenu, setVolumeMenu] = useState<{
+    participantId: string;
+    participantName: string;
+    x: number;
+    y: number;
+  } | null>(null);
   const [position, setPosition] = useState(() => {
     if (typeof window === 'undefined') return { x: PIP_MARGIN, y: PIP_MARGIN };
     return clampPosition(
@@ -206,11 +251,6 @@ export function FloatingCallWidget({
     moved: boolean;
   } | null>(null);
   const pipContentRef = useRef<HTMLDivElement | null>(null);
-  const [pipSlotReady, setPipSlotReady] = useState(false);
-  const assignPipContentRef = useCallback((node: HTMLDivElement | null) => {
-    pipContentRef.current = node;
-    setPipSlotReady(!!node);
-  }, []);
   const hasStreamRef = useRef(false);
   const onEnterFullscreenRef = useRef(onEnterFullscreen);
   const onOpenInChatRef = useRef(onOpenInChat);
@@ -364,9 +404,44 @@ export function FloatingCallWidget({
     [onOpenInChat]
   );
 
+  const openPipVolumeMenu = useCallback(
+    (participant: CallStageParticipant, event: React.MouseEvent) => {
+      if (participant.isLocal) return;
+      event.preventDefault();
+      event.stopPropagation();
+
+      if (volumeMenu?.participantId === participant.id) {
+        setVolumeMenu(null);
+        return;
+      }
+
+      let x = event.clientX - VOLUME_MENU_WIDTH / 2;
+      let y = event.clientY + 12;
+      if (isMobile) {
+        const target = event.currentTarget as HTMLElement;
+        const rect = target.getBoundingClientRect();
+        x = rect.left + rect.width / 2 - VOLUME_MENU_WIDTH / 2;
+        y = rect.bottom + 10;
+        if (y + VOLUME_MENU_HEIGHT > window.innerHeight - 8) {
+          y = rect.top - VOLUME_MENU_HEIGHT - 10;
+        }
+      }
+
+      setVolumeMenu({
+        participantId: participant.id,
+        participantName: participant.name,
+        x,
+        y,
+      });
+    },
+    [isMobile, volumeMenu?.participantId]
+  );
+
   const handleDragPointerDown = (event: React.PointerEvent) => {
     if (isFullscreen) return;
-    if ((event.target as HTMLElement).closest('button, [data-call-controls]')) return;
+    if ((event.target as HTMLElement).closest('button, [data-call-controls], [data-pip-avatar]')) {
+      return;
+    }
     dragRef.current = {
       startX: event.clientX,
       startY: event.clientY,
@@ -395,85 +470,89 @@ export function FloatingCallWidget({
 
   const avatarOverlay =
     !hasStream && displayParticipants.length > 0 ? (
-      <div className="pointer-events-none absolute inset-0 z-[5] flex items-center justify-center gap-1.5 bg-[#0b0b0b] p-2">
-        {displayParticipants.slice(0, 2).map((participant) => {
-          const isSpeaking =
-            speakingParticipantId === participant.id ||
-            speakingParticipantId === participant.jitsiParticipantId;
-          const solo = displayParticipants.length === 1;
-          return (
-            <PipAvatar
-              key={participant.id}
-              participant={participant}
-              isSpeaking={Boolean(isSpeaking)}
-              sizeClass={
-                isFullscreen
-                  ? 'h-20 w-20 sm:h-24 sm:w-24'
-                  : solo
-                    ? 'h-16 w-16'
-                    : 'h-9 w-9'
-              }
-            />
-          );
-        })}
+      <div className="pointer-events-none absolute inset-0 z-[25] flex items-center justify-center gap-1.5 bg-[#0b0b0b] p-2">
+        <div className="pointer-events-auto flex items-center justify-center gap-1.5">
+          {displayParticipants.slice(0, 2).map((participant) => {
+            const isSpeaking =
+              speakingParticipantId === participant.id ||
+              speakingParticipantId === participant.jitsiParticipantId;
+            const solo = displayParticipants.length === 1;
+            return (
+              <div key={participant.id} data-pip-avatar>
+                <PipAvatar
+                  participant={participant}
+                  isSpeaking={Boolean(isSpeaking)}
+                  sizeClass={
+                    isFullscreen
+                      ? 'h-20 w-20 sm:h-24 sm:w-24'
+                      : solo
+                        ? 'h-16 w-16'
+                        : 'h-9 w-9'
+                  }
+                  onOpenVolumeMenu={
+                    participant.isLocal
+                      ? undefined
+                      : (event) => openPipVolumeMenu(participant, event)
+                  }
+                />
+              </div>
+            );
+          })}
+        </div>
       </div>
     ) : null;
 
-  const visualSlotEl =
-    isEmbedded && hostAnchorEl ? hostAnchorEl : pipSlotReady ? pipContentRef.current : null;
-
-  const persistentMeeting = (
-    <PersistentJitsiMeeting
-      visualSlotEl={visualSlotEl}
-      sessionId={sessionId}
-      inviteToken={inviteToken}
-      callType={callType}
-      userId={userId}
-      mountKey={mountKey}
-      layout={layout}
-      mediaActive={isEmbedded ? showVideoSurface : hasStream}
-      streamMode={isEmbedded ? showStreamAvatars : undefined}
-      hideJitsiVideo={isEmbedded ? showAvatarStage : undefined}
-      connectionState={connectionState}
-      isMuted={isMuted}
-      isCameraEnabled={isCameraEnabled}
-      isScreenShareEnabled={isScreenShareEnabled}
-      overlay={isEmbedded ? null : avatarOverlay}
-      onRemoteStreamActiveChange={setRemoteStreamActive}
-      onExpandedChange={isEmbedded ? onExpandedChange : undefined}
-      onMinimizeToPip={isEmbedded ? onMinimizeToPip : undefined}
-      onTogglePin={isEmbedded ? onTogglePin : undefined}
-      callPinned={isEmbedded ? callPinned : undefined}
-      onJoinResolved={onJoinResolved}
-      onJoinError={onJoinError}
-      onReady={onReady}
-      onConnectionEstablished={onConnectionEstablished}
-      onReadyToClose={onReadyToClose}
-      onParticipantCountChange={onParticipantCountChange}
-      onAudioMuteChanged={onAudioMuteChanged}
-      onVideoMuteChanged={onVideoMuteChanged}
-      onScreenShareChanged={onScreenShareChanged}
-      onScreenShareError={onScreenShareError}
-      onDominantSpeakerChanged={onDominantSpeakerChanged}
-      onConferenceJoined={onConferenceJoined}
-      onRemoteParticipantJoined={onRemoteParticipantJoined}
-      onRemoteMediaChanged={handleRemoteMediaChanged}
-      onRemoteMediaSync={onRemoteMediaSync}
-      onRemoteSpeakingChanged={onRemoteSpeakingChanged}
-      onHangUp={onHangUp}
-      onToggleMute={onToggleMute}
-      onToggleCamera={onToggleCamera}
-      onToggleScreenShare={onToggleScreenShare}
-      compactControls={!isEmbedded}
-    />
-  );
+  const jitsiMeetingProps = {
+    sessionId,
+    inviteToken,
+    callType,
+    userId,
+    mountKey,
+    layout,
+    mediaActive: isEmbedded ? showVideoSurface : hasStream,
+    streamMode: isEmbedded ? showStreamAvatars : undefined,
+    hideJitsiVideo: isEmbedded ? showAvatarStage : undefined,
+    connectionState,
+    isMuted,
+    isCameraEnabled,
+    isScreenShareEnabled,
+    overlay: null,
+    onRemoteStreamActiveChange: setRemoteStreamActive,
+    onExpandedChange: isEmbedded ? onExpandedChange : undefined,
+    onMinimizeToPip: isEmbedded ? onMinimizeToPip : undefined,
+    onTogglePin: isEmbedded ? onTogglePin : undefined,
+    callPinned: isEmbedded ? callPinned : undefined,
+    onJoinResolved,
+    onJoinError,
+    onReady,
+    onConnectionEstablished,
+    onReadyToClose,
+    onParticipantCountChange,
+    onAudioMuteChanged,
+    onVideoMuteChanged,
+    onScreenShareChanged,
+    onScreenShareError,
+    onDominantSpeakerChanged,
+    onConferenceJoined,
+    onRemoteParticipantJoined,
+    onRemoteMediaChanged: handleRemoteMediaChanged,
+    onRemoteMediaSync,
+    onRemoteSpeakingChanged,
+    onHangUp,
+    onToggleMute,
+    onToggleCamera,
+    onToggleScreenShare,
+    compactControls: !isEmbedded,
+  };
 
   return (
     <>
-      {persistentMeeting}
+      {isEmbedded && hostAnchorEl ? (
+        <PersistentJitsiMeeting visualSlotEl={hostAnchorEl} {...jitsiMeetingProps} />
+      ) : null}
       {(!isEmbedded || !hostAnchorEl) ? (
       <div
-        className={isFullscreen ? 'fixed inset-0 z-[9998]' : 'fixed relative z-[135] select-none'}
+        className={isFullscreen ? 'fixed inset-0 z-[9998]' : 'fixed z-[135] select-none'}
         style={
           isFullscreen
             ? undefined
@@ -481,18 +560,29 @@ export function FloatingCallWidget({
         }
       >
         <div
-          ref={assignPipContentRef}
+          ref={pipContentRef}
           className={
             isFullscreen
-              ? 'h-full w-full'
-              : 'group/pip relative h-full w-full cursor-grab touch-none overflow-hidden rounded-xl border border-white/15 bg-[#0b0b0b] shadow-2xl active:cursor-grabbing'
+              ? 'relative h-full w-full'
+              : 'group/pip relative h-full w-full overflow-hidden rounded-xl border border-white/15 bg-[#0b0b0b] shadow-2xl'
           }
-          onPointerDown={!isFullscreen ? handleDragPointerDown : undefined}
-          onPointerMove={!isFullscreen ? handleDragPointerMove : undefined}
-          onPointerUp={!isFullscreen ? handleDragPointerUp : undefined}
-          onPointerCancel={!isFullscreen ? handleDragPointerUp : undefined}
-          onDoubleClick={!isFullscreen ? handleDoubleActivate : undefined}
-        />
+        >
+          {!isEmbedded ? (
+            <PersistentJitsiMeeting renderInline {...jitsiMeetingProps} />
+          ) : null}
+          {!isEmbedded ? avatarOverlay : null}
+          {!isFullscreen ? (
+            <div
+              data-pip-drag-handle
+              className="absolute inset-0 z-[10] cursor-grab touch-none active:cursor-grabbing"
+              onPointerDown={handleDragPointerDown}
+              onPointerMove={handleDragPointerMove}
+              onPointerUp={handleDragPointerUp}
+              onPointerCancel={handleDragPointerUp}
+              onDoubleClick={handleDoubleActivate}
+            />
+          ) : null}
+        </div>
       {!isFullscreen ? (
         <button
           type="button"
@@ -517,6 +607,18 @@ export function FloatingCallWidget({
         </button>
       ) : null}
       </div>
+      ) : null}
+      {volumeMenu ? (
+        <CallParticipantVolumeMenu
+          participantName={volumeMenu.participantName}
+          volume={participantVolumes[volumeMenu.participantId] ?? 1}
+          x={volumeMenu.x}
+          y={volumeMenu.y}
+          onVolumeChange={(volume) =>
+            onParticipantVolumeChange(volumeMenu.participantId, volume)
+          }
+          onClose={() => setVolumeMenu(null)}
+        />
       ) : null}
     </>
   );

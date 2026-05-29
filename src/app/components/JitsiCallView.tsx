@@ -15,6 +15,7 @@ import {
 import { useTranslation } from 'react-i18next';
 import { mountJitsiMeetingFromServerJoin, type CallMediaType, type JitsiHandle } from '../lib/jitsi';
 import { fetchJitsiJoinCredentials, type JitsiJoinCredentials } from '../lib/jitsiCall';
+import { applyJitsiNoiseSuppression } from '../lib/callAudio/jitsiAudioBridge';
 import { premiumCallAudio } from '../lib/callAudio/ensurePremiumCallAudio';
 import { isScreenShareSupported } from '../lib/screenShareSupport';
 import { shouldSkipJitsiPrejoin } from '../lib/jitsiMicStorage';
@@ -218,6 +219,8 @@ export function JitsiCallView({
   const { t } = useTranslation();
   const containerRef = useRef<HTMLDivElement>(null);
   const handleRef = useRef<JitsiHandle | null>(null);
+  const mountedSessionRef = useRef<string | null>(null);
+  const mountInFlightRef = useRef<string | null>(null);
   const remoteCountRef = useRef(0);
   const callbacksRef = useRef({
     onJoinResolved,
@@ -283,6 +286,12 @@ export function JitsiCallView({
     }
   }, [layout]);
 
+  useEffect(() => {
+    if (!credentials || connectionState !== 'connected') return;
+    applyJitsiNoiseSuppression();
+    premiumCallAudio.onJitsiConferenceJoined();
+  }, [connectionState, credentials, layout]);
+
   const effectiveMediaActive = mediaActive || remoteStreamActive;
 
   useEffect(() => {
@@ -323,8 +332,23 @@ export function JitsiCallView({
     const container = containerRef.current;
     if (!container || !credentials) return;
 
+    const sessionKey = `${credentials.sessionId}:${credentials.roomName}`;
+    if (
+      mountedSessionRef.current === sessionKey &&
+      (handleRef.current || mountInFlightRef.current === sessionKey)
+    ) {
+      return undefined;
+    }
+
     let disposed = false;
     remoteCountRef.current = 0;
+    const previousHandle = handleRef.current;
+    if (previousHandle && mountedSessionRef.current !== sessionKey) {
+      previousHandle.dispose();
+      handleRef.current = null;
+      mountedSessionRef.current = null;
+    }
+    mountInFlightRef.current = sessionKey;
 
     void (async () => {
       try {
@@ -388,8 +412,13 @@ export function JitsiCallView({
         }
 
         handleRef.current = handle;
+        mountedSessionRef.current = sessionKey;
+        mountInFlightRef.current = null;
         callbacksRef.current.onReady?.(handle);
       } catch (error) {
+        if (mountInFlightRef.current === sessionKey) {
+          mountInFlightRef.current = null;
+        }
         console.error('Jitsi mount failed:', error);
         callbacksRef.current.onJoinError?.(error);
       }
@@ -397,8 +426,13 @@ export function JitsiCallView({
 
     return () => {
       disposed = true;
+      if (mountInFlightRef.current === sessionKey) {
+        mountInFlightRef.current = null;
+      }
+      if (mountedSessionRef.current !== sessionKey) return;
       const handle = handleRef.current;
       handleRef.current = null;
+      mountedSessionRef.current = null;
       remoteCountRef.current = 0;
       handle?.dispose();
     };
@@ -406,30 +440,33 @@ export function JitsiCallView({
 
   const live = connectionState === 'connected';
   const isPip = layout === 'pip';
-  const isFullscreen = layout === 'standalone' || (layout === 'embedded' && expanded);
+  const isEmbeddedExpanded = layout === 'embedded' && expanded;
+  const isFullscreen = layout === 'standalone' || isEmbeddedExpanded;
   const canExpand = layout === 'embedded' && live && !!credentials && effectiveMediaActive && !expanded;
   const useCompactPanel = layout !== 'pip' && !effectiveMediaActive && !expanded;
   const hideVideo =
     (isPip && !effectiveMediaActive) || (!isPip && hideJitsiVideo && !remoteStreamActive);
 
   useEffect(() => {
-    if (!isFullscreen) return;
+    if (!isEmbeddedExpanded) return;
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
     return () => {
       document.body.style.overflow = previousOverflow;
     };
-  }, [isFullscreen]);
+  }, [isEmbeddedExpanded]);
 
   const panelHeightClass = useCompactPanel
     ? 'relative h-[min(32vh,300px)] min-h-[200px] w-full shrink-0 overflow-hidden border-b border-white/10 bg-[#0b0b0b]'
     : 'relative h-[min(55vh,480px)] min-h-[320px] w-full shrink-0 overflow-hidden border-b border-white/10 bg-[#0b0b0b]';
 
   const shellClass = isPip
-    ? 'group/pip relative h-full w-full overflow-hidden rounded-xl bg-[#0b0b0b]'
-    : isFullscreen
-      ? 'fixed inset-0 z-[9999] bg-[#0b0b0b]'
-      : panelHeightClass;
+    ? 'group/pip pointer-events-none relative h-full w-full overflow-hidden rounded-xl bg-[#0b0b0b]'
+    : layout === 'standalone'
+      ? 'relative h-full w-full overflow-hidden bg-[#0b0b0b]'
+      : isEmbeddedExpanded
+        ? 'fixed inset-0 z-[9999] bg-[#0b0b0b]'
+        : panelHeightClass;
 
   return (
     <div
@@ -454,9 +491,9 @@ export function JitsiCallView({
         <>
           <div
             ref={containerRef}
-            className={`absolute inset-0 h-full w-full overflow-hidden ${hideVideo ? 'pointer-events-none opacity-0' : ''} ${
-              isPip && effectiveMediaActive ? 'pointer-events-none' : ''
-            }`}
+            className={`absolute inset-0 h-full w-full overflow-hidden ${
+              hideVideo ? 'pointer-events-none opacity-0' : ''
+            } ${isPip ? 'pointer-events-none' : ''}`}
           />
           {overlay}
           {layout === 'embedded' && !expanded && onMinimizeToPip ? (

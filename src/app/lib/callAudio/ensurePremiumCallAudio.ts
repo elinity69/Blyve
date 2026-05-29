@@ -3,6 +3,7 @@ import {
   applyJitsiNoiseSuppression,
   registerJitsiMeetingApi,
   reinforceJitsiNoiseSuppressionOnUnmute,
+  setCallAudioSessionActive,
   unregisterJitsiMeetingApi,
   type JitsiCommandApi,
 } from './jitsiAudioBridge';
@@ -25,6 +26,7 @@ export const premiumCallAudio = {
 
   async prepareForCall(_deviceId?: string | null): Promise<void> {
     sessionActive = true;
+    setCallAudioSessionActive(true);
   },
 
   attachJitsiMeeting(api: JitsiCommandApi): void {
@@ -45,11 +47,13 @@ export const premiumCallAudio = {
   },
 
   detachJitsiMeeting(): void {
+    setCallAudioSessionActive(false);
     unregisterJitsiMeetingApi();
   },
 
   release(): void {
     sessionActive = false;
+    setCallAudioSessionActive(false);
     unregisterJitsiMeetingApi();
   },
 

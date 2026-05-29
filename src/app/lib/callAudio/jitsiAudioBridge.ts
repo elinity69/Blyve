@@ -7,6 +7,15 @@ export type { JitsiCommandApi };
 let activeApi: JitsiCommandApi | null = null;
 let reinforceTimeoutIds: number[] = [];
 let deviceChangeListenerAttached = false;
+let lastNoiseSuppressionAppliedAt = 0;
+let callAudioSessionActive = false;
+
+export function setCallAudioSessionActive(active: boolean): void {
+  callAudioSessionActive = active;
+  if (!active) {
+    clearReinforceTimers();
+  }
+}
 
 function clearReinforceTimers() {
   for (const id of reinforceTimeoutIds) {
@@ -16,24 +25,31 @@ function clearReinforceTimers() {
 }
 
 function scheduleNoiseSuppressionReinforcement() {
+  if (!activeApi || !callAudioSessionActive) return;
   clearReinforceTimers();
-  for (const delayMs of [0, 400, 1200, 2500]) {
+  for (const delayMs of [0, 400, 1200, 2500, 5000]) {
     reinforceTimeoutIds.push(
       window.setTimeout(() => {
-        enableJitsiNoiseSuppression(activeApi);
+        const applied = enableJitsiNoiseSuppression(activeApi);
+        if (!applied && import.meta.env.DEV) {
+          console.debug('[call-audio] noise suppression retry skipped (no active api/session)');
+        }
       }, delayMs),
     );
   }
 }
 
 /** Enables Jitsi extra noise suppression (RNNoise) on the local audio track. */
-export function enableJitsiNoiseSuppression(api: JitsiCommandApi | null = activeApi): void {
-  if (!api) return;
+export function enableJitsiNoiseSuppression(api: JitsiCommandApi | null = activeApi): boolean {
+  if (!api || !callAudioSessionActive) return false;
 
   try {
     api.executeCommand('setNoiseSuppressionEnabled', { enabled: true });
+    lastNoiseSuppressionAppliedAt = Date.now();
+    return true;
   } catch (error) {
     console.warn('[call-audio] setNoiseSuppressionEnabled failed', error);
+    return false;
   }
 }
 
@@ -65,6 +81,11 @@ export function unregisterJitsiMeetingApi(): void {
   clearReinforceTimers();
   detachDeviceChangeListener();
   activeApi = null;
+  lastNoiseSuppressionAppliedAt = 0;
+}
+
+export function getLastNoiseSuppressionAppliedAt(): number {
+  return lastNoiseSuppressionAppliedAt;
 }
 
 export function applyJitsiNoiseSuppression(): void {
