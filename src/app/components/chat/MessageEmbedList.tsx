@@ -159,7 +159,7 @@ function LinkPreviewEmbed({ url }: { url: string }) {
   );
 }
 
-function MessageEmbedItem({ embed }: { embed: ParsedEmbed }) {
+function MessageEmbedItem({ embed, inBubble }: { embed: ParsedEmbed; inBubble?: boolean }) {
   let content: ReactNode = null;
 
   switch (embed.kind) {
@@ -174,10 +174,12 @@ function MessageEmbedItem({ embed }: { embed: ParsedEmbed }) {
       );
       break;
     case 'video':
-      content = <MessageVideoEmbed src={embed.url} openUrl={embed.url} />;
+      content = (
+        <MessageVideoEmbed src={embed.url} openUrl={embed.url} inBubble={inBubble} />
+      );
       break;
     case 'audio':
-      content = <MessageAudioEmbed src={embed.url} />;
+      content = <MessageAudioEmbed src={embed.url} inBubble={inBubble} />;
       break;
     case 'file':
       content = <MessageFileEmbed url={embed.url} />;
@@ -213,18 +215,28 @@ function MessageEmbedItem({ embed }: { embed: ParsedEmbed }) {
 
 interface MessageEmbedListProps {
   embeds: ParsedEmbed[];
+  /** Inside a chat bubble — no extra chrome, no URL footers. */
+  inBubble?: boolean;
 }
 
-export function MessageEmbedList({ embeds }: MessageEmbedListProps) {
+export function MessageEmbedList({ embeds, inBubble = false }: MessageEmbedListProps) {
   if (embeds.length === 0) return null;
 
   return (
     <div
-      className="mt-1.5 flex w-full max-w-full flex-col gap-2 sm:max-w-[min(100%,24rem)]"
+      className={
+        inBubble
+          ? 'flex w-full min-w-0 flex-col gap-1'
+          : 'mt-1.5 flex w-full max-w-full flex-col gap-2 sm:max-w-[min(100%,24rem)]'
+      }
       onPointerDown={(event) => event.stopPropagation()}
     >
       {embeds.map((embed) => (
-        <MessageEmbedItem key={`${embed.kind}-${embed.url}`} embed={embed} />
+        <MessageEmbedItem
+          key={`${embed.kind}-${embed.url}`}
+          embed={embed}
+          inBubble={inBubble}
+        />
       ))}
     </div>
   );

@@ -2,7 +2,28 @@ import { useState } from 'react';
 import { FileText, ExternalLink } from 'lucide-react';
 import { openExternalLink } from '../../lib/openExternalLink';
 
-export function MessageVideoEmbed({ src, openUrl }: { src: string; openUrl: string }) {
+export function MessageVideoEmbed({
+  src,
+  openUrl,
+  inBubble = false,
+}: {
+  src: string;
+  openUrl: string;
+  inBubble?: boolean;
+}) {
+  if (inBubble) {
+    return (
+      <video
+        src={src}
+        controls
+        playsInline
+        preload="metadata"
+        className="max-h-48 w-full min-w-[12rem] max-w-[min(100%,16rem)] rounded-lg"
+        onPointerDown={(e) => e.stopPropagation()}
+      />
+    );
+  }
+
   return (
     <div
       className="mt-1.5 w-full max-w-full overflow-hidden rounded-xl border border-black/10 dark:border-white/10 sm:max-w-[min(100%,24rem)]"
@@ -27,7 +48,19 @@ export function MessageVideoEmbed({ src, openUrl }: { src: string; openUrl: stri
   );
 }
 
-export function MessageAudioEmbed({ src }: { src: string }) {
+export function MessageAudioEmbed({ src, inBubble = false }: { src: string; inBubble?: boolean }) {
+  if (inBubble) {
+    return (
+      <audio
+        src={src}
+        controls
+        preload="metadata"
+        className="voice-message-audio h-9 w-[min(100%,15rem)] min-w-[11rem] max-w-full"
+        onPointerDown={(e) => e.stopPropagation()}
+      />
+    );
+  }
+
   return (
     <div
       className="mt-1.5 w-full min-w-[12rem] max-w-full sm:max-w-[min(100%,20rem)]"

@@ -290,3 +290,10 @@ html[data-swipe-back-lock='1'] [data-chat-messages-scroll] {
   touch-action: none !important;
   overscroll-behavior: none;
 }
+
+/* Compact voice message player inside chat bubbles */
+.voice-message-audio {
+  display: block;
+  border-radius: 9999px;
+  max-height: 2.25rem;
+}

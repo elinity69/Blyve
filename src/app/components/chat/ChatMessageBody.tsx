@@ -34,19 +34,15 @@ export function ChatMessageBody({
     ? CHAT_MESSAGE_BUBBLE_TEXT_GROUPED_CLASS
     : CHAT_MESSAGE_BUBBLE_TEXT_CLASS;
 
-  if (!showText && embeds.length > 0) {
+  const mediaOnly = !showText && embeds.length > 0;
+
+  if (mediaOnly) {
     return (
       <div className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}>
-        <MessageEmbedList embeds={embeds} />
-        {messageTime ? (
-          <span
-            className={`mt-0.5 text-[10px] leading-none ${
-              isMe ? 'text-white/75 dark:text-[#8fa4b8]' : 'text-gray-500 dark:text-[#6b7d8f]'
-            }`}
-          >
-            {messageTime}
-          </span>
-        ) : null}
+        <MessageBubble position={bubblePosition} isMe={isMe} time={messageTime} isRead={isRead}>
+          {replyQuote ? <MessageReplyQuote quote={replyQuote} isMe={isMe} /> : null}
+          <MessageEmbedList embeds={embeds} inBubble />
+        </MessageBubble>
       </div>
     );
   }
@@ -64,8 +60,8 @@ export function ChatMessageBody({
             embeds={embeds}
           />
         ) : null}
+        {embeds.length > 0 ? <MessageEmbedList embeds={embeds} inBubble /> : null}
       </MessageBubble>
-      {embeds.length > 0 ? <MessageEmbedList embeds={embeds} /> : null}
     </div>
   );
 }

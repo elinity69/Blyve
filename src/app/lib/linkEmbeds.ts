@@ -32,7 +32,8 @@ const URL_REGEX =
   /https?:\/\/(?:www\.)?[-a-zA-Z0-9@:%._+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b(?:[-a-zA-Z0-9()@:%_+.~#?&/=]*)/gi;
 
 const IMAGE_EXT = /\.(png|jpe?g|gif|webp|avif|bmp|svg)(\?.*)?$/i;
-const VIDEO_EXT = /\.(mp4|webm|mov)(\?.*)?$/i;
+// webm is only in AUDIO_EXT — voice memos use .webm and must not match as video first
+const VIDEO_EXT = /\.(mp4|mov)(\?.*)?$/i;
 const AUDIO_EXT = /\.(webm|ogg|mp3|m4a|wav)(\?.*)?$/i;
 const FILE_EXT = /\.(pdf|txt|zip)(\?.*)?$/i;
 
@@ -180,12 +181,12 @@ export function parseEmbed(url: string): ParsedEmbed | null {
       return { url, kind: 'image', imageUrl: resolveImageUrl(parsed) };
     }
 
-    if (VIDEO_EXT.test(parsed.pathname)) {
-      return { url, kind: 'video' };
-    }
-
     if (AUDIO_EXT.test(parsed.pathname)) {
       return { url, kind: 'audio' };
+    }
+
+    if (VIDEO_EXT.test(parsed.pathname)) {
+      return { url, kind: 'video' };
     }
 
     if (FILE_EXT.test(parsed.pathname)) {
