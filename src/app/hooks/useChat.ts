@@ -311,8 +311,14 @@ export function useChat(conversationId: string | null, onMessageSent?: (conversa
   }, [conversationId]);
 
   const sendMessage = useCallback(
-    async (content: string, replyToMessageId?: string | null): Promise<Message | null> => {
-      if (!conversationId || !content.trim()) {
+    async (
+      content: string,
+      replyToMessageId?: string | null,
+      attachmentIds?: string[],
+    ): Promise<Message | null> => {
+      const trimmed = content.trim();
+      const hasAttachments = !!attachmentIds?.length;
+      if (!conversationId || (!trimmed && !hasAttachments)) {
         return null;
       }
 
@@ -322,8 +328,9 @@ export function useChat(conversationId: string | null, onMessageSent?: (conversa
 
         const result = await api.sendMessageSafe(
           conversationId,
-          content.trim(),
-          replyToMessageId ?? null
+          trimmed,
+          replyToMessageId ?? null,
+          attachmentIds,
         );
 
         if (!result || !result.success) {

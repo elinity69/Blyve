@@ -110,7 +110,12 @@ export type Database = {
         Returns: void;
       };
       send_message_safe: {
-        Args: { p_conversation_id: string; p_content: string };
+        Args: {
+          p_conversation_id: string;
+          p_content: string;
+          p_reply_to_message_id?: string | null;
+          p_attachment_ids?: string[] | null;
+        };
         Returns: unknown;
       };
       block_user_safe: {

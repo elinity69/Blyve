@@ -7,6 +7,12 @@ import { EmbedContextMenuWrapper } from './EmbedContextMenu';
 import { EmbedFavoriteButton } from './EmbedFavoriteButton';
 import { YouTubeEmbed } from './YouTubeEmbed';
 import { SpotifyEmbed } from './SpotifyEmbed';
+import {
+  MessageAudioEmbed,
+  MessageFileEmbed,
+  MessageImageEmbed,
+  MessageVideoEmbed,
+} from './MessageMediaEmbeds';
 import { embedSupportsFavorite } from '../../lib/favoriteEmbeds';
 
 const previewCache = new Map<string, LinkPreviewData | null>();
@@ -36,29 +42,6 @@ async function fetchLinkPreview(url: string): Promise<LinkPreviewData | null> {
 
   inflight.set(url, promise);
   return promise;
-}
-
-function ImageEmbed({ src, openUrl, alt }: { src: string; openUrl: string; alt: string }) {
-  const [failed, setFailed] = useState(false);
-  if (failed) return null;
-
-  return (
-    <button
-      type="button"
-      className="block w-full cursor-pointer overflow-hidden rounded-xl border border-black/10 p-0 dark:border-white/10"
-      onClick={(event) => openExternalLink(event, openUrl)}
-      aria-label={alt}
-    >
-      <img
-        src={src}
-        alt={alt}
-        draggable={false}
-        className="pointer-events-none max-h-80 w-full object-contain bg-black/5 dark:bg-white/5"
-        loading="lazy"
-        onError={() => setFailed(true)}
-      />
-    </button>
-  );
 }
 
 function TenorEmbed({ id }: { id: string }) {
@@ -183,12 +166,21 @@ function MessageEmbedItem({ embed }: { embed: ParsedEmbed }) {
     case 'image':
     case 'giphy':
       content = (
-        <ImageEmbed
+        <MessageImageEmbed
           src={embed.imageUrl || embed.url}
           openUrl={embed.url}
           alt="Shared image"
         />
       );
+      break;
+    case 'video':
+      content = <MessageVideoEmbed src={embed.url} openUrl={embed.url} />;
+      break;
+    case 'audio':
+      content = <MessageAudioEmbed src={embed.url} />;
+      break;
+    case 'file':
+      content = <MessageFileEmbed url={embed.url} />;
       break;
     case 'youtube':
       content = embed.youtubeId ? <YouTubeEmbed videoId={embed.youtubeId} /> : null;

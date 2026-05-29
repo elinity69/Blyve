@@ -26,6 +26,7 @@ import {
 import { useLongPress } from '../hooks/useLongPress';
 import { MessageReplyComposerBar } from './chat/MessageReplyComposerBar';
 import { ChatMessageComposer } from './chat/ChatMessageComposer';
+import { useChatMediaSend } from '../hooks/useChatMediaSend';
 import { MessageRowReplyWrapper } from './chat/MessageRowReplyWrapper';
 import { MessageRowReplyButton } from './chat/MessageRowReplyButton';
 import {
@@ -110,6 +111,7 @@ export function ChatScreen({
   const [selectedReportReason, setSelectedReportReason] = useState<string | null>(null);
   const [reportTargetUserId, setReportTargetUserId] = useState<string | null>(null);
   const [newlyLoadedIds, setNewlyLoadedIds] = useState<Set<string>>(new Set());
+  const [dropActive, setDropActive] = useState(false);
   const initialScrollDoneRef = useRef(false);
   const canLoadOlderRef = useRef(false);
   const lastMessageIdRef = useRef<string | null>(null);
@@ -358,9 +360,27 @@ export function ChatScreen({
     return () => cancelAnimationFrame(id);
   }, [conversationId, isMdUp]);
 
+  const sendWithAttachments = useCallback(
+    async (content: string, attachmentIds: string[], replyToMessageId: string | null) => {
+      const msg = await sendMessage(content, replyToMessageId, attachmentIds);
+      return !!msg;
+    },
+    [sendMessage],
+  );
+
+  const {
+    sendFiles: sendMediaFiles,
+    sendVoiceMemo,
+    uploading: mediaUploading,
+    uploadLabel: mediaUploadLabel,
+  } = useChatMediaSend(
+    conversationId ? { type: 'dm', conversationId } : null,
+    sendWithAttachments,
+  );
+
   const handleSend = useCallback(async () => {
     const trimmed = messageInput.trim();
-    if (!trimmed || sending) return;
+    if (!trimmed || sending || mediaUploading) return;
 
     const replyToId = replyTarget?.id ?? null;
     const activeReply = replyTarget;
@@ -374,7 +394,31 @@ export function ChatScreen({
       }
     }
     focusMessageInput();
-  }, [messageInput, sending, sendMessage, focusMessageInput, replyTarget]);
+  }, [messageInput, sending, mediaUploading, sendMessage, focusMessageInput, replyTarget]);
+
+  const handleSendFiles = useCallback(
+    async (files: File[], caption?: string) => {
+      const replyToId = replyTarget?.id ?? null;
+      const activeReply = replyTarget;
+      setReplyTarget(null);
+      const ok = await sendMediaFiles(files, { caption, replyToMessageId: replyToId });
+      if (!ok && activeReply) setReplyTarget(activeReply);
+      focusMessageInput();
+    },
+    [replyTarget, sendMediaFiles, focusMessageInput],
+  );
+
+  const handleSendVoiceMemo = useCallback(
+    async (blob: Blob) => {
+      const replyToId = replyTarget?.id ?? null;
+      const activeReply = replyTarget;
+      setReplyTarget(null);
+      const ok = await sendVoiceMemo(blob, replyToId);
+      if (!ok && activeReply) setReplyTarget(activeReply);
+      focusMessageInput();
+    },
+    [replyTarget, sendVoiceMemo, focusMessageInput],
+  );
 
   const handleSendUrl = useCallback(
     async (url: string) => {
@@ -533,9 +577,26 @@ export function ChatScreen({
       {/* Messages */}
       <div
         data-chat-messages-scroll
-        className={CHAT_MESSAGE_LIST_CLASS}
+        className={`${CHAT_MESSAGE_LIST_CLASS} ${dropActive ? 'ring-2 ring-inset ring-orange-400/40' : ''}`}
         ref={assignMessagesContainer}
         onScroll={handleMessagesScroll}
+        onDragOver={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          setDropActive(true);
+        }}
+        onDragLeave={(e) => {
+          e.preventDefault();
+          if (e.currentTarget === e.target) setDropActive(false);
+        }}
+        onDrop={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          setDropActive(false);
+          if (e.dataTransfer.files?.length) {
+            void handleSendFiles(Array.from(e.dataTransfer.files));
+          }
+        }}
         style={{
           WebkitOverflowScrolling: 'touch',
           ...(typingClearance > 0 ? { paddingBottom: typingClearance } : {}),
@@ -661,8 +722,14 @@ export function ChatScreen({
         onChange={setMessageInput}
         onSend={handleSend}
         onSendUrl={handleSendUrl}
+        onSendFiles={handleSendFiles}
+        onSendVoiceMemo={handleSendVoiceMemo}
         placeholder={t('chat.dmMessagePlaceholder')}
         sending={sending}
+        mediaUploading={mediaUploading}
+        mediaUploadLabel={mediaUploadLabel}
+        dropActive={dropActive}
+        onDropActiveChange={setDropActive}
         inputRef={messageInputRef}
         replyBar={
           replyTarget ? (

@@ -18,6 +18,7 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 import type { Context } from "npm:hono";
 // @ts-ignore - Deno jsr: imports are valid at runtime
 import { handleLinkPreview } from "./_shared/link-preview-handlers.ts";
+import { handleUploadConfirm, handleUploadPresign } from "./_shared/upload-handlers.ts";
 
 // HINWEIS: seedData wurde entfernt, damit keine Fake-User mehr erstellt werden!
 // Daten: profiles, conversations, messages, friends, groups (nur Kommunikation).
@@ -91,6 +92,11 @@ app.get("/health", (c) => {
 });
 
 app.get("/link-preview", handleLinkPreview);
+
+// ==================== R2 UPLOADS (presigned; secrets server-side only) ====================
+
+app.post("/uploads/presign", (c) => handleUploadPresign(c, getSupabase));
+app.post("/uploads/confirm", (c) => handleUploadConfirm(c, getSupabase));
 
 // ==================== AUTH ROUTES ====================
 
@@ -1077,13 +1083,21 @@ app.post("/groups/:groupId/messages", async (c) => {
       return c.json({ error: "Unauthorized" }, 401);
     }
 
-    const { content, channel_id: channelIdBody, reply_to_message_id: replyToBody } = await c.req.json();
+    const {
+      content,
+      channel_id: channelIdBody,
+      reply_to_message_id: replyToBody,
+      attachment_ids: attachmentIdsBody,
+    } = await c.req.json();
     const cleanContent = String(content || "").trim();
     const channelId = String(channelIdBody || "").trim();
     const replyToMessageId = replyToBody ? String(replyToBody).trim() : null;
+    const attachmentIds = Array.isArray(attachmentIdsBody)
+      ? attachmentIdsBody.map((id: unknown) => String(id).trim()).filter(Boolean)
+      : [];
 
-    if (!cleanContent) {
-      return c.json({ error: "Message content required" }, 400);
+    if (!cleanContent && attachmentIds.length === 0) {
+      return c.json({ error: "Message content or attachment_ids required" }, 400);
     }
 
     if (!channelId) {
@@ -1123,13 +1137,45 @@ app.post("/groups/:groupId/messages", async (c) => {
       }
     }
 
+    if (attachmentIds.length > 0) {
+      const { data: attachments, error: attErr } = await supabase
+        .from("message_attachments")
+        .select("id, status, group_id, channel_id, public_url")
+        .in("id", attachmentIds)
+        .eq("uploader_id", user.id);
+
+      if (attErr || !attachments || attachments.length !== attachmentIds.length) {
+        return c.json({ error: "Invalid attachments" }, 400);
+      }
+
+      const invalid = attachments.some(
+        (a) =>
+          a.status !== "ready" ||
+          a.group_id !== groupId ||
+          a.channel_id !== channelId,
+      );
+      if (invalid) {
+        return c.json({ error: "Invalid attachments" }, 400);
+      }
+    }
+
+    let messageContent = cleanContent;
+    if (!messageContent && attachmentIds.length > 0) {
+      const { data: firstAtt } = await supabase
+        .from("message_attachments")
+        .select("public_url")
+        .eq("id", attachmentIds[0])
+        .maybeSingle();
+      messageContent = firstAtt?.public_url || "📎 Anhang";
+    }
+
     const { data: message, error: insertError } = await supabase
       .from("group_messages")
       .insert({
         group_id: groupId,
         channel_id: channelId,
         sender_id: user.id,
-        content: cleanContent,
+        content: messageContent,
         reply_to_message_id: replyToMessageId,
       })
       .select(`
@@ -1152,6 +1198,22 @@ app.post("/groups/:groupId/messages", async (c) => {
 
     if (insertError || !message) {
       return c.json({ error: insertError?.message || "Failed to send message" }, 500);
+    }
+
+    if (attachmentIds.length > 0) {
+      const { error: linkErr } = await supabase
+        .from("message_attachments")
+        .update({ group_message_id: message.id })
+        .in("id", attachmentIds)
+        .eq("uploader_id", user.id)
+        .eq("status", "ready")
+        .eq("group_id", groupId)
+        .eq("channel_id", channelId)
+        .is("group_message_id", null);
+
+      if (linkErr) {
+        console.error("Failed to link group attachments:", linkErr);
+      }
     }
 
     const { error: touchError } = await supabase
@@ -1948,6 +2010,8 @@ function normalizeEdgeRequest(req: Request): Request {
       "/health",
       "/profile",
       "/user",
+      "/uploads",
+      "/link-preview",
     ];
     for (const root of roots) {
       if (pathname === root || pathname.startsWith(`${root}/`)) {

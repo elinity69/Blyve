@@ -22,6 +22,7 @@ import { TypingBubble } from './TypingBubble';
 import { NotificationManager } from '../lib/notifications';
 import { MessageReplyComposerBar } from './chat/MessageReplyComposerBar';
 import { ChatMessageComposer } from './chat/ChatMessageComposer';
+import { useChatMediaSend } from '../hooks/useChatMediaSend';
 import { MessageRowReplyWrapper } from './chat/MessageRowReplyWrapper';
 import { MessageRowReplyButton } from './chat/MessageRowReplyButton';
 import {
@@ -111,6 +112,7 @@ export function GroupThreadScreen({
   const [sending, setSending] = useState(false);
   const [input, setInput] = useState('');
   const [replyTarget, setReplyTarget] = useState<ReplyTarget | null>(null);
+  const [dropActive, setDropActive] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -321,9 +323,71 @@ export function GroupThreadScreen({
     }
   }, [channelId, input, sendTyping]);
 
+  const sendWithAttachments = useCallback(
+    async (content: string, attachmentIds: string[], replyToMessageId: string | null) => {
+      if (!channelId) return false;
+      try {
+        setSending(true);
+        void sendTyping(false);
+        const data = await api.sendGroupMessage(
+          groupId,
+          content,
+          channelId,
+          replyToMessageId,
+          attachmentIds,
+        );
+        if (data?.message) {
+          setMessages((prev) => [...prev, data.message as GroupMessageRow]);
+        } else {
+          await refetch();
+        }
+        return true;
+      } catch (e: unknown) {
+        const msg = e instanceof Error ? e.message : String(e);
+        toast.error(t('groups.sendFailedTitle'), msg || t('groups.sendFailedBody'));
+        return false;
+      } finally {
+        setSending(false);
+      }
+    },
+    [channelId, groupId, refetch, sendTyping, t],
+  );
+
+  const {
+    sendFiles: sendMediaFiles,
+    sendVoiceMemo,
+    uploading: mediaUploading,
+    uploadLabel: mediaUploadLabel,
+  } = useChatMediaSend(
+    channelId ? { type: 'group', groupId, channelId } : null,
+    sendWithAttachments,
+  );
+
+  const handleSendFiles = useCallback(
+    async (files: File[], caption?: string) => {
+      const replyToId = replyTarget?.id ?? null;
+      const activeReply = replyTarget;
+      setReplyTarget(null);
+      const ok = await sendMediaFiles(files, { caption, replyToMessageId: replyToId });
+      if (!ok && activeReply) setReplyTarget(activeReply);
+    },
+    [replyTarget, sendMediaFiles],
+  );
+
+  const handleSendVoiceMemo = useCallback(
+    async (blob: Blob) => {
+      const replyToId = replyTarget?.id ?? null;
+      const activeReply = replyTarget;
+      setReplyTarget(null);
+      const ok = await sendVoiceMemo(blob, replyToId);
+      if (!ok && activeReply) setReplyTarget(activeReply);
+    },
+    [replyTarget, sendVoiceMemo],
+  );
+
   const handleSend = async () => {
     const text = input.trim();
-    if (!text || sending || !channelId) return;
+    if (!text || sending || mediaUploading || !channelId) return;
     const activeReply = replyTarget;
     const replyToId = activeReply?.id ?? null;
     try {
@@ -455,7 +519,22 @@ export function GroupThreadScreen({
       <div
         data-chat-messages-scroll
         ref={assignScrollContainer}
-        className={CHAT_MESSAGE_LIST_CLASS}
+        className={`${CHAT_MESSAGE_LIST_CLASS} ${dropActive ? 'ring-2 ring-inset ring-orange-400/40' : ''}`}
+        onDragOver={(e) => {
+          e.preventDefault();
+          setDropActive(true);
+        }}
+        onDragLeave={(e) => {
+          e.preventDefault();
+          if (e.currentTarget === e.target) setDropActive(false);
+        }}
+        onDrop={(e) => {
+          e.preventDefault();
+          setDropActive(false);
+          if (e.dataTransfer.files?.length) {
+            void handleSendFiles(Array.from(e.dataTransfer.files));
+          }
+        }}
         style={{
           WebkitOverflowScrolling: 'touch',
           ...(typingClearance > 0 ? { paddingBottom: typingClearance } : {}),
@@ -557,8 +636,14 @@ export function GroupThreadScreen({
         onChange={setInput}
         onSend={handleSend}
         onSendUrl={handleSendUrl}
+        onSendFiles={handleSendFiles}
+        onSendVoiceMemo={handleSendVoiceMemo}
         placeholder={t('groups.messagePlaceholder')}
         sending={sending}
+        mediaUploading={mediaUploading}
+        mediaUploadLabel={mediaUploadLabel}
+        dropActive={dropActive}
+        onDropActiveChange={setDropActive}
         inputRef={inputRef}
         replyBar={
           replyTarget ? (

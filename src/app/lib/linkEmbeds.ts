@@ -1,4 +1,13 @@
-export type EmbedKind = 'image' | 'youtube' | 'spotify' | 'tenor' | 'giphy' | 'link';
+export type EmbedKind =
+  | 'image'
+  | 'youtube'
+  | 'spotify'
+  | 'tenor'
+  | 'giphy'
+  | 'video'
+  | 'audio'
+  | 'file'
+  | 'link';
 
 export interface ParsedEmbed {
   url: string;
@@ -23,6 +32,9 @@ const URL_REGEX =
   /https?:\/\/(?:www\.)?[-a-zA-Z0-9@:%._+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b(?:[-a-zA-Z0-9()@:%_+.~#?&/=]*)/gi;
 
 const IMAGE_EXT = /\.(png|jpe?g|gif|webp|avif|bmp|svg)(\?.*)?$/i;
+const VIDEO_EXT = /\.(mp4|webm|mov)(\?.*)?$/i;
+const AUDIO_EXT = /\.(webm|ogg|mp3|m4a|wav)(\?.*)?$/i;
+const FILE_EXT = /\.(pdf|txt|zip)(\?.*)?$/i;
 
 const IMAGE_HOST_SUFFIXES = [
   'media.discordapp.net',
@@ -168,6 +180,18 @@ export function parseEmbed(url: string): ParsedEmbed | null {
       return { url, kind: 'image', imageUrl: resolveImageUrl(parsed) };
     }
 
+    if (VIDEO_EXT.test(parsed.pathname)) {
+      return { url, kind: 'video' };
+    }
+
+    if (AUDIO_EXT.test(parsed.pathname)) {
+      return { url, kind: 'audio' };
+    }
+
+    if (FILE_EXT.test(parsed.pathname)) {
+      return { url, kind: 'file' };
+    }
+
     return { url, kind: 'link' };
   } catch {
     return null;
@@ -175,11 +199,14 @@ export function parseEmbed(url: string): ParsedEmbed | null {
 }
 
 const EMBED_KIND_PRIORITY: Record<EmbedKind, number> = {
-  youtube: 6,
-  spotify: 5,
-  giphy: 4,
-  tenor: 3,
+  youtube: 8,
+  spotify: 7,
+  giphy: 6,
+  tenor: 5,
+  video: 4,
+  audio: 3,
   image: 2,
+  file: 2,
   link: 1,
 };
 

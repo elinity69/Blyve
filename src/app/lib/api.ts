@@ -411,14 +411,81 @@ export class ApiClient {
     return data;
   }
 
-  async sendMessageSafe(conversationId: string, content: string, replyToMessageId?: string | null) {
+  async sendMessageSafe(
+    conversationId: string,
+    content: string,
+    replyToMessageId?: string | null,
+    attachmentIds?: string[],
+  ) {
     const { data, error } = await supabase.rpc('send_message_safe', {
       p_conversation_id: conversationId,
       p_content: content,
       p_reply_to_message_id: replyToMessageId ?? null,
+      p_attachment_ids: attachmentIds?.length ? attachmentIds : null,
     });
     if (error) throw error;
     return data;
+  }
+
+  /** Presigned R2 upload — credentials stay on the edge function only. */
+  async requestUploadPresign(body: {
+    mimeType: string;
+    sizeBytes: number;
+    filename?: string;
+    conversation_id?: string;
+    group_id?: string;
+    channel_id?: string;
+  }) {
+    return this.edgeRequest('/uploads/presign', {
+      method: 'POST',
+      body: JSON.stringify({
+        mime_type: body.mimeType,
+        size_bytes: body.sizeBytes,
+        filename: body.filename,
+        conversation_id: body.conversation_id,
+        group_id: body.group_id,
+        channel_id: body.channel_id,
+      }),
+    }) as Promise<{
+      attachmentId: string;
+      uploadUrl: string;
+      method: 'PUT';
+      headers: { 'Content-Type': string };
+      storageKey: string;
+      expiresIn: number;
+      kind: string;
+    }>;
+  }
+
+  async putFileToPresignedUrl(
+    uploadUrl: string,
+    file: File | Blob,
+    headers: Record<string, string>,
+  ) {
+    const response = await fetch(uploadUrl, {
+      method: 'PUT',
+      headers,
+      body: file,
+    });
+    if (!response.ok) {
+      const text = await response.text().catch(() => '');
+      throw new Error(text || `Upload failed (${response.status})`);
+    }
+  }
+
+  async confirmUpload(attachmentId: string) {
+    return this.edgeRequest('/uploads/confirm', {
+      method: 'POST',
+      body: JSON.stringify({ attachment_id: attachmentId }),
+    }) as Promise<{
+      attachmentId: string;
+      status: string;
+      publicUrl: string | null;
+      kind: string;
+      mimeType: string;
+      sizeBytes: number;
+      storageKey: string;
+    }>;
   }
 
   async sendFriendRequest(friendUsername: string) {
@@ -662,7 +729,8 @@ export class ApiClient {
     groupId: string,
     content: string,
     channelId: string,
-    replyToMessageId?: string | null
+    replyToMessageId?: string | null,
+    attachmentIds?: string[],
   ) {
     return this.edgeRequest(`/groups/${groupId}/messages`, {
       method: 'POST',
@@ -670,6 +738,7 @@ export class ApiClient {
         content,
         channel_id: channelId,
         reply_to_message_id: replyToMessageId ?? null,
+        attachment_ids: attachmentIds?.length ? attachmentIds : undefined,
       }),
     });
   }
