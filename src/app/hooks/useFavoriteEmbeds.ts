@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ParsedEmbed } from '../lib/linkEmbeds';
+import { normalizeUrlForMatch, parseEmbed } from '../lib/linkEmbeds';
 import {
   dispatchFavoriteEmbedsSyncStatus,
   endFavoriteEmbedsSync,
@@ -8,6 +9,7 @@ import {
   isEmbedFavorited,
   readFavoriteEmbeds,
   removeFavoriteEmbed,
+  enrichFavoriteEmbed,
   toggleFavoriteEmbed,
   tryBeginFavoriteEmbedsSync,
   writeFavoriteEmbeds,
@@ -74,10 +76,30 @@ export function useFavoriteEmbeds() {
         return false;
       }
 
-      if (merged !== local) {
-        writeFavoriteEmbeds(merged);
+      const needsEnrich = merged.some(
+        (f) => (f.kind === 'tenor' || f.kind === 'giphy') && !f.imageUrl
+      );
+      const finalList = needsEnrich
+        ? await Promise.all(
+            merged.map(async (f) => {
+              if (f.kind !== 'tenor' && f.kind !== 'giphy') return f;
+              if (f.imageUrl) return f;
+              const embed =
+                parseEmbed(f.url) ?? {
+                  url: f.url,
+                  kind: f.kind,
+                  giphyId: f.giphyId,
+                  tenorId: f.tenorId,
+                };
+              return enrichFavoriteEmbed(embed);
+            })
+          )
+        : merged;
+
+      if (needsEnrich || merged !== local) {
+        writeFavoriteEmbeds(finalList);
       } else {
-        setFavorites(local);
+        setFavorites(merged);
       }
 
       dispatchFavoriteEmbedsSyncStatus('synced');
@@ -109,21 +131,29 @@ export function useFavoriteEmbeds() {
   );
 
   const toggleFavorite = useCallback(
-    (embed: ParsedEmbed) => {
-      const added = toggleFavoriteEmbed(embed);
-      const next = readFavoriteEmbeds();
-      setFavorites(next);
+    async (embed: ParsedEmbed): Promise<boolean> => {
+      const key = normalizeUrlForMatch(embed.url);
+      const list = readFavoriteEmbeds();
+      const existing = list.find(
+        (item) =>
+          normalizeUrlForMatch(item.url) === key ||
+          (embed.tenorId && item.tenorId === embed.tenorId) ||
+          (embed.giphyId && item.giphyId === embed.giphyId)
+      );
 
-      if (userId) {
-        const favorite = next.find((item) => item.url === embed.url);
-        if (added && favorite) {
-          void upsertCloudFavoriteEmbed(userId, favorite);
-        } else {
-          void deleteCloudFavoriteEmbed(userId, embed.url);
-        }
+      if (existing) {
+        removeFavoriteEmbed(existing.url);
+        setFavorites(readFavoriteEmbeds());
+        if (userId) void deleteCloudFavoriteEmbed(userId, existing.url);
+        return false;
       }
 
-      return added;
+      const favorite = await enrichFavoriteEmbed(embed);
+      toggleFavoriteEmbed(favorite);
+      const next = readFavoriteEmbeds();
+      setFavorites(next);
+      if (userId) void upsertCloudFavoriteEmbed(userId, favorite);
+      return true;
     },
     [userId]
   );

@@ -14,6 +14,8 @@ import {
 import { getOptimizedImageUrl } from '../../lib/images';
 import type { FavoriteEmbed } from '../../lib/favoriteEmbeds';
 import { previewUrlForFavorite } from '../../lib/favoriteEmbeds';
+import { parseEmbed } from '../../lib/linkEmbeds';
+import { resolveEmbedMediaUrl } from '../../lib/embedMediaResolver';
 import {
   useFavoriteEmbeds,
   type FavoriteEmbedsSyncStatus,
@@ -34,17 +36,17 @@ function FavoriteEmbedThumbnail({ favorite }: FavoriteEmbedThumbnailProps) {
     async function resolvePreview() {
       if (src) return;
 
-      if (favorite.kind === 'tenor') {
-        try {
-          const response = await fetch(
-            `https://tenor.com/oembed?url=${encodeURIComponent(favorite.url)}`
-          );
-          if (!response.ok) return;
-          const data = (await response.json()) as { thumbnail_url?: string };
-          if (!cancelled && data.thumbnail_url) setSrc(data.thumbnail_url);
-        } catch {
-          // ignore preview errors
-        }
+      if (favorite.kind === 'tenor' || favorite.kind === 'giphy') {
+        const embed =
+          parseEmbed(favorite.url) ?? {
+            url: favorite.url,
+            kind: favorite.kind,
+            giphyId: favorite.giphyId,
+            tenorId: favorite.tenorId,
+            imageUrl: favorite.imageUrl,
+          };
+        const mediaUrl = await resolveEmbedMediaUrl(embed);
+        if (!cancelled && mediaUrl) setSrc(mediaUrl);
         return;
       }
 

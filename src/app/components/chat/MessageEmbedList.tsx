@@ -13,7 +13,9 @@ import {
   MessageImageEmbed,
   MessageVideoEmbed,
 } from './MessageMediaEmbeds';
+import { GifMediaEmbed } from './GifMediaEmbed';
 import { embedSupportsFavorite } from '../../lib/favoriteEmbeds';
+import { parseEmbed } from '../../lib/linkEmbeds';
 
 const previewCache = new Map<string, LinkPreviewData | null>();
 const inflight = new Map<string, Promise<LinkPreviewData | null>>();
@@ -42,26 +44,6 @@ async function fetchLinkPreview(url: string): Promise<LinkPreviewData | null> {
 
   inflight.set(url, promise);
   return promise;
-}
-
-function TenorEmbed({ id, inBubble = false }: { id: string; inBubble?: boolean }) {
-  return (
-    <div
-      className={`aspect-video w-full max-h-80 overflow-hidden rounded-xl bg-black/5 dark:bg-white/5 ${
-        inBubble ? '' : 'border border-black/10 dark:border-white/10'
-      }`}
-      onPointerDown={(event) => event.stopPropagation()}
-      onClick={(event) => event.stopPropagation()}
-    >
-      <iframe
-        src={`https://tenor.com/embed/${id}`}
-        title="Tenor GIF"
-        className="h-full w-full"
-        loading="lazy"
-        allowFullScreen
-      />
-    </div>
-  );
 }
 
 function LinkPreviewCard({
@@ -187,17 +169,26 @@ function MessageEmbedItem({
   let content: ReactNode = null;
 
   switch (embed.kind) {
-    case 'image':
     case 'giphy':
-      content = (
-        <MessageImageEmbed
-          src={embed.imageUrl || embed.url}
-          openUrl={embed.url}
-          alt="Shared image"
-          inBubble={inBubble}
-        />
-      );
+    case 'tenor':
+      content = <GifMediaEmbed embed={embed} inBubble={inBubble} />;
       break;
+    case 'image': {
+      const reparsed = parseEmbed(embed.url);
+      if (reparsed?.kind === 'tenor' || reparsed?.kind === 'giphy') {
+        content = <GifMediaEmbed embed={{ ...reparsed, url: embed.url }} inBubble={inBubble} />;
+      } else {
+        content = (
+          <MessageImageEmbed
+            src={embed.imageUrl || embed.url}
+            openUrl={embed.url}
+            alt="Shared image"
+            inBubble={inBubble}
+          />
+        );
+      }
+      break;
+    }
     case 'video':
       content = (
         <MessageVideoEmbed src={embed.url} openUrl={embed.url} inBubble={inBubble} />
@@ -219,9 +210,6 @@ function MessageEmbedItem({
         embed.spotifyType && embed.spotifyId ? (
           <SpotifyEmbed type={embed.spotifyType} id={embed.spotifyId} inBubble={inBubble} />
         ) : null;
-      break;
-    case 'tenor':
-      content = embed.tenorId ? <TenorEmbed id={embed.tenorId} inBubble={inBubble} /> : null;
       break;
     case 'link':
       content = <LinkPreviewEmbed url={embed.url} inBubble={inBubble} />;

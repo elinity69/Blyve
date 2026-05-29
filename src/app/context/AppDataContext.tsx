@@ -103,7 +103,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       const profilePromise = Promise.resolve(
         supabase
           .from('profiles')
-          .select('id, name, email, avatar_url, display_name, username, bio, images, dark_mode, ghost_mode, onboarding_complete')
+          .select('id, name, email, avatar_url, display_name, username, bio, images, dark_mode, theme_mode, ghost_mode, onboarding_complete')
           .eq('id', sessionUser.id)
           .maybeSingle()
       );

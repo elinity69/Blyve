@@ -273,7 +273,7 @@ export function ChatMessageComposer({
   return (
     <div
       ref={rootRef}
-      className={`relative z-20 shrink-0 border-t border-gray-200 bg-white px-4 pt-2 dark:border-[#1f1f1f] dark:bg-[#0d0d0d] md:dark:bg-[#0e0e0e] ${
+      className={`relative z-20 shrink-0 border-t border-gray-200 blyve-border-subtle blyve-screen-bg px-4 pt-2 ${
         dropActive ? 'ring-2 ring-inset ring-orange-400/60' : ''
       }`}
       style={{ paddingBottom: composerPaddingBottom }}

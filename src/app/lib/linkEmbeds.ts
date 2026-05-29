@@ -97,12 +97,16 @@ function parseSpotify(url: URL): { type: ParsedEmbed['spotifyType']; id: string 
 
 function parseGiphyId(url: URL): string | null {
   const host = url.hostname.replace(/^www\./, '');
-  if (host === 'giphy.com' || host === 'media.giphy.com') {
+  if (host === 'giphy.com' || host === 'media.giphy.com' || host === 'i.giphy.com') {
     if (url.pathname.startsWith('/embed/')) {
       return url.pathname.split('/')[2] || null;
     }
-    const match = url.pathname.match(/\/gifs\/(?:.+-)?([A-Za-z0-9]+)$/);
-    return match?.[1] || null;
+    const mediaMatch = url.pathname.match(/\/media\/([A-Za-z0-9]+)\//);
+    if (mediaMatch?.[1]) return mediaMatch[1];
+    const directMatch = url.pathname.match(/^\/([A-Za-z0-9]+)\.gif$/);
+    if (directMatch?.[1]) return directMatch[1];
+    const pageMatch = url.pathname.match(/\/gifs\/(?:.+-)?([A-Za-z0-9]+)$/);
+    return pageMatch?.[1] || null;
   }
   if (host === 'gph.is') {
     return null;
@@ -112,12 +116,19 @@ function parseGiphyId(url: URL): string | null {
 
 function parseTenorId(url: URL): string | null {
   const host = url.hostname.replace(/^www\./, '');
-  if (host !== 'tenor.com') return null;
-  if (url.pathname.startsWith('/embed/')) {
-    return url.pathname.split('/')[2] || null;
+  if (host === 'tenor.com' || host === 'tenor.googleapis.com') {
+    if (url.pathname.startsWith('/embed/')) {
+      const id = url.pathname.split('/')[2]?.split('-')[0];
+      return id || null;
+    }
+    if (url.pathname.startsWith('/view/')) {
+      const match = url.pathname.match(/-(\d{5,})(?:\/)?$/);
+      if (match?.[1]) return match[1];
+    }
+    const generic = url.pathname.match(/(\d{8,})/);
+    if (generic?.[1]) return generic[1];
   }
-  const match = url.pathname.match(/\/view\/.+-(\d+)$/);
-  return match?.[1] || null;
+  return null;
 }
 
 function isDirectImageUrl(url: URL): boolean {
@@ -162,19 +173,19 @@ export function parseEmbed(url: string): ParsedEmbed | null {
       };
     }
 
+    const tenorId = parseTenorId(parsed);
+    if (tenorId) {
+      return { url, kind: 'tenor', tenorId };
+    }
+
     const giphyId = parseGiphyId(parsed);
     if (giphyId) {
       return {
         url,
         kind: 'giphy',
         giphyId,
-        imageUrl: `https://media.giphy.com/media/${giphyId}/giphy.gif`,
+        imageUrl: `https://i.giphy.com/${giphyId}.gif`,
       };
-    }
-
-    const tenorId = parseTenorId(parsed);
-    if (tenorId) {
-      return { url, kind: 'tenor', tenorId };
     }
 
     if (isDirectImageUrl(parsed)) {

@@ -422,7 +422,9 @@ export function GroupThreadScreen({
     try {
       setSending(true);
       void sendTyping(false);
-      const data = await api.sendGroupMessage(groupId, text, channelId, replyToId);
+      const { normalizeGifUrlForMessage } = await import('../lib/embedMediaResolver');
+      const content = await normalizeGifUrlForMessage(text);
+      const data = await api.sendGroupMessage(groupId, content, channelId, replyToId);
       setReplyTarget(null);
       if (data?.message) {
         setMessages((prev) => [...prev, data.message as GroupMessageRow]);
@@ -444,7 +446,7 @@ export function GroupThreadScreen({
 
   if (!channelId) {
     return (
-      <div className="bg-white dark:bg-black md:dark:bg-[#121212] flex flex-col h-full w-full items-center justify-center p-6">
+      <div className="blyve-app-bg flex flex-col h-full w-full items-center justify-center p-6">
         <Loader2 className="w-8 h-8 animate-spin text-gray-400 mb-2" />
         <p className="text-sm text-gray-500 dark:text-gray-400 text-center">{t('groups.loadingChannels')}</p>
       </div>
@@ -463,10 +465,10 @@ export function GroupThreadScreen({
       : 'en-US';
 
   return (
-    <div className="relative flex h-full min-h-0 w-full max-w-full flex-col overflow-hidden bg-white dark:bg-[#0d0d0d] md:dark:bg-[#0e0e0e]">
+    <div className="relative flex h-full min-h-0 w-full max-w-full flex-col overflow-hidden blyve-screen-bg">
       {/* Header — aligned with ChatScreen */}
       <div
-        className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-[#1f1f1f] bg-white dark:bg-[#0d0d0d] md:dark:bg-[#0e0e0e] shrink-0"
+        className="flex items-center justify-between px-4 py-3 border-b border-gray-200 blyve-border-subtle blyve-screen-bg shrink-0"
       >
         <div className="flex items-center gap-3 min-w-0">
           <button

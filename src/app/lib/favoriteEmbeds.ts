@@ -1,5 +1,9 @@
 import type { EmbedKind, ParsedEmbed } from './linkEmbeds';
-import { normalizeUrlForMatch } from './linkEmbeds';
+import { normalizeUrlForMatch, parseEmbed } from './linkEmbeds';
+import {
+  canonicalGifPageUrl,
+  resolveEmbedMediaUrl,
+} from './embedMediaResolver';
 
 export interface FavoriteEmbed {
   url: string;
@@ -43,13 +47,33 @@ export function embedSupportsFavorite(kind: EmbedKind): boolean {
 
 export function favoriteFromParsedEmbed(embed: ParsedEmbed): FavoriteEmbed {
   return {
-    url: embed.url,
+    url:
+      embed.kind === 'tenor' || embed.kind === 'giphy'
+        ? canonicalGifPageUrl(embed)
+        : embed.url,
     kind: embed.kind,
     imageUrl: embed.imageUrl,
     giphyId: embed.giphyId,
     tenorId: embed.tenorId,
     savedAt: Date.now(),
   };
+}
+
+export async function enrichFavoriteEmbed(embed: ParsedEmbed): Promise<FavoriteEmbed> {
+  let source = embed;
+  if (embed.kind === 'image') {
+    const reparsed = parseEmbed(embed.url);
+    if (reparsed?.kind === 'tenor' || reparsed?.kind === 'giphy') {
+      source = reparsed;
+    }
+  }
+
+  const base = favoriteFromParsedEmbed(source);
+  if (base.kind === 'tenor' || base.kind === 'giphy' || base.kind === 'image') {
+    const mediaUrl = await resolveEmbedMediaUrl(source);
+    if (mediaUrl) base.imageUrl = mediaUrl;
+  }
+  return base;
 }
 
 export function readFavoriteEmbeds(): FavoriteEmbed[] {
@@ -84,10 +108,10 @@ export function isEmbedFavorited(url: string, favorites = readFavoriteEmbeds()):
   return favorites.some((favorite) => normalizeUrlForMatch(favorite.url) === key);
 }
 
-export function toggleFavoriteEmbed(embed: ParsedEmbed): boolean {
+export function toggleFavoriteEmbed(favorite: FavoriteEmbed): boolean {
   const list = readFavoriteEmbeds();
-  const key = normalizeUrlForMatch(embed.url);
-  const existingIndex = list.findIndex((favorite) => normalizeUrlForMatch(favorite.url) === key);
+  const key = normalizeUrlForMatch(favorite.url);
+  const existingIndex = list.findIndex((item) => normalizeUrlForMatch(item.url) === key);
 
   if (existingIndex >= 0) {
     list.splice(existingIndex, 1);
@@ -95,7 +119,7 @@ export function toggleFavoriteEmbed(embed: ParsedEmbed): boolean {
     return false;
   }
 
-  writeFavoriteEmbeds([favoriteFromParsedEmbed(embed), ...list]);
+  writeFavoriteEmbeds([favorite, ...list]);
   return true;
 }
 
@@ -106,7 +130,10 @@ export function removeFavoriteEmbed(url: string): void {
 
 export function previewUrlForFavorite(favorite: FavoriteEmbed): string | undefined {
   if (favorite.imageUrl) return favorite.imageUrl;
-  if (favorite.giphyId) return `https://media.giphy.com/media/${favorite.giphyId}/giphy.gif`;
+  if (favorite.giphyId) return `https://i.giphy.com/${favorite.giphyId}.gif`;
+  if (favorite.tenorId) return undefined;
+  const parsed = parseEmbed(favorite.url);
+  if (parsed?.imageUrl) return parsed.imageUrl;
   return undefined;
 }
 

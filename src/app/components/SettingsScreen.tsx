@@ -7,7 +7,12 @@ import { getCachedUser, resolveAuthUser } from '../lib/authSession';
 import { getOptimizedImageUrl } from '../lib/images';
 import { toast } from '../lib/toast';
 import { useTranslation } from 'react-i18next';
-import { resolveDarkMode, syncThemeFromProfile } from '../lib/theme';
+import {
+  type ThemeMode,
+  profileUpdateForThemeMode,
+  resolveThemeMode,
+  syncThemeFromProfile,
+} from '../lib/theme';
 // NavigationStack is handled by parent - no need to import
 import { NotificationManager } from '../lib/notifications';
 import {
@@ -34,29 +39,12 @@ export function SettingsScreen({ onSignOut, onBack, previousScreen }: SettingsSc
   const [ghostMode, setGhostMode] = useState(false);
   const [updatingGhostMode, setUpdatingGhostMode] = useState(false);
   const [deletingAccount, setDeletingAccount] = useState(false);
-  const [darkMode, setDarkMode] = useState(() =>
-    typeof document !== 'undefined'
-      ? document.documentElement.classList.contains('dark')
-      : true
-  );
-  const [updatingDarkMode, setUpdatingDarkMode] = useState(false);
-
-  // Track Dark Mode
-  useEffect(() => {
-    const checkDarkMode = () => {
-      setDarkMode(document.documentElement.classList.contains('dark'));
-    };
-    
-    checkDarkMode();
-    
-    const observer = new MutationObserver(checkDarkMode);
-    observer.observe(document.documentElement, {
-      attributes: true,
-      attributeFilter: ['class'],
-    });
-    
-    return () => observer.disconnect();
-  }, []);
+  const [themeMode, setThemeMode] = useState<ThemeMode>(() => {
+    if (typeof document === 'undefined') return 'dark';
+    const mode = document.documentElement.dataset.themeMode;
+    return mode === 'light' || mode === 'dark' || mode === 'oled' ? mode : 'dark';
+  });
+  const [updatingTheme, setUpdatingTheme] = useState(false);
 
   const fetchProfile = async () => {
     try {
@@ -69,7 +57,7 @@ export function SettingsScreen({ onSignOut, onBack, previousScreen }: SettingsSc
       // 1. Hole Profil direkt aus der DB
       const { data: profileData, error } = await supabase
         .from('profiles')
-        .select('id, name, display_name, email, avatar_url, images, bio, username, ghost_mode, dark_mode, created_at')
+        .select('id, name, display_name, email, avatar_url, images, bio, username, ghost_mode, dark_mode, theme_mode, created_at')
         .eq('id', user.id)
         .single();
 
@@ -84,7 +72,7 @@ export function SettingsScreen({ onSignOut, onBack, previousScreen }: SettingsSc
         };
         setProfile(mappedProfile);
         setGhostMode(profileData.ghost_mode || false);
-        setDarkMode(resolveDarkMode(profileData.dark_mode));
+        setThemeMode(resolveThemeMode(profileData));
         
       }
     } catch (e) {
@@ -175,9 +163,9 @@ export function SettingsScreen({ onSignOut, onBack, previousScreen }: SettingsSc
     : null;
 
   const content = (
-    <div className="h-full overflow-y-auto pb-20 bg-white dark:bg-black md:dark:bg-[#121212]">
+    <div className="h-full overflow-y-auto pb-20 blyve-app-bg">
       {/* Header */}
-      <div className="sticky top-0 bg-white/80 dark:bg-black/80 md:dark:bg-[#121212]/80 backdrop-blur-md border-b border-gray-200 dark:border-white/5 p-4 z-10">
+      <div className="sticky top-0 bg-white/80 dark:bg-black/80 oled:bg-black/95 backdrop-blur-md border-b border-gray-200 dark:border-white/5 p-4 z-10">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               {onBack && (
@@ -192,7 +180,7 @@ export function SettingsScreen({ onSignOut, onBack, previousScreen }: SettingsSc
                 </button>
               )}
               <Settings className="w-6 h-6 text-orange-600" />
-              <h1 className="text-2xl font-bold">{t('settings.title')}</h1>
+              <h1 className="text-2xl font-bold text-gray-900 dark:text-white">{t('settings.title')}</h1>
             </div>
             <div className="flex items-center gap-2 ml-auto">
               <Button
@@ -213,7 +201,7 @@ export function SettingsScreen({ onSignOut, onBack, previousScreen }: SettingsSc
           {profile && (
             <div>
               <h2 className="font-bold mb-4">{t('settings.profile')}</h2>
-              <div className="bg-orange-50 dark:bg-[#0A0A0A] md:dark:bg-[#0A0A0A] border border-orange-200 dark:border-white/5 rounded-2xl p-4">
+              <div className="blyve-settings-card border border-orange-200 dark:border-white/5 rounded-2xl p-4">
                 <div className="flex items-start gap-4 mb-4">
                   {/* Profile Picture - Read-only */}
                   <div className="relative flex-shrink-0">
@@ -244,7 +232,7 @@ export function SettingsScreen({ onSignOut, onBack, previousScreen }: SettingsSc
                 </div>
 
                 {/* Info Text */}
-                <div className="bg-blue-50 dark:bg-[#0A0A0A] md:dark:bg-[#0A0A0A] border-2 border-blue-200 dark:border-white/5 rounded-xl p-3 text-center">
+                <div className="blyve-settings-card border-2 border-blue-200 dark:border-white/5 rounded-xl p-3 text-center">
                   <p className="text-xs text-blue-800 dark:text-blue-200">
                     💡 <strong>{t('profile.note')}</strong> {t('profile.changeMainImage')}
                   </p>
@@ -253,52 +241,74 @@ export function SettingsScreen({ onSignOut, onBack, previousScreen }: SettingsSc
             </div>
           )}
 
-          {/* Dark Mode Toggle */}
+          {/* Theme */}
           <div>
             <div className="flex items-center gap-2 mb-4">
-              {darkMode ? <Moon className="w-5 h-5 text-orange-600" /> : <Sun className="w-5 h-5 text-orange-600" />}
-              <h2 className="font-bold text-gray-900 dark:text-white">{t('settings.darkMode')}</h2>
+              {themeMode === 'light' ? (
+                <Sun className="w-5 h-5 text-orange-600" />
+              ) : (
+                <Moon className="w-5 h-5 text-orange-600" />
+              )}
+              <h2 className="font-bold text-gray-900 dark:text-white">{t('settings.appearance')}</h2>
             </div>
-            <div className="bg-orange-50 dark:bg-[#0A0A0A] md:dark:bg-[#0A0A0A] border border-orange-200 dark:border-white/5 rounded-2xl p-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="font-semibold mb-1 text-gray-900 dark:text-white">{t('settings.darkMode')}</h3>
-                  <p className="text-xs text-gray-600 dark:text-gray-300">
-                    {t('settings.themeSubtitle')}
-                  </p>
-                </div>
-                <button
-                  onClick={async () => {
-                    const newDarkMode = !darkMode;
-                    setUpdatingDarkMode(true);
-                    try {
-                      const user = getCachedUser() ?? (await resolveAuthUser());
-                      if (!user) throw new Error('User not authenticated');
-                      const { error } = await supabase
-                        .from('profiles')
-                        .update({ dark_mode: newDarkMode })
-                        .eq('id', user.id);
-                      if (error) throw error;
-                      setDarkMode(newDarkMode);
-                      syncThemeFromProfile(user.id, newDarkMode);
-                    } catch (error: any) {
-                      console.error('Failed to update dark mode:', error);
-                      toast.error(t('profile.error'), error.message || t('profile.failedToUpdate'));
-                    } finally {
-                      setUpdatingDarkMode(false);
-                    }
-                  }}
-                  disabled={updatingDarkMode}
-                  className={`relative w-14 h-7 rounded-full transition-colors flex-shrink-0 ${
-                    darkMode ? 'bg-orange-600' : 'bg-gray-300'
-                  }`}
+            <div className="blyve-settings-card border border-orange-200 dark:border-white/5 rounded-2xl p-4">
+              <div>
+                <h3 className="font-semibold mb-1 text-gray-900 dark:text-white">{t('settings.appearance')}</h3>
+                <p className="text-xs text-gray-600 dark:text-gray-300 mb-4">
+                  {t('settings.themeSubtitle')}
+                </p>
+                <div
+                  className="grid grid-cols-3 gap-2"
+                  role="radiogroup"
+                  aria-label={t('settings.appearance')}
                 >
-                  <div
-                    className={`absolute top-1 left-1 w-5 h-5 bg-white rounded-full transition-transform ${
-                      darkMode ? 'translate-x-7' : 'translate-x-0'
-                    }`}
-                  />
-                </button>
+                  {(['light', 'dark', 'oled'] as const).map((mode) => {
+                    const labelKey =
+                      mode === 'light'
+                        ? 'settings.themeLight'
+                        : mode === 'dark'
+                          ? 'settings.themeDark'
+                          : 'settings.themeOled';
+                    const selected = themeMode === mode;
+                    return (
+                      <button
+                        key={mode}
+                        type="button"
+                        role="radio"
+                        aria-checked={selected}
+                        disabled={updatingTheme}
+                        onClick={async () => {
+                          if (mode === themeMode) return;
+                          setUpdatingTheme(true);
+                          try {
+                            const user = getCachedUser() ?? (await resolveAuthUser());
+                            if (!user) throw new Error('User not authenticated');
+                            const payload = profileUpdateForThemeMode(mode);
+                            const { error } = await supabase
+                              .from('profiles')
+                              .update(payload)
+                              .eq('id', user.id);
+                            if (error) throw error;
+                            setThemeMode(mode);
+                            syncThemeFromProfile(user.id, payload);
+                          } catch (error: any) {
+                            console.error('Failed to update theme:', error);
+                            toast.error(t('profile.error'), error.message || t('profile.failedToUpdate'));
+                          } finally {
+                            setUpdatingTheme(false);
+                          }
+                        }}
+                        className={`rounded-xl border px-2 py-2.5 text-xs font-semibold transition-colors ${
+                          selected
+                            ? 'border-orange-500 bg-orange-100 text-orange-900 dark:border-orange-500 dark:bg-orange-500/20 dark:text-orange-200'
+                            : 'border-gray-300 bg-gray-100 text-gray-800 hover:border-orange-400 dark:border-white/20 dark:bg-[#121212] dark:text-gray-100 dark:hover:border-white/35 oled:bg-[#121212] oled:text-gray-100'
+                        }`}
+                      >
+                        {t(labelKey)}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
             </div>
           </div>
@@ -309,7 +319,7 @@ export function SettingsScreen({ onSignOut, onBack, previousScreen }: SettingsSc
               <Eye className="w-5 h-5 text-orange-600" />
               <h2 className="font-bold text-gray-900 dark:text-white">{t('settings.ghostMode')}</h2>
             </div>
-            <div className="bg-orange-50 dark:bg-[#0A0A0A] md:dark:bg-[#0A0A0A] border border-orange-200 dark:border-white/5 rounded-2xl p-4">
+            <div className="blyve-settings-card border border-orange-200 dark:border-white/5 rounded-2xl p-4">
               <div className="flex items-center justify-between">
                 <div>
                   <h3 className="font-semibold mb-1 text-gray-900 dark:text-white">{t('profile.ghostMode')}</h3>
@@ -340,7 +350,7 @@ export function SettingsScreen({ onSignOut, onBack, previousScreen }: SettingsSc
               <h2 className="font-bold text-gray-900 dark:text-white">{t('settings.language')}</h2>
             </div>
             {/* Language Selection */}
-            <div className="bg-orange-50 dark:bg-[#0A0A0A] md:dark:bg-[#0A0A0A] border border-orange-200 dark:border-white/5 rounded-2xl p-4">
+            <div className="blyve-settings-card border border-orange-200 dark:border-white/5 rounded-2xl p-4">
               <div className="mb-3">
                 <h3 className="font-semibold mb-1 text-gray-900 dark:text-white">{t('settings.language')}</h3>
                 <p className="text-xs text-gray-600 dark:text-gray-300">
@@ -437,7 +447,7 @@ export function SettingsScreen({ onSignOut, onBack, previousScreen }: SettingsSc
           </div>
 
           {/* Impressum & Rechtliches */}
-          <div className="bg-white dark:bg-[#0A0A0A] md:dark:bg-[#0A0A0A] border border-gray-200 dark:border-white/10 rounded-2xl p-4">
+          <div className="blyve-settings-card border border-gray-200 dark:border-white/10 rounded-2xl p-4">
             <button
               onClick={() => {
                 window.location.href = '/?legal=1';
@@ -449,7 +459,7 @@ export function SettingsScreen({ onSignOut, onBack, previousScreen }: SettingsSc
           </div>
 
           {/* Feedback / Bug melden */}
-          <div className="bg-white dark:bg-[#0A0A0A] md:dark:bg-[#0A0A0A] border border-gray-200 dark:border-white/10 rounded-2xl p-4">
+          <div className="blyve-settings-card border border-gray-200 dark:border-white/10 rounded-2xl p-4">
             <button
               onClick={() => {
                 window.location.href = 'mailto:support@blyve.com?subject=Blyve%20Feedback';

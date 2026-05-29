@@ -7,7 +7,9 @@ export function Toaster() {
   useEffect(() => {
     // Check if dark mode is active
     const checkTheme = () => {
-      const isDark = document.documentElement.classList.contains("dark");
+      const isDark =
+        document.documentElement.classList.contains("dark") ||
+        document.documentElement.classList.contains("oled");
       setTheme(isDark ? "dark" : "light");
     };
 

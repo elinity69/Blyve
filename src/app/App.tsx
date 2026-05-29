@@ -25,7 +25,14 @@ import { CallProvider, useCall } from './context/CallContext';
 import { CallJoinScreen } from './components/CallJoinScreen';
 import { parseCallJoinParams } from './lib/callJoinRoute';
 import i18n from '../lib/i18n';
-import { applyThemePreference, applyBootTheme, clearThemeCache, readThemeCache, applyResolvedTheme, syncThemeFromProfile } from './lib/theme';
+import {
+  applyBootTheme,
+  applyThemeMode,
+  applyThemePreference,
+  clearThemeCache,
+  readThemeCache,
+  syncThemeFromProfile,
+} from './lib/theme';
 import {
   getCachedAccessToken,
   getCachedUser,
@@ -139,10 +146,8 @@ function AppContent({ onUserIdChange }: AppContentProps = {}) {
         // Apply cached theme immediately, then sync from profile once session is known
         const sessionUserId = sessionUser?.id ?? null;
         const cachedTheme = readThemeCache();
-        if (sessionUserId && cachedTheme?.userId === sessionUserId) {
-          applyResolvedTheme(cachedTheme.darkMode);
-        } else if (!sessionUserId && cachedTheme) {
-          applyResolvedTheme(cachedTheme.darkMode);
+        if (cachedTheme) {
+          applyThemeMode(cachedTheme.themeMode);
         } else {
           applyThemePreference(undefined);
         }
@@ -150,10 +155,10 @@ function AppContent({ onUserIdChange }: AppContentProps = {}) {
         if (sessionUserId) {
           const { data: profile } = await supabase
             .from('profiles')
-            .select('dark_mode')
+            .select('dark_mode, theme_mode')
             .eq('id', sessionUserId)
             .maybeSingle();
-          syncThemeFromProfile(sessionUserId, profile?.dark_mode);
+          syncThemeFromProfile(sessionUserId, profile);
         }
       } catch (error) {
         console.warn('Session check failed:', error);
@@ -187,7 +192,7 @@ function AppContent({ onUserIdChange }: AppContentProps = {}) {
         // FIX: Verwende maybeSingle() statt single() - verhindert Crash bei neuen Usern
         const { data: profile, error: profileError } = await supabase
           .from('profiles')
-          .select('id, name, email, avatar_url, display_name, username, bio, dark_mode, onboarding_complete')
+          .select('id, name, email, avatar_url, display_name, username, bio, dark_mode, theme_mode, onboarding_complete')
           .eq('id', user.id)
           .maybeSingle();
 
@@ -250,7 +255,7 @@ function AppContent({ onUserIdChange }: AppContentProps = {}) {
           profileComplete: mappedProfile.profileComplete,
           hasImageUrl: !!mappedProfile.imageUrl,
           });
-          syncThemeFromProfile(user.id, profile.dark_mode);
+          syncThemeFromProfile(user.id, profile);
           setIsAuthenticated(true);
 
           // FIX: Prüfe onboarding_complete - wenn false oder null, zeige Onboarding
@@ -296,7 +301,6 @@ function AppContent({ onUserIdChange }: AppContentProps = {}) {
       const isDark = document.documentElement.classList.contains('dark');
       setIsDarkMode(isDark);
       
-      // Update backgrounds for all layers - Force black in dark mode
       const bgColor = isDark ? '#000000' : '#ffffff';
       document.body.style.backgroundColor = bgColor;
       document.documentElement.style.backgroundColor = bgColor;
@@ -352,7 +356,7 @@ function AppContent({ onUserIdChange }: AppContentProps = {}) {
       // FIX: Verwende maybeSingle() statt single() - verhindert Crash bei neuen Usern
       const { data: profile, error: profileError } = await supabase
         .from('profiles')
-        .select('id, name, email, avatar_url, display_name, username, bio, dark_mode, onboarding_complete')
+        .select('id, name, email, avatar_url, display_name, username, bio, dark_mode, theme_mode, onboarding_complete')
         .eq('id', user.id)
         .maybeSingle();
 
@@ -378,7 +382,7 @@ function AppContent({ onUserIdChange }: AppContentProps = {}) {
       }
 
       console.log('Profile loaded from Supabase:', profile);
-      syncThemeFromProfile(user.id, profile?.dark_mode);
+      syncThemeFromProfile(user.id, profile);
       
       // FIX: Prüfe onboarding_complete explizit - wenn false/null/undefined, zeige Onboarding
       // WICHTIG: Prüfe explizit auf false/null, nicht nur auf truthy
@@ -432,7 +436,7 @@ function AppContent({ onUserIdChange }: AppContentProps = {}) {
         // FIX: Verwende maybeSingle() - Profil sollte existieren, aber sicherheitshalber
         const { data: profile, error: profileError } = await supabase
           .from('profiles')
-          .select('id, name, email, avatar_url, display_name, username, bio, dark_mode, onboarding_complete')
+          .select('id, name, email, avatar_url, display_name, username, bio, dark_mode, theme_mode, onboarding_complete')
           .eq('id', user.id)
           .maybeSingle();
         
@@ -440,7 +444,7 @@ function AppContent({ onUserIdChange }: AppContentProps = {}) {
           console.error('❌ Error reloading profile after onboarding:', profileError);
         } else if (profile) {
           console.log('✅ Profile reloaded after onboarding:', profile.name);
-          syncThemeFromProfile(user.id, profile.dark_mode);
+          syncThemeFromProfile(user.id, profile);
           
           // Check if onboarding is really complete
           if (profile.onboarding_complete) {
@@ -484,11 +488,11 @@ function AppContent({ onUserIdChange }: AppContentProps = {}) {
     const syncThemeForSession = async (userId: string) => {
       const { data: profile } = await supabase
         .from('profiles')
-        .select('dark_mode')
+        .select('dark_mode, theme_mode')
         .eq('id', userId)
         .maybeSingle();
       if (mounted) {
-        syncThemeFromProfile(userId, profile?.dark_mode);
+        syncThemeFromProfile(userId, profile);
       }
     };
 
@@ -508,7 +512,7 @@ function AppContent({ onUserIdChange }: AppContentProps = {}) {
       if (event === 'INITIAL_SESSION' || event === 'SIGNED_IN') {
         const cachedTheme = readThemeCache();
         if (cachedTheme?.userId === userId) {
-          applyResolvedTheme(cachedTheme.darkMode);
+          applyThemeMode(cachedTheme.themeMode);
         }
         window.setTimeout(() => {
           if (!mounted) return;
@@ -623,13 +627,15 @@ function AppContent({ onUserIdChange }: AppContentProps = {}) {
   // Keep Alive Navigation: renderScreen() entfernt - alle Screens werden permanent gemountet
 
   return (
-    <div className="fixed inset-0 bg-white flex flex-col dark:bg-black" style={{ 
-      paddingTop: '0px', 
-      paddingBottom: '0px', 
-      backgroundColor: isDarkMode ? '#000000' : '#ffffff', 
-      width: '100vw',
-      height: '100vh'
-    }}>
+    <div
+      className="fixed inset-0 flex flex-col blyve-app-bg"
+      style={{
+        paddingTop: '0px',
+        paddingBottom: '0px',
+        width: '100vw',
+        height: '100vh',
+      }}
+    >
       {!isAuthenticated ? (
         <ErrorBoundary
           resetOnPropsChange={true}
@@ -667,19 +673,9 @@ function AppContent({ onUserIdChange }: AppContentProps = {}) {
         />
       ) : (
         <>
-          <div
-            className="relative flex min-h-0 flex-1 flex-col overflow-hidden bg-white shadow-none dark:bg-black md:dark:bg-[#121212] md:shadow-none w-full"
-            style={{
-              backgroundColor: isDarkMode ? '#000000' : '#ffffff',
-            }}
-          >
+          <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden blyve-app-bg shadow-none md:shadow-none w-full">
             {/* Virtual Slide Map - Alle Screens permanent gemountet, horizontal positioniert */}
-            <div
-              className="relative min-h-0 flex-1 w-full overflow-hidden dark:bg-black md:dark:bg-[#121212]"
-              style={{
-                backgroundColor: isDarkMode ? '#000000' : '#ffffff',
-              }}
-            >
+            <div className="relative min-h-0 flex-1 w-full overflow-hidden blyve-app-bg">
               {(['messages', 'profile'] as const).map((tab, index) => {
                 const tabs = ['messages', 'profile'] as const;
                 const activeIndex = tabs.indexOf(activeTab);
@@ -701,12 +697,11 @@ function AppContent({ onUserIdChange }: AppContentProps = {}) {
                       mass: 0.5,
                       restDelta: 0.01 // Stoppt Animation früher für smooth "Einrasten"
                     }}
-                    className="absolute inset-0 w-full h-full dark:bg-black md:dark:bg-[#121212]"
-                    style={{ 
-                      zIndex: tab === activeTab ? 10 : 0, 
-                      backgroundColor: isDarkMode ? '#000000' : '#ffffff', /* Mobile: Pure Black, Desktop: Rich Charcoal */
+                    className="absolute inset-0 w-full h-full blyve-app-bg"
+                    style={{
+                      zIndex: tab === activeTab ? 10 : 0,
                       backfaceVisibility: 'hidden',
-                      willChange: 'transform'
+                      willChange: 'transform',
                     }}
                   >
                     {tab === 'messages' && (
@@ -791,9 +786,7 @@ function AppContent({ onUserIdChange }: AppContentProps = {}) {
       )}
 
       {showLegalDocs && (
-        <div className="fixed inset-0 bg-white z-50 overflow-y-auto dark:bg-black" style={{
-          backgroundColor: isDarkMode ? '#000000' : '#ffffff' /* Pure Black Modal */
-        }}>
+        <div className="fixed inset-0 z-50 overflow-y-auto blyve-app-bg">
           <div className="p-4 max-w-4xl mx-auto">
             <button
               onClick={() => {

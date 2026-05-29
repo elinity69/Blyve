@@ -13,6 +13,7 @@ export interface User {
   display_name?: string;
   pronouns?: string;
   dark_mode?: boolean;
+  theme_mode?: 'light' | 'dark' | 'oled';
   ghost_mode?: boolean;
 }
 
@@ -35,6 +36,7 @@ export type Database = {
           verified: boolean | null;
           ghost_mode: boolean | null;
           dark_mode: boolean | null;
+          theme_mode: string | null;
           onboarding_complete: boolean | null;
           created_at: string | null;
           updated_at: string | null;
@@ -53,6 +55,7 @@ export type Database = {
           verified?: boolean | null;
           ghost_mode?: boolean | null;
           dark_mode?: boolean | null;
+          theme_mode?: string | null;
           onboarding_complete?: boolean | null;
           created_at?: string | null;
           updated_at?: string | null;
@@ -71,6 +74,7 @@ export type Database = {
           verified?: boolean | null;
           ghost_mode?: boolean | null;
           dark_mode?: boolean | null;
+          theme_mode?: string | null;
           onboarding_complete?: boolean | null;
           created_at?: string | null;
           updated_at?: string | null;

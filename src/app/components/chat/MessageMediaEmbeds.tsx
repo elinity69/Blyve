@@ -114,11 +114,13 @@ export function MessageImageEmbed({
   openUrl,
   alt,
   inBubble = false,
+  onFailed,
 }: {
   src: string;
   openUrl: string;
   alt: string;
   inBubble?: boolean;
+  onFailed?: () => void;
 }) {
   const [failed, setFailed] = useState(false);
   if (failed) return null;
@@ -143,7 +145,10 @@ export function MessageImageEmbed({
           inBubble ? 'max-h-80 rounded-xl' : 'max-h-80 bg-black/5 dark:bg-white/5'
         }`}
         loading="lazy"
-        onError={() => setFailed(true)}
+        onError={() => {
+          setFailed(true);
+          onFailed?.();
+        }}
       />
     </button>
   );

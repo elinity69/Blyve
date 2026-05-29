@@ -27,6 +27,7 @@ import { useLongPress } from '../hooks/useLongPress';
 import { MessageReplyComposerBar } from './chat/MessageReplyComposerBar';
 import { ChatMessageComposer } from './chat/ChatMessageComposer';
 import { useChatMediaSend } from '../hooks/useChatMediaSend';
+import { normalizeGifUrlForMessage } from '../lib/embedMediaResolver';
 import { MessageContextMenuWrapper } from './chat/MessageContextMenu';
 import { MessageRowReplyWrapper } from './chat/MessageRowReplyWrapper';
 import { MessageRowReplyButton } from './chat/MessageRowReplyButton';
@@ -438,7 +439,8 @@ export function ChatScreen({
       const replyToId = replyTarget?.id ?? null;
       const activeReply = replyTarget;
       setReplyTarget(null);
-      const sent = await sendMessage(url.trim(), replyToId);
+      const content = await normalizeGifUrlForMessage(url.trim());
+      const sent = await sendMessage(content, replyToId);
       if (!sent && activeReply) {
         setReplyTarget(activeReply);
       }
@@ -502,10 +504,10 @@ export function ChatScreen({
     activeCall?.conversationId === conversationId;
   const isCallButtonDisabled = isThisChatBusyForMe;
   return (
-    <div className="relative flex h-full min-h-0 w-full max-w-full flex-col overflow-hidden bg-white dark:bg-[#0d0d0d] md:dark:bg-[#0e0e0e]">
+    <div className="relative flex h-full min-h-0 w-full max-w-full flex-col overflow-hidden blyve-screen-bg">
       {/* Header */}
       <div 
-        className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-[#1f1f1f] bg-white dark:bg-[#0d0d0d] md:dark:bg-[#0e0e0e]"
+        className="flex items-center justify-between px-4 py-3 border-b border-gray-200 blyve-border-subtle blyve-screen-bg"
         style={{ flexShrink: 0 }}
       >
         <div className="flex items-center gap-3">
@@ -614,7 +616,7 @@ export function ChatScreen({
         }}
       >
         {loading && messages.length === 0 ? (
-          <div className="flex h-full items-center justify-center bg-white dark:bg-[#0d0d0d] md:dark:bg-[#0e0e0e]">
+          <div className="flex h-full items-center justify-center blyve-screen-bg">
             <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
           </div>
         ) : error ? (
@@ -776,7 +778,7 @@ export function ChatScreen({
       {showOptionsMenu && (
         <div
           ref={optionsMenuRef}
-          className="absolute right-4 top-14 z-40 w-36 rounded-lg border border-gray-200 dark:border-white/5 bg-white dark:bg-[#0A0A0A] md:dark:bg-[#121212] shadow-lg overflow-hidden"
+          className="absolute right-4 top-14 z-40 w-36 rounded-lg border border-gray-200 dark:border-white/5 blyve-panel-bg shadow-lg overflow-hidden"
         >
           <button
             onClick={handleReportUser}

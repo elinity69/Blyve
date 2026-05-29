@@ -22,8 +22,9 @@ export function EmbedFavoriteButton({ embed }: EmbedFavoriteButtonProps) {
       onClick={(event) => {
         event.preventDefault();
         event.stopPropagation();
-        const added = toggleFavorite(embed);
-        toast.success(added ? t('chat.favoriteEmbedAdded') : t('chat.favoriteEmbedRemoved'));
+        void toggleFavorite(embed).then((added) => {
+          toast.success(added ? t('chat.favoriteEmbedAdded') : t('chat.favoriteEmbedRemoved'));
+        });
       }}
       onPointerDown={(event) => event.stopPropagation()}
       onContextMenu={(event) => event.stopPropagation()}

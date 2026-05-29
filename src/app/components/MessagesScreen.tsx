@@ -1575,7 +1575,7 @@ export function MessagesScreen() {
   const MessagesContent = useMemo(() => {
     if (loading && conversations.length === 0) {
       return (
-        <div className="h-full flex items-center justify-center bg-white dark:bg-black md:dark:bg-[#121212]">
+        <div className="h-full flex items-center justify-center blyve-app-bg">
           <div className="text-center">
             <div className="w-16 h-16 border-4 border-transparent border-t-orange-600 border-r-red-600 border-b-pink-600 border-l-orange-600 dark:border-t-orange-400 dark:border-r-red-400 dark:border-b-pink-400 dark:border-l-orange-400 rounded-full animate-spin mx-auto mb-4"></div>
             <p className="text-gray-600 dark:text-gray-300">{t('chat.loadingConversations')}</p>
@@ -1586,7 +1586,7 @@ export function MessagesScreen() {
 
     if (error) {
       return (
-        <div className="h-full flex items-center justify-center bg-white dark:bg-black md:dark:bg-[#121212]">
+        <div className="h-full flex items-center justify-center blyve-app-bg">
           <div className="text-center p-4">
             <p className="text-red-600 dark:text-red-400 mb-4">{error}</p>
             <button onClick={() => reload()} className="px-4 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition-colors" style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent', cursor: 'pointer' }}>{t('chat.retry')}</button>
@@ -1597,7 +1597,7 @@ export function MessagesScreen() {
 
     return (
       <div
-        className="h-full min-h-0 w-full flex flex-row bg-white dark:bg-black md:dark:bg-[#121212] overflow-hidden pb-16 box-border"
+        className="h-full min-h-0 w-full flex flex-row blyve-app-bg overflow-hidden pb-16 box-border"
       >
         <div
           className="flex flex-col items-center gap-2 py-3 px-1.5 w-[4.5rem] shrink-0 overflow-visible bg-[#1e1f22] border-r border-black/30"
@@ -1662,8 +1662,8 @@ export function MessagesScreen() {
         </div>
 
         <div className="flex flex-1 min-w-0 min-h-0">
-          <div className="flex flex-col flex-1 min-w-0 min-h-0 md:max-w-[340px] md:w-[32%] md:shrink-0 border-r border-gray-200 dark:border-white/10 bg-white dark:bg-black">
-            <div className="sticky top-0 z-10 bg-white/80 dark:bg-black/80 backdrop-blur-md border-b border-gray-200 dark:border-white/5 px-4 py-4 shrink-0">
+          <div className="flex flex-col flex-1 min-w-0 min-h-0 md:max-w-[340px] md:w-[32%] md:shrink-0 border-r border-gray-200 dark:border-white/10 blyve-app-bg">
+            <div className="sticky top-0 z-10 bg-white/80 dark:bg-black/80 oled:bg-black/95 oled:md:bg-black/95 backdrop-blur-md border-b border-gray-200 dark:border-white/5 px-4 py-4 shrink-0">
               <div className="flex items-center justify-between gap-3">
                 {selectedGroup ? (
                   <ServerTitleButton

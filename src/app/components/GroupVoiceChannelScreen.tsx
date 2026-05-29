@@ -50,8 +50,8 @@ export function GroupVoiceChannelScreen({
       : null;
 
   return (
-    <div className="relative flex h-full min-h-0 w-full flex-col bg-white dark:bg-[#0d0d0d] md:dark:bg-[#0e0e0e]">
-      <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-[#1f1f1f] bg-white dark:bg-[#0d0d0d] md:dark:bg-[#0e0e0e] shrink-0">
+    <div className="relative flex h-full min-h-0 w-full flex-col blyve-screen-bg">
+      <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 blyve-border-subtle blyve-screen-bg shrink-0">
         <div className="flex items-center gap-3 min-w-0">
           <button
             type="button"

@@ -106,6 +106,12 @@ html.dark {
   background-color: #000000 !important;
 }
 
+html.dark.oled,
+html.dark.oled body,
+html.dark.oled #root {
+  background-color: #000000 !important;
+}
+
 body {
   padding-top: env(safe-area-inset-top);
   padding-bottom: env(safe-area-inset-bottom);
@@ -265,10 +271,6 @@ button.bg-gradient-to-r {
   clip-path: polygon(100% 0, 100% 100%, 0 100%);
 }
 
-.dark .message-bubble-tail-other::after {
-  background: #1a222d;
-}
-
 .message-bubble-tail-me::after {
   content: '';
   position: absolute;
@@ -281,7 +283,67 @@ button.bg-gradient-to-r {
 }
 
 .dark .message-bubble-tail-me::after {
-  background: #243752;
+  background: var(--chat-bubble-me, #243752);
+}
+
+.dark .message-bubble-tail-other::after {
+  background: var(--chat-bubble-other, #1a222d);
+}
+
+/* Surfaces: class alone switches by .dark / .oled on <html> (no dark: prefix needed) */
+@utility blyve-screen-bg {
+  background-color: #ffffff;
+
+  .dark & {
+    background-color: var(--blyve-screen-bg, #0d0d0d);
+  }
+}
+
+@utility blyve-panel-bg {
+  background-color: #ffffff;
+
+  .dark & {
+    background-color: var(--blyve-panel-bg, #0a0a0a);
+  }
+}
+
+/* App shell: mobile dark = black; desktop dark = #121212; OLED = #000 everywhere */
+@utility blyve-app-bg {
+  background-color: #ffffff;
+
+  .dark & {
+    background-color: #000000;
+  }
+
+  @media (min-width: 768px) {
+    .dark:not(.oled) & {
+      background-color: #121212;
+    }
+
+    .oled & {
+      background-color: #000000;
+    }
+  }
+}
+
+@utility blyve-settings-card {
+  background-color: #fff7ed;
+
+  .dark & {
+    background-color: var(--blyve-panel-bg, #0a0a0a);
+  }
+}
+
+@utility blyve-border-subtle {
+  border-color: rgb(229 231 235);
+
+  .dark & {
+    border-color: rgb(31 31 31);
+  }
+
+  .oled & {
+    border-color: rgba(255, 255, 255, 0.08);
+  }
 }
 
 /* Lock chat scroll while a horizontal swipe-back gesture is active */

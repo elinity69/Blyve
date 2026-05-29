@@ -11,7 +11,7 @@ export const useProfile = () => {
 
       const { data, error } = await supabase
         .from('profiles')
-        .select('id, name, email, avatar_url, display_name, username, bio, images, dark_mode, ghost_mode, onboarding_complete')
+        .select('id, name, email, avatar_url, display_name, username, bio, images, dark_mode, theme_mode, ghost_mode, onboarding_complete')
         .eq('id', user.id)
         .maybeSingle();
 
