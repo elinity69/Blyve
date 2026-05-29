@@ -55,6 +55,7 @@ import { useLongPress } from '../hooks/useLongPress';
 import { NotificationManager } from '../lib/notifications';
 import {
   prefetchDmMessages,
+  ensureFreshDmMessages,
   prefetchGroupChannelMessages,
   prefetchGroupChannels,
   prefetchRecentDmMessages,
@@ -508,8 +509,9 @@ export function MessagesScreen() {
         is_online: otherUser.is_online,
         age: otherUser.age,
       });
+      void ensureFreshDmMessages(queryClient, conv.id);
     },
-    []
+    [queryClient]
   );
 
   const openConversationById = React.useCallback(

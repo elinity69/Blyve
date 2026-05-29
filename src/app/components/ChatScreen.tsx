@@ -684,8 +684,7 @@ export function ChatScreen({
                         const confirmed = window.confirm(t('chat.deleteMessageConfirm'));
                         if (!confirmed) return;
                         void deleteMessage(msg.id).then((ok) => {
-                          if (ok) toast.success(t('chat.deleteMessageSuccess'));
-                          else toast.error(t('chat.deleteMessageFailedTitle'));
+                          if (!ok) toast.error(t('chat.deleteMessageFailedTitle'));
                         });
                       }}
                     >

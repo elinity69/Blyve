@@ -95,10 +95,10 @@ export function useChat(conversationId: string | null, onMessageSent?: (conversa
     queryKey: dmMessagesQueryKey(conversationId!),
     enabled: !!conversationId,
     queryFn: () => fetchDmMessages(conversationId!),
-    staleTime: 1000 * 60 * 10,
+    staleTime: 0,
     refetchOnWindowFocus: false,
-    refetchOnReconnect: false,
-    refetchOnMount: true,
+    refetchOnReconnect: true,
+    refetchOnMount: 'always',
     retry: 2,
   });
 
@@ -256,6 +256,12 @@ export function useChat(conversationId: string | null, onMessageSent?: (conversa
             return [...prev, newMessage];
           });
 
+          queryClient.setQueryData<Message[]>(dmMessagesQueryKey(conversationId), (cached) => {
+            const base = cached ?? messagesRef.current;
+            if (base.some((m) => m.id === newMessage.id)) return base;
+            return mergeDmMessagesById(base, [newMessage]);
+          });
+
           dispatchConversationPreviewUpdate(
             newMessage.conversation_id,
             newMessage.content,
@@ -333,7 +339,7 @@ export function useChat(conversationId: string | null, onMessageSent?: (conversa
         channelRef.current = null;
       }
     };
-  }, [conversationId]);
+  }, [conversationId, queryClient]);
 
   const sendMessage = useCallback(
     async (

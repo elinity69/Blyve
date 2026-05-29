@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { useToast } from '../context/ToastContext';
 import {
   dispatchConversationPreviewUpdate,
@@ -9,6 +10,8 @@ import { isMessageReadReceiptUpdate } from '../lib/messageReadReceipts';
 import { NotificationManager } from '../lib/notifications';
 import { supabase } from '../lib/supabase';
 import { debounce } from '../lib/requestThrottle';
+import { appendDmMessageToCache } from '../lib/chatMessages';
+import type { Message } from './useChat';
 
 interface GroupMessageEventPayload {
   id: string;
@@ -27,7 +30,23 @@ const MEMBERSHIP_RELOAD_MS = 60_000;
  * Filtered realtime hub for message events (no global table listeners).
  * Drives preview text, unread badges, toasts, and notification sounds.
  */
+function messageFromRealtimePayload(payload: MessageEventPayload): Message {
+  return {
+    id: payload.id,
+    conversation_id: payload.conversation_id,
+    sender_id: payload.sender_id,
+    content: payload.content,
+    created_at: payload.created_at,
+    is_read: false,
+    read_at: null,
+    reply_to_message_id: null,
+  };
+}
+
 export function useMessageRealtime(currentUserId: string | null) {
+  const queryClient = useQueryClient();
+  const queryClientRef = useRef(queryClient);
+  queryClientRef.current = queryClient;
   const { showToast } = useToast();
   const showToastRef = useRef(showToast);
   showToastRef.current = showToast;
@@ -88,6 +107,10 @@ export function useMessageRealtime(currentUserId: string | null) {
         message.content,
         message.created_at
       );
+
+      if (message.sender_id !== currentUserId && !isChatOpen) {
+        appendDmMessageToCache(queryClientRef.current, messageFromRealtimePayload(message));
+      }
 
       if (message.sender_id === currentUserId) {
         return;

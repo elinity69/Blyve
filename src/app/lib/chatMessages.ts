@@ -81,6 +81,31 @@ export function prefetchDmMessages(
   });
 }
 
+/** Force a network fetch when opening a chat (toast, list tap, etc.). */
+export async function ensureFreshDmMessages(
+  queryClient: QueryClient,
+  conversationId: string,
+): Promise<Message[]> {
+  dmPrefetchRegistry.clearKey(`dm:${conversationId}`);
+  await queryClient.invalidateQueries({ queryKey: dmMessagesQueryKey(conversationId) });
+  return queryClient.fetchQuery({
+    queryKey: dmMessagesQueryKey(conversationId),
+    queryFn: () => fetchDmMessages(conversationId),
+    staleTime: 0,
+  });
+}
+
+export function appendDmMessageToCache(
+  queryClient: QueryClient,
+  message: Message,
+): void {
+  queryClient.setQueryData<Message[]>(dmMessagesQueryKey(message.conversation_id), (cached) => {
+    if (!cached?.length) return cached;
+    if (cached.some((row) => row.id === message.id)) return cached;
+    return mergeDmMessagesById(cached, [message]);
+  });
+}
+
 export const groupMessagesQueryKey = (groupId: string, channelId: string) =>
   ['groupMessages', groupId, channelId] as const;
 

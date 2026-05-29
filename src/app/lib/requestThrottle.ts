@@ -54,6 +54,9 @@ export function createPrefetchRegistry() {
     has(key: string) {
       return keys.has(key);
     },
+    clearKey(key: string) {
+      keys.delete(key);
+    },
     clear() {
       keys.clear();
     },
