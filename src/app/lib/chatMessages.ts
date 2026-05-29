@@ -33,6 +33,23 @@ export function applyReadStateToDmMessages(
   );
 }
 
+export function mergeDmMessagesById(existing: Message[], incoming: Message[]): Message[] {
+  if (!incoming.length) return existing;
+  if (!existing.length) return incoming;
+
+  const byId = new Map<string, Message>();
+  for (const message of existing) {
+    byId.set(message.id, message);
+  }
+  for (const message of incoming) {
+    byId.set(message.id, message);
+  }
+
+  return Array.from(byId.values()).sort(
+    (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+  );
+}
+
 export async function fetchDmMessages(
   conversationId: string,
   pageSize = DM_MESSAGES_PAGE_SIZE

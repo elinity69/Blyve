@@ -228,7 +228,7 @@ export function MessageEmbedList({ embeds }: MessageEmbedListProps) {
 
   return (
     <div
-      className="mt-1.5 flex w-full max-w-[min(100%,24rem)] flex-col gap-2"
+      className="mt-1.5 flex w-full max-w-full flex-col gap-2 sm:max-w-[min(100%,24rem)]"
       onPointerDown={(event) => event.stopPropagation()}
     >
       {embeds.map((embed) => (

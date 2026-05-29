@@ -724,7 +724,7 @@ export class ApiClient {
     try {
       return await this.edgeRequest(path, init);
     } catch (primaryError) {
-      const match = path.match(/^\/calls\/jitsi\/([^/]+)\/(accept|join|invite|end)$/);
+      const match = path.match(/^\/calls\/jitsi\/([^/]+)\/(accept|join|invite|end|leave)$/);
       if (match) {
         const [, sessionId, action] = match;
         const fn =
@@ -823,24 +823,13 @@ export class ApiClient {
     }
   }
 
-  /** Mark current user as left — stops pending invites and realtime churn. */
+  /** Leave call — direct Jitsi calls end immediately for all participants. */
   async leaveCallParticipant(callSessionId: string) {
-    const user = await this.requireUser();
-
     if (isJitsiCallProvider()) {
-      const leftAt = new Date().toISOString();
-      const { error } = await supabase
-        .from('call_participants')
-        .update({
-          invite_status: 'left',
-          left_at: leftAt,
-          updated_at: leftAt,
-        })
-        .eq('call_session_id', callSessionId)
-        .eq('user_id', user.id)
-        .is('left_at', null);
-      if (error) throw error;
-      return { success: true, callSessionId };
+      return this.jitsiEdgeRequest(`/calls/jitsi/${callSessionId}/leave`, {
+        method: 'POST',
+        body: JSON.stringify({ sessionId: callSessionId }),
+      });
     }
 
     return this.leaveCallSession(callSessionId);

@@ -1,5 +1,4 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
 import { Minimize2, User, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useAppData } from '../context/AppDataContext';
@@ -8,7 +7,8 @@ import { getOptimizedImageUrl } from '../lib/images';
 import type { CallMediaType, JitsiHandle } from '../lib/jitsi';
 import type { JitsiJoinCredentials } from '../lib/jitsiCall';
 import type { CallStageParticipant } from './CallParticipantStage';
-import { JitsiCallView, type JitsiCallLayout } from './JitsiCallView';
+import type { JitsiCallLayout } from './JitsiCallView';
+import { PersistentJitsiMeeting } from './PersistentJitsiMeeting';
 
 const PIP_SIZE = 136;
 const PIP_MARGIN = 12;
@@ -205,7 +205,12 @@ export function FloatingCallWidget({
     originY: number;
     moved: boolean;
   } | null>(null);
-  const pipContentRef = useRef<HTMLDivElement>(null);
+  const pipContentRef = useRef<HTMLDivElement | null>(null);
+  const [pipSlotReady, setPipSlotReady] = useState(false);
+  const assignPipContentRef = useCallback((node: HTMLDivElement | null) => {
+    pipContentRef.current = node;
+    setPipSlotReady(!!node);
+  }, []);
   const hasStreamRef = useRef(false);
   const onEnterFullscreenRef = useRef(onEnterFullscreen);
   const onOpenInChatRef = useRef(onOpenInChat);
@@ -414,9 +419,12 @@ export function FloatingCallWidget({
       </div>
     ) : null;
 
-  const jitsiView = (
-    <JitsiCallView
-      key={`${sessionId}:${mountKey}`}
+  const visualSlotEl =
+    isEmbedded && hostAnchorEl ? hostAnchorEl : pipSlotReady ? pipContentRef.current : null;
+
+  const persistentMeeting = (
+    <PersistentJitsiMeeting
+      visualSlotEl={visualSlotEl}
       sessionId={sessionId}
       inviteToken={inviteToken}
       callType={callType}
@@ -460,37 +468,31 @@ export function FloatingCallWidget({
     />
   );
 
-  if (isEmbedded && hostAnchorEl) {
-    return createPortal(
-      <div className="relative h-full min-h-[200px] w-full">{jitsiView}</div>,
-      hostAnchorEl
-    );
-  }
-
   return (
-    <div
-      className={isFullscreen ? 'fixed inset-0 z-[9998]' : 'fixed relative z-[135] select-none'}
-      style={
-        isFullscreen
-          ? undefined
-          : { left: position.x, top: position.y, width: PIP_SIZE, height: PIP_SIZE }
-      }
-    >
+    <>
+      {persistentMeeting}
+      {(!isEmbedded || !hostAnchorEl) ? (
       <div
-        ref={pipContentRef}
-        className={
+        className={isFullscreen ? 'fixed inset-0 z-[9998]' : 'fixed relative z-[135] select-none'}
+        style={
           isFullscreen
-            ? 'h-full w-full'
-            : 'group/pip relative h-full w-full cursor-grab touch-none overflow-hidden rounded-xl border border-white/15 bg-[#0b0b0b] shadow-2xl active:cursor-grabbing'
+            ? undefined
+            : { left: position.x, top: position.y, width: PIP_SIZE, height: PIP_SIZE }
         }
-        onPointerDown={!isFullscreen ? handleDragPointerDown : undefined}
-        onPointerMove={!isFullscreen ? handleDragPointerMove : undefined}
-        onPointerUp={!isFullscreen ? handleDragPointerUp : undefined}
-        onPointerCancel={!isFullscreen ? handleDragPointerUp : undefined}
-        onDoubleClick={!isFullscreen ? handleDoubleActivate : undefined}
       >
-        {jitsiView}
-      </div>
+        <div
+          ref={assignPipContentRef}
+          className={
+            isFullscreen
+              ? 'h-full w-full'
+              : 'group/pip relative h-full w-full cursor-grab touch-none overflow-hidden rounded-xl border border-white/15 bg-[#0b0b0b] shadow-2xl active:cursor-grabbing'
+          }
+          onPointerDown={!isFullscreen ? handleDragPointerDown : undefined}
+          onPointerMove={!isFullscreen ? handleDragPointerMove : undefined}
+          onPointerUp={!isFullscreen ? handleDragPointerUp : undefined}
+          onPointerCancel={!isFullscreen ? handleDragPointerUp : undefined}
+          onDoubleClick={!isFullscreen ? handleDoubleActivate : undefined}
+        />
       {!isFullscreen ? (
         <button
           type="button"
@@ -514,6 +516,8 @@ export function FloatingCallWidget({
           <Minimize2 className="h-4 w-4" />
         </button>
       ) : null}
-    </div>
+      </div>
+      ) : null}
+    </>
   );
 }

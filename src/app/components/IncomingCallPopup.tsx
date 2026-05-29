@@ -10,9 +10,8 @@ export function IncomingCallPopup() {
   if (!incomingCall || state !== 'incoming') return null;
 
   return (
-    <div className="fixed inset-0 z-[140] flex items-start justify-center p-4 pointer-events-none">
-      <div className="absolute inset-0 bg-black/45 backdrop-blur-[1px] pointer-events-auto" />
-      <div className="relative mt-10 w-full max-w-md rounded-2xl border border-red-500/35 bg-[#18191c] shadow-2xl pointer-events-auto overflow-hidden">
+    <div className="fixed inset-x-0 top-0 z-[140] flex justify-center p-4 pointer-events-none">
+      <div className="mt-10 w-full max-w-md rounded-2xl border border-red-500/35 bg-[#18191c] shadow-2xl pointer-events-auto overflow-hidden">
         <div className="px-4 py-3 bg-gradient-to-r from-red-600/80 via-pink-600/80 to-orange-500/80">
           <p className="text-xs tracking-wide uppercase text-white/90 font-semibold">{t('call.incoming')}</p>
         </div>

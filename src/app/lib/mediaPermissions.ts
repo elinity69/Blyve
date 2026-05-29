@@ -39,7 +39,6 @@ export async function checkMicrophonePermission(): Promise<MicrophonePermissionS
 }
 
 export async function hasMicrophonePermission(): Promise<boolean> {
-  // Persisted across sessions (incl. PWA / Add to Home Screen on same origin).
   if (shouldSkipJitsiPrejoin()) {
     return true;
   }
@@ -53,6 +52,10 @@ export async function hasMicrophonePermission(): Promise<boolean> {
 
 /** Request mic while the browser still has a user-gesture (call/accept button click). */
 export async function requestMicrophoneAccess(): Promise<MicrophoneAccessResult> {
+  if (shouldSkipJitsiPrejoin()) {
+    return { ok: true };
+  }
+
   if (typeof window === 'undefined') {
     return { ok: false, reason: 'unsupported' };
   }

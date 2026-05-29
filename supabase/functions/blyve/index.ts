@@ -1279,6 +1279,7 @@ import {
   handleEndCall,
   handleInviteParticipant,
   handleJoinCall,
+  handleLeaveCall,
 } from "./_shared/jitsi-call-handlers.ts";
 
 const UUID_RE =
@@ -1511,6 +1512,20 @@ app.post("/calls/jitsi/:id/end", async (c) => {
   } catch (e) {
     console.error("POST /calls/jitsi/:id/end", e);
     return c.json({ error: "Failed to end Jitsi call", code: 500 }, 500);
+  }
+});
+
+app.post("/calls/jitsi/:id/leave", async (c) => {
+  try {
+    const auth = await requireUser(c);
+    if ("error" in auth) return auth.error;
+    const sessionId = c.req.param("id");
+    if (!isUuid(sessionId)) return c.json({ error: "Invalid call id", code: 400 }, 400);
+    const result = await handleLeaveCall(auth.supabase, auth.user, sessionId);
+    return c.json(result.body, result.status);
+  } catch (e) {
+    console.error("POST /calls/jitsi/:id/leave", e);
+    return c.json({ error: "Failed to leave Jitsi call", code: 500 }, 500);
   }
 });
 

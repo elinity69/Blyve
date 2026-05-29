@@ -1,72 +1,163 @@
-import { useEffect, type RefObject } from 'react';
+import {
+  useCallback,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type MutableRefObject,
+  type RefObject,
+} from 'react';
 import { subscribeMobileViewportFrame } from '../lib/mobileViewport';
 
 const NEAR_BOTTOM_PX = 96;
+/** One follow-up after the mobile keyboard finishes its resize animation (iOS Safari). */
+const KEYBOARD_SETTLE_MS = 320;
+
+export type ChatScrollAnchorRef = (node: HTMLElement | null) => void;
 
 /**
- * Keeps the message list visually stable while the composer / keyboard moves:
- * pins to bottom when the user was already at the bottom, otherwise preserves scroll position.
+ * Keeps the message list pinned to the bottom while the composer / keyboard moves:
+ * instant sync on resize, smooth scroll when the composer receives focus.
  */
 export function useChatScrollAnchor(
   containerRef: RefObject<HTMLElement | null>,
-  enabled = true
-) {
-  useEffect(() => {
-    if (!enabled) return;
-    const container = containerRef.current;
-    if (!container) return;
+  enabled = true,
+  _endMarkerRef?: RefObject<HTMLElement | null>
+): ChatScrollAnchorRef {
+  const [containerEl, setContainerEl] = useState<HTMLElement | null>(null);
+  const pinnedRef = useRef(true);
+  const adjustingRef = useRef(false);
+  const prevClientHeightRef = useRef(0);
+  const keyboardTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const resizeRafRef = useRef<number | null>(null);
 
-    let pinnedToBottom = true;
-    let prevClientHeight = container.clientHeight;
+  const assignContainerRef = useCallback(
+    (node: HTMLElement | null) => {
+      setContainerEl(node);
+      (containerRef as MutableRefObject<HTMLElement | null>).current = node;
+    },
+    [containerRef]
+  );
 
-    const distanceFromBottom = () =>
+  useLayoutEffect(() => {
+    if (!enabled || !containerEl) return;
+
+    const getContainer = () => containerEl;
+
+    const distanceFromBottom = (container: HTMLElement) =>
       container.scrollHeight - container.scrollTop - container.clientHeight;
 
-    const syncScrollPosition = () => {
-      const distance = distanceFromBottom();
+    const scrollToEnd = (smooth = false) => {
+      const container = getContainer();
+      if (!container) return;
+
+      adjustingRef.current = true;
+      pinnedRef.current = true;
+
+      const maxScroll = Math.max(0, container.scrollHeight - container.clientHeight);
+
+      if (smooth && typeof container.scrollTo === 'function') {
+        container.scrollTo({ top: maxScroll, behavior: 'smooth' });
+      } else {
+        container.scrollTop = maxScroll;
+      }
+
+      requestAnimationFrame(() => {
+        adjustingRef.current = false;
+      });
+    };
+
+    const syncScrollPosition = (opts?: { smooth?: boolean }) => {
+      const container = getContainer();
+      if (!container) return;
+
+      const distance = distanceFromBottom(container);
       const nearBottom = distance < NEAR_BOTTOM_PX;
 
-      if (pinnedToBottom || nearBottom) {
-        pinnedToBottom = true;
-        container.scrollTop = container.scrollHeight;
+      if (pinnedRef.current || nearBottom) {
+        pinnedRef.current = true;
+        scrollToEnd(opts?.smooth ?? false);
       } else {
-        const heightDelta = container.clientHeight - prevClientHeight;
+        const prevHeight = prevClientHeightRef.current;
+        const heightDelta = container.clientHeight - prevHeight;
         if (heightDelta !== 0) {
           container.scrollTop = Math.max(0, container.scrollTop + heightDelta);
         }
       }
 
-      prevClientHeight = container.clientHeight;
+      prevClientHeightRef.current = container.clientHeight;
+    };
+
+    const scheduleResizeSync = (opts?: { smooth?: boolean }) => {
+      if (resizeRafRef.current !== null) {
+        cancelAnimationFrame(resizeRafRef.current);
+      }
+      resizeRafRef.current = requestAnimationFrame(() => {
+        resizeRafRef.current = null;
+        syncScrollPosition(opts);
+      });
     };
 
     const onScroll = () => {
-      pinnedToBottom = distanceFromBottom() < NEAR_BOTTOM_PX;
+      if (adjustingRef.current) return;
+      const container = getContainer();
+      if (!container) return;
+      pinnedRef.current = distanceFromBottom(container) < NEAR_BOTTOM_PX;
     };
 
-    container.addEventListener('scroll', onScroll, { passive: true });
+    prevClientHeightRef.current = containerEl.clientHeight;
+    containerEl.addEventListener('scroll', onScroll, { passive: true });
 
     const resizeObserver = new ResizeObserver(() => {
-      requestAnimationFrame(syncScrollPosition);
+      scheduleResizeSync();
     });
-    resizeObserver.observe(container);
+    resizeObserver.observe(containerEl);
 
     const unsubscribeViewport = subscribeMobileViewportFrame(() => {
-      requestAnimationFrame(syncScrollPosition);
+      scheduleResizeSync();
     });
 
-    const onComposerFocus = () => {
-      pinnedToBottom = true;
-      requestAnimationFrame(() => {
-        requestAnimationFrame(syncScrollPosition);
-      });
+    const vv = window.visualViewport;
+    const onVisualViewportChange = () => scheduleResizeSync();
+    vv?.addEventListener('resize', onVisualViewportChange);
+    vv?.addEventListener('scroll', onVisualViewportChange);
+
+    const onComposerFocus = (event: Event) => {
+      const detail = (event as CustomEvent<{ smooth?: boolean }>).detail;
+      const smooth = detail?.smooth !== false;
+
+      pinnedRef.current = true;
+
+      syncScrollPosition({ smooth: false });
+      scheduleResizeSync({ smooth: false });
+
+      if (keyboardTimerRef.current) {
+        clearTimeout(keyboardTimerRef.current);
+      }
+      keyboardTimerRef.current = setTimeout(() => {
+        keyboardTimerRef.current = null;
+        syncScrollPosition({ smooth });
+      }, KEYBOARD_SETTLE_MS);
     };
+
     window.addEventListener('chat-composer-focus', onComposerFocus);
 
     return () => {
-      container.removeEventListener('scroll', onScroll);
+      containerEl.removeEventListener('scroll', onScroll);
       resizeObserver.disconnect();
       unsubscribeViewport();
+      vv?.removeEventListener('resize', onVisualViewportChange);
+      vv?.removeEventListener('scroll', onVisualViewportChange);
       window.removeEventListener('chat-composer-focus', onComposerFocus);
+      if (keyboardTimerRef.current) {
+        clearTimeout(keyboardTimerRef.current);
+        keyboardTimerRef.current = null;
+      }
+      if (resizeRafRef.current !== null) {
+        cancelAnimationFrame(resizeRafRef.current);
+        resizeRafRef.current = null;
+      }
     };
-  }, [containerRef, enabled]);
+  }, [enabled, containerEl]);
+
+  return assignContainerRef;
 }

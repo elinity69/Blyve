@@ -113,6 +113,7 @@ export function GroupThreadScreen({
   const [replyTarget, setReplyTarget] = useState<ReplyTarget | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
   const typingIndicatorRef = useRef<HTMLDivElement>(null);
   const [typingClearance, setTypingClearance] = useState(0);
   const onOpenedRef = useRef(onOpened);
@@ -221,7 +222,7 @@ export function GroupThreadScreen({
   }, [messages, loading]);
 
   const isMobile = useIsMobile();
-  useChatScrollAnchor(scrollRef, isMobile);
+  const assignScrollContainer = useChatScrollAnchor(scrollRef, isMobile, messagesEndRef);
 
   useLayoutEffect(() => {
     if (!channelId || !isMdUp) return;
@@ -398,7 +399,7 @@ export function GroupThreadScreen({
       : 'en-US';
 
   return (
-    <div className="relative flex h-full min-h-0 w-full flex-col bg-white dark:bg-[#0d0d0d] md:dark:bg-[#0e0e0e]">
+    <div className="relative flex h-full min-h-0 w-full max-w-full flex-col overflow-hidden bg-white dark:bg-[#0d0d0d] md:dark:bg-[#0e0e0e]">
       {/* Header — aligned with ChatScreen */}
       <div
         className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-[#1f1f1f] bg-white dark:bg-[#0d0d0d] md:dark:bg-[#0e0e0e] shrink-0"
@@ -452,7 +453,8 @@ export function GroupThreadScreen({
 
       {/* Messages — same spacing / bubble style as ChatScreen */}
       <div
-        ref={scrollRef}
+        data-chat-messages-scroll
+        ref={assignScrollContainer}
         className={CHAT_MESSAGE_LIST_CLASS}
         style={{
           WebkitOverflowScrolling: 'touch',
@@ -520,7 +522,7 @@ export function GroupThreadScreen({
                           />
                         )}
                         <div
-                          className={`group/bubble flex w-fit items-start gap-1.5 ${
+                          className={`group/bubble flex max-w-full min-w-0 items-start gap-1.5 ${
                             mine ? 'flex-row-reverse' : 'flex-row'
                           }`}
                         >
@@ -547,6 +549,7 @@ export function GroupThreadScreen({
             );
           })
         )}
+        <div ref={messagesEndRef} aria-hidden className="h-px w-full shrink-0" />
       </div>
 
       <ChatMessageComposer

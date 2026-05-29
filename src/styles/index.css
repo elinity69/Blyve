@@ -283,3 +283,10 @@ button.bg-gradient-to-r {
 .dark .message-bubble-tail-me::after {
   background: #243752;
 }
+
+/* Lock chat scroll while a horizontal swipe-back gesture is active */
+html[data-swipe-back-lock='1'] [data-chat-messages-scroll] {
+  overflow: hidden !important;
+  touch-action: none !important;
+  overscroll-behavior: none;
+}

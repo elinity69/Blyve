@@ -59,7 +59,12 @@ function notifyMicrophoneAccessResult(micAccess: MicrophoneAccessResult) {
 }
 
 async function ensureMicrophoneForCall(): Promise<void> {
-  if (shouldSkipJitsiPrejoin() || (await hasMicrophonePermission())) {
+  if (shouldSkipJitsiPrejoin()) {
+    markJitsiMicGranted();
+    await premiumCallAudio.prepareForCall();
+    return;
+  }
+  if (await hasMicrophonePermission()) {
     markJitsiMicGranted();
     await premiumCallAudio.prepareForCall();
     return;
@@ -370,14 +375,8 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   }, [pushDebug]);
 
   const moveToEnded = useCallback(() => {
-    setState('ended');
-    if (endedTimeoutRef.current) {
-      window.clearTimeout(endedTimeoutRef.current);
-    }
-    endedTimeoutRef.current = window.setTimeout(() => {
-      setState('idle');
-    }, 2200);
-  }, []);
+    clearEndedState();
+  }, [clearEndedState]);
 
   const resetMedia = useCallback(async () => {
     premiumCallAudio.release();
@@ -477,7 +476,9 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       }
       joinInFlightRef.current = true;
       try {
-        await resetMedia();
+        if (jitsiActiveSessionRef.current !== callSessionId) {
+          await resetMedia();
+        }
         setConnectionState('connecting');
         setErrorMessage(null);
         setCanRetryConnection(false);
@@ -556,6 +557,26 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
           } catch (createError: unknown) {
             const createMsg = String((createError as Error)?.message || '');
             if (/409|active call already exists/i.test(createMsg)) {
+              const { data: existing } = await supabase
+                .from('call_sessions')
+                .select('id')
+                .eq('conversation_id', input.conversationId)
+                .in('status', ['ringing', 'joining', 'active'])
+                .order('created_at', { ascending: false })
+                .limit(1)
+                .maybeSingle();
+              if (existing?.id) {
+                const existingId = String(existing.id);
+                if (outgoingCallTimeoutRef.current) {
+                  window.clearTimeout(outgoingCallTimeoutRef.current);
+                  outgoingCallTimeoutRef.current = null;
+                }
+                activeCallSessionIdRef.current = existingId;
+                setActiveCall((prev) => (prev ? { ...prev, callSessionId: existingId } : prev));
+                pushDebug(`join existing session=${existingId}`);
+                await connectToJitsi(existingId, input.conversationId, 'audio');
+                return;
+              }
               pushDebug('jitsi create 409 — retry after server cleanup');
               await new Promise((r) => window.setTimeout(r, 400));
               createResponse = await api.createCallSession(createPayload);
@@ -611,6 +632,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     },
     [
       clearEndedState,
+      connectToJitsi,
       moveToEnded,
       pushDebug,
       resetMedia,
@@ -853,38 +875,41 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     const conversationId = incomingCall.conversationId;
     const caller = incomingCall.caller;
 
-    await ensureMicrophoneForCall();
+    stopIncomingSound();
+    setIncomingCall(null);
+    incomingSessionIdRef.current = null;
+    setSelfRole('participant');
+    setActiveCall({
+      callSessionId: sessionId,
+      conversationId,
+      callType: 'audio',
+      participants: [
+        {
+          id: caller.id,
+          name: caller.name,
+          avatarUrl: caller.avatarUrl,
+        },
+      ],
+    });
+    setState('in_call');
+    if (conversationId && embeddedHostRef.current === conversationId) {
+      setCallDisplayMode('embedded');
+    } else {
+      setCallDisplayMode('pip');
+    }
+    pushDebug(`incoming accepted session=${sessionId}`);
 
-    try {
-      try {
-        await api.acceptCall(sessionId, 'accept');
-      } catch (error) {
+    const micPromise = ensureMicrophoneForCall();
+    const joinPromise = connectToCallMedia(sessionId, conversationId, 'audio');
+    const acceptPromise = api
+      .acceptCall(sessionId, 'accept')
+      .catch((error) => {
         if (!isStaleAcceptCallError(error)) throw error;
         pushDebug(`accept ignored stale state session=${sessionId}`);
-      }
-      setSelfRole('participant');
-      setActiveCall({
-        callSessionId: sessionId,
-        conversationId,
-        callType: 'audio',
-        participants: [
-          {
-            id: caller.id,
-            name: caller.name,
-            avatarUrl: caller.avatarUrl,
-          },
-        ],
       });
-      setIncomingCall(null);
-      incomingSessionIdRef.current = null;
-      stopIncomingSound();
-      pushDebug(`incoming accepted session=${sessionId}`);
-      if (conversationId && embeddedHostRef.current === conversationId) {
-        setCallDisplayMode('embedded');
-      } else {
-        setCallDisplayMode('pip');
-      }
-      await connectToCallMedia(sessionId, conversationId, 'audio');
+
+    try {
+      await Promise.all([micPromise, joinPromise, acceptPromise]);
     } catch (error: unknown) {
       joinInFlightRef.current = false;
       console.error('Failed to accept call:', error);
@@ -944,8 +969,14 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     }
 
     if (sessionId) {
+      const isDirectConversation =
+        Boolean(activeCall?.conversationId) &&
+        !activeCall?.isVoiceChannel &&
+        !activeCall?.groupId;
       try {
-        if (selfRoleRef.current === 'host') {
+        if (isDirectConversation) {
+          await api.leaveCallParticipant(sessionId);
+        } else if (selfRoleRef.current === 'host') {
           await api.endCallSession(sessionId);
         } else {
           await api.leaveCallParticipant(sessionId);
@@ -1674,6 +1705,90 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     };
   }, [currentUserId, moveToEnded, resetMedia, stopIncomingSound, stopOutgoingSound]);
 
+  const sessionChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
+
+  useEffect(() => {
+    const sessionId = activeCall?.callSessionId || activeCallSessionIdRef.current;
+    if (!sessionId || !currentUserId) return;
+    if (!['calling', 'incoming', 'in_call'].includes(state)) return;
+
+    const terminalStatuses = new Set(['ended', 'cancelled', 'declined', 'missed']);
+
+    const cleanupLocalCall = async () => {
+      if (
+        activeCallSessionIdRef.current !== sessionId &&
+        incomingSessionIdRef.current !== sessionId
+      ) {
+        return;
+      }
+      setIncomingCall(null);
+      incomingSessionIdRef.current = null;
+      setActiveCall(null);
+      activeCallSessionIdRef.current = null;
+      await resetMedia();
+      stopIncomingSound();
+      stopOutgoingSound();
+      clearEndedState();
+    };
+
+    sessionChannelRef.current = supabase
+      .channel(`call-session-active:${sessionId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'call_sessions',
+          filter: `id=eq.${sessionId}`,
+        },
+        async (payload) => {
+          const status = String(
+            (payload.new as { status?: string } | undefined)?.status || ''
+          ).toLowerCase();
+          if (terminalStatuses.has(status)) {
+            await cleanupLocalCall();
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'call_participants',
+          filter: `call_session_id=eq.${sessionId}`,
+        },
+        async (payload) => {
+          const row = payload.new as {
+            user_id?: string;
+            invite_status?: string;
+            left_at?: string | null;
+          };
+          if (!row?.user_id || row.user_id === currentUserId) return;
+          const inviteStatus = String(row.invite_status || '').toLowerCase();
+          if (row.left_at || ['declined', 'missed', 'left', 'removed'].includes(inviteStatus)) {
+            await cleanupLocalCall();
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      if (sessionChannelRef.current) {
+        supabase.removeChannel(sessionChannelRef.current);
+        sessionChannelRef.current = null;
+      }
+    };
+  }, [
+    activeCall?.callSessionId,
+    clearEndedState,
+    currentUserId,
+    resetMedia,
+    state,
+    stopIncomingSound,
+    stopOutgoingSound,
+  ]);
+
   useEffect(() => {
     if (!currentUserId || state === 'in_call') return;
 
@@ -1739,6 +1854,25 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     return () => {
+      const sessionId = activeCallSessionIdRef.current;
+      const call = activeCallRef.current;
+      if (sessionId && call) {
+        void (async () => {
+          try {
+            if (call.isVoiceChannel && call.groupId && call.channelId) {
+              await api.leaveVoiceChannel(call.groupId, call.channelId);
+            } else if (call.conversationId && !call.groupId) {
+              await api.leaveCallParticipant(sessionId);
+            } else if (selfRoleRef.current === 'host') {
+              await api.endCallSession(sessionId);
+            } else {
+              await api.leaveCallParticipant(sessionId);
+            }
+          } catch {
+            // best effort — avoid orphaned server sessions on tab close
+          }
+        })();
+      }
       void resetMedia();
       stopIncomingSound();
       stopOutgoingSound();

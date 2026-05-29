@@ -10,9 +10,12 @@ declare const Deno: {
 // @ts-ignore Deno jsr import
 import type { SupabaseClient, User } from "jsr:@supabase/supabase-js@2";
 import {
+  closeOrphanedActiveCallIfNeeded,
   closeUnansweredCall,
   clearBlockingCallsForConversation,
+  countInCallParticipants,
   expireStaleRingingCallIfNeeded,
+  forceTerminateCallSession,
   getWriteSupabase,
   isUuid,
   sha256Hex,
@@ -827,4 +830,73 @@ export async function handleEndCall(
     status: "ended",
     endedAt,
   });
+}
+
+/** Leave the media room; direct calls end immediately for all participants. */
+export async function handleLeaveCall(
+  supabase: SupabaseClient,
+  user: User,
+  sessionId: string,
+): Promise<HandlerResult> {
+  const { data: session, error: sErr } = await supabase
+    .from("call_sessions")
+    .select("id, status, context_type")
+    .eq("id", sessionId)
+    .maybeSingle();
+  if (sErr) return fail(500, sErr.message);
+  if (!session) return fail(404, "Call not found");
+
+  const sessionStatus = String(session.status || "").toLowerCase();
+  if (["ended", "cancelled", "declined", "missed"].includes(sessionStatus)) {
+    return ok({ success: true, sessionId, callSessionId: sessionId, alreadyEnded: true });
+  }
+
+  const { data: myPart, error: mpErr } = await supabase
+    .from("call_participants")
+    .select("id, left_at")
+    .eq("call_session_id", sessionId)
+    .eq("user_id", user.id)
+    .maybeSingle();
+  if (mpErr) return fail(500, mpErr.message);
+  if (!myPart) return fail(403, "Not a participant");
+
+  const leftAt = new Date().toISOString();
+  if (!myPart.left_at) {
+    const { error: uErr } = await supabase
+      .from("call_participants")
+      .update({
+        invite_status: "left",
+        left_at: leftAt,
+        updated_at: leftAt,
+      })
+      .eq("id", myPart.id);
+    if (uErr) return fail(500, uErr.message);
+  }
+
+  const contextType = String(session.context_type || "").toLowerCase();
+  if (contextType === "direct") {
+    await forceTerminateCallSession(supabase, sessionId, "ended", "participant_left_direct");
+    return ok({
+      success: true,
+      sessionId,
+      callSessionId: sessionId,
+      status: "ended",
+      ended: true,
+    });
+  }
+
+  await closeOrphanedActiveCallIfNeeded(supabase, sessionId);
+  const inCallCount = await countInCallParticipants(supabase, sessionId);
+  if (inCallCount === 0) {
+    await forceTerminateCallSession(supabase, sessionId, "ended", "last_participant_left");
+  }
+
+  await supabase.from("call_events").insert({
+    call_session_id: sessionId,
+    user_id: user.id,
+    event_type: "left",
+    payload: { media_provider: "jitsi" },
+  });
+
+  return ok({ success: true, sessionId, callSessionId: sessionId, left_at: leftAt });
 }

@@ -25,7 +25,7 @@ export function MessageBubble({
   const tailClass = getMessageBubbleTailClass(position, isMe);
 
   return (
-    <div className="relative max-w-[min(100%,20rem)] min-w-[3rem]">
+    <div className="relative max-w-full min-w-[3rem] sm:max-w-[min(100%,20rem)]">
       <div
         className={`relative px-3 py-1.5 ${getMessageBubbleRadius(position, isMe)} ${getMessageBubbleColors(isMe)} ${tailClass}`}
       >

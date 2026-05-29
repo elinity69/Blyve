@@ -2732,14 +2732,29 @@ function ConversationListRow({
 
   return (
     <div
-      className={`w-full transition-colors ${isSelected ? 'bg-gray-100 dark:bg-gray-900/90' : 'hover:bg-gray-50 dark:hover:bg-gray-900'}`}
+      role="button"
+      tabIndex={0}
+      onClick={onOpenChat}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          onOpenChat();
+        }
+      }}
+      onPointerDown={(event) => {
+        onPrefetch();
+        longPress.onPointerDown(event);
+      }}
+      onPointerUp={longPress.onPointerUp}
+      onPointerLeave={longPress.onPointerLeave}
+      onPointerCancel={longPress.onPointerCancel}
+      onClickCapture={longPress.onClickCapture}
+      onContextMenu={onOpenActions}
+      className={`w-full cursor-pointer transition-colors ${isSelected ? 'bg-gray-100 dark:bg-gray-900/90' : 'hover:bg-gray-50 dark:hover:bg-gray-900'}`}
+      style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}
     >
-      <div
-        className="flex items-center gap-3 p-4"
-        onContextMenu={onOpenActions}
-        {...longPress}
-      >
-        <div className="relative shrink-0 touch-manipulation">
+      <div className="flex w-full items-center gap-3 p-4">
+        <div className="relative shrink-0">
           {imageUrl ? (
             <img src={imageUrl} alt={otherUser.name} className="w-14 h-14 rounded-full object-cover" />
           ) : (
@@ -2752,38 +2767,32 @@ function ConversationListRow({
           ) : null}
           <NotificationBadge count={unreadCount} borderClassName="border-white dark:border-black" />
         </div>
-        <button
-          type="button"
-          onPointerDown={onPrefetch}
-          onClick={onOpenChat}
-          className="flex-1 min-w-0 text-left"
-          style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent', cursor: 'pointer' }}
-        >
-          <div className="flex items-center justify-between mb-1">
-            <h3 className="font-semibold text-gray-900 dark:text-white truncate">
+        <div className="min-w-0 flex-1 text-left">
+          <div className="mb-1 flex items-center justify-between">
+            <h3 className="truncate font-semibold text-gray-900 dark:text-white">
               {otherUser.name}
               {otherUser.username ? (
-                <span className="text-gray-500 dark:text-gray-400 font-normal"> @{otherUser.username}</span>
+                <span className="font-normal text-gray-500 dark:text-gray-400"> @{otherUser.username}</span>
               ) : null}
             </h3>
             {conv.last_message_at ? (
-              <span className="text-xs text-gray-500 dark:text-gray-400 whitespace-nowrap ml-2">
+              <span className="ml-2 shrink-0 whitespace-nowrap text-xs text-gray-500 dark:text-gray-400">
                 {formatLastMessageTime(conv.last_message_at)}
               </span>
             ) : null}
           </div>
           <p
-            className={`text-sm truncate ${
+            className={`truncate text-sm ${
               isTyping
-                ? 'text-[#5865f2] italic'
+                ? 'italic text-[#5865f2]'
                 : unreadCount > 0
-                  ? 'text-gray-900 dark:text-white font-medium'
+                  ? 'font-medium text-gray-900 dark:text-white'
                   : 'text-gray-500 dark:text-gray-400'
             }`}
           >
             {isTyping ? t('chat.typingPreview') : conv.last_message || t('chat.noMessagesYet')}
           </p>
-        </button>
+        </div>
       </div>
     </div>
   );

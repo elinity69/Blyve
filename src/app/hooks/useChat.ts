@@ -13,6 +13,7 @@ import {
   DM_MESSAGES_PAGE_SIZE,
   dmMessagesQueryKey,
   fetchDmMessages,
+  mergeDmMessagesById,
 } from '../lib/chatMessages';
 
 export interface Message {
@@ -94,8 +95,8 @@ export function useChat(conversationId: string | null, onMessageSent?: (conversa
     staleTime: 1000 * 60 * 10,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
-    refetchOnMount: false,
-    retry: 1,
+    refetchOnMount: 'always',
+    retry: 2,
   });
 
   const markAsRead = useCallback(async () => {
@@ -198,13 +199,11 @@ export function useChat(conversationId: string | null, onMessageSent?: (conversa
 
     if (fetchedMessages) {
       setMessages((prev) => {
-        if (conversationChanged) {
-          return fetchedMessages as Message[];
+        const incoming = fetchedMessages as Message[];
+        if (conversationChanged || prev.length === 0) {
+          return incoming;
         }
-        if (prev.length === 0) {
-          return fetchedMessages as Message[];
-        }
-        return prev;
+        return mergeDmMessagesById(prev, incoming);
       });
       setHasMore(fetchedMessages.length === pageSize);
     }

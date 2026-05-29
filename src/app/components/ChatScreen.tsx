@@ -94,7 +94,11 @@ export function ChatScreen({
   const messageInputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
-  useChatScrollAnchor(messagesContainerRef, isMobile);
+  const assignMessagesContainer = useChatScrollAnchor(
+    messagesContainerRef,
+    isMobile,
+    messagesEndRef
+  );
   const typingIndicatorRef = useRef<HTMLDivElement>(null);
   const [typingClearance, setTypingClearance] = useState(0);
   const isLoadingOlderRef = useRef(false);
@@ -443,7 +447,7 @@ export function ChatScreen({
     activeCall?.conversationId === conversationId;
   const isCallButtonDisabled = isThisChatBusyForMe;
   return (
-    <div className="relative flex h-full min-h-0 w-full flex-col bg-white dark:bg-[#0d0d0d] md:dark:bg-[#0e0e0e]">
+    <div className="relative flex h-full min-h-0 w-full max-w-full flex-col overflow-hidden bg-white dark:bg-[#0d0d0d] md:dark:bg-[#0e0e0e]">
       {/* Header */}
       <div 
         className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-[#1f1f1f] bg-white dark:bg-[#0d0d0d] md:dark:bg-[#0e0e0e]"
@@ -527,12 +531,12 @@ export function ChatScreen({
       <ChatEmbeddedCallBar conversationId={conversationId} currentUserId={currentUserId} />
 
       {/* Messages */}
-      <div 
+      <div
+        data-chat-messages-scroll
         className={CHAT_MESSAGE_LIST_CLASS}
-        ref={messagesContainerRef}
+        ref={assignMessagesContainer}
         onScroll={handleMessagesScroll}
         style={{
-          overflowY: 'auto',
           WebkitOverflowScrolling: 'touch',
           ...(typingClearance > 0 ? { paddingBottom: typingClearance } : {}),
         }}
@@ -615,7 +619,7 @@ export function ChatScreen({
                             />
                           )}
                           <div
-                            className={`group/bubble flex w-fit items-start gap-1.5 ${
+                            className={`group/bubble flex max-w-full min-w-0 items-start gap-1.5 ${
                               isMe ? 'flex-row-reverse' : 'flex-row'
                             }`}
                           >
