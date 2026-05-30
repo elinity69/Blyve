@@ -7,8 +7,7 @@ import {
   type RefObject,
 } from 'react';
 import { subscribeMobileViewportFrame } from '../lib/mobileViewport';
-
-const NEAR_BOTTOM_PX = 96;
+import { CHAT_NEAR_BOTTOM_PX } from '../lib/chatScroll';
 /** One follow-up after the mobile keyboard finishes its resize animation (iOS Safari). */
 const KEYBOARD_SETTLE_MS = 320;
 
@@ -71,7 +70,7 @@ export function useChatScrollAnchor(
       if (!container) return;
 
       const distance = distanceFromBottom(container);
-      const nearBottom = distance < NEAR_BOTTOM_PX;
+      const nearBottom = distance < CHAT_NEAR_BOTTOM_PX;
 
       if (pinnedRef.current || nearBottom) {
         pinnedRef.current = true;
@@ -101,7 +100,7 @@ export function useChatScrollAnchor(
       if (adjustingRef.current) return;
       const container = getContainer();
       if (!container) return;
-      pinnedRef.current = distanceFromBottom(container) < NEAR_BOTTOM_PX;
+      pinnedRef.current = distanceFromBottom(container) < CHAT_NEAR_BOTTOM_PX;
     };
 
     prevClientHeightRef.current = containerEl.clientHeight;

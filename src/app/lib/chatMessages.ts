@@ -33,6 +33,36 @@ export function applyReadStateToDmMessages(
   );
 }
 
+function readTimestamp(message: Message): number {
+  if (message.read_at) {
+    const ms = new Date(message.read_at).getTime();
+    if (!Number.isNaN(ms)) return ms;
+  }
+  return message.is_read ? new Date(message.created_at).getTime() : 0;
+}
+
+/** Merge two rows for the same id without losing newer read receipts from realtime. */
+export function mergeDmMessageRecord(existing: Message, incoming: Message): Message {
+  const merged: Message = { ...existing, ...incoming };
+
+  const existingReadMs = readTimestamp(existing);
+  const incomingReadMs = readTimestamp(incoming);
+  const bestReadMs = Math.max(existingReadMs, incomingReadMs);
+
+  if (bestReadMs > 0) {
+    merged.is_read = true;
+    if (incomingReadMs >= existingReadMs && incoming.read_at) {
+      merged.read_at = incoming.read_at;
+    } else if (existing.read_at) {
+      merged.read_at = existing.read_at;
+    } else if (incoming.read_at) {
+      merged.read_at = incoming.read_at;
+    }
+  }
+
+  return merged;
+}
+
 export function mergeDmMessagesById(existing: Message[], incoming: Message[]): Message[] {
   if (!incoming.length) return existing;
   if (!existing.length) return incoming;
@@ -42,7 +72,8 @@ export function mergeDmMessagesById(existing: Message[], incoming: Message[]): M
     byId.set(message.id, message);
   }
   for (const message of incoming) {
-    byId.set(message.id, message);
+    const prev = byId.get(message.id);
+    byId.set(message.id, prev ? mergeDmMessageRecord(prev, message) : message);
   }
 
   return Array.from(byId.values()).sort(
