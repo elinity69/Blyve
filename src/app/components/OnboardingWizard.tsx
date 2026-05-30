@@ -220,10 +220,10 @@ export function OnboardingWizard({ userName, onComplete }: OnboardingWizardProps
   };
 
   return (
-    <div className="h-full bg-white dark:bg-black md:dark:bg-[#121212] flex flex-col">
+    <div className="flex h-full min-h-0 max-h-[100dvh] flex-col bg-white dark:bg-black md:dark:bg-[#121212]">
       {currentStep > 0 && (
-        <div className="px-6 pt-6 pb-4">
-          <div className="flex items-center justify-end mb-3">
+        <div className="shrink-0 px-4 pt-[max(1rem,env(safe-area-inset-top,0px))] pb-3 sm:px-6 sm:pt-6 sm:pb-4">
+          <div className="flex items-center justify-end mb-2 sm:mb-3">
             <button
               type="button"
               onClick={onComplete}
@@ -251,7 +251,7 @@ export function OnboardingWizard({ userName, onComplete }: OnboardingWizardProps
         </div>
       )}
 
-      <div className="flex-1 overflow-y-auto px-6 pb-6">
+      <div className="flex-1 min-h-0 overflow-y-auto overscroll-y-contain px-4 sm:px-6 pb-2">
         <AnimatePresence mode="wait">
           {currentStep === 0 && (
             <motion.div
@@ -259,20 +259,20 @@ export function OnboardingWizard({ userName, onComplete }: OnboardingWizardProps
               initial={{ opacity: 0, x: 20 }}
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: -20 }}
-              className="flex flex-col min-h-[60vh]"
+              className="flex flex-col pt-[max(1.25rem,env(safe-area-inset-top,0px))] sm:pt-4"
             >
-              <div className="flex justify-center mb-5">
-                <div className="w-14 h-14 rounded-full bg-orange-100 dark:bg-orange-500/15 flex items-center justify-center">
-                  <Globe className="w-7 h-7 text-orange-600" />
+              <div className="flex justify-center mb-4 sm:mb-5">
+                <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-full bg-orange-100 dark:bg-orange-500/15 flex items-center justify-center">
+                  <Globe className="w-6 h-6 sm:w-7 sm:h-7 text-orange-600" />
                 </div>
               </div>
-              <h2 className="text-[28px] font-bold text-gray-900 dark:text-white text-center mb-2">
+              <h2 className="text-2xl sm:text-[28px] font-bold text-gray-900 dark:text-white text-center mb-2">
                 {t('onboarding.languageTitle')}
               </h2>
-              <p className="text-[15px] text-gray-500 dark:text-gray-400 text-center mb-8">
+              <p className="text-sm sm:text-[15px] text-gray-500 dark:text-gray-400 text-center mb-5 sm:mb-8">
                 {t('onboarding.languageSubtitle')}
               </p>
-              <div className="space-y-3">
+              <div className="space-y-2 sm:space-y-3">
                 {APP_LANGUAGES.map((language) => {
                   const isActive = selectedLanguage === language.code;
                   return (
@@ -280,17 +280,17 @@ export function OnboardingWizard({ userName, onComplete }: OnboardingWizardProps
                       key={language.code}
                       type="button"
                       onClick={() => handleLanguageSelect(language.code)}
-                      className={`w-full flex items-center justify-between gap-3 px-5 h-[56px] rounded-2xl border text-left transition-colors ${
+                      className={`w-full flex items-center justify-between gap-3 px-4 sm:px-5 h-[50px] sm:h-[56px] rounded-2xl border text-left transition-colors ${
                         isActive
                           ? 'border-orange-500 bg-orange-50 dark:bg-orange-500/10'
                           : 'border-gray-200 dark:border-white/10 bg-white dark:bg-[#0A0A0A] hover:border-orange-300 dark:hover:border-orange-500/40'
                       }`}
                     >
                       <span className="flex items-center gap-3 min-w-0">
-                        <span className="text-2xl leading-none" aria-hidden>
+                        <span className="text-xl sm:text-2xl leading-none" aria-hidden>
                           {language.flag}
                         </span>
-                        <span className="text-[16px] font-semibold text-gray-900 dark:text-white truncate">
+                        <span className="text-[15px] sm:text-[16px] font-semibold text-gray-900 dark:text-white truncate">
                           {language.label}
                         </span>
                       </span>
@@ -303,15 +303,6 @@ export function OnboardingWizard({ userName, onComplete }: OnboardingWizardProps
                   );
                 })}
               </div>
-              <motion.button
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.98 }}
-                type="button"
-                onClick={handleNext}
-                className="w-full mt-8 h-[48px] bg-orange-600 text-white rounded-full font-semibold text-base shadow-md"
-              >
-                {t('onboarding.continue')}
-              </motion.button>
             </motion.div>
           )}
 
@@ -321,12 +312,12 @@ export function OnboardingWizard({ userName, onComplete }: OnboardingWizardProps
               initial={{ opacity: 0, x: 20 }}
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: -20 }}
-              className="flex flex-col justify-center min-h-[50vh]"
+              className="flex flex-col py-2 sm:py-4"
             >
-              <h2 className="text-[32px] font-bold text-gray-900 dark:text-white mb-2">
+              <h2 className="text-2xl sm:text-[32px] font-bold text-gray-900 dark:text-white mb-2">
                 {t('onboarding.displayNameTitle')}
               </h2>
-              <p className="text-[15px] text-gray-500 dark:text-gray-400 mb-6">
+              <p className="text-sm sm:text-[15px] text-gray-500 dark:text-gray-400 mb-4 sm:mb-6">
                 {t('onboarding.displayNameSubtitle')}
               </p>
               <input
@@ -334,7 +325,7 @@ export function OnboardingWizard({ userName, onComplete }: OnboardingWizardProps
                 value={formData.displayName}
                 onChange={(e) => updateForm({ displayName: e.target.value })}
                 placeholder={t('onboarding.displayNamePlaceholder')}
-                className="w-full h-[50px] px-6 text-[15px] border border-gray-300 dark:border-white/5 dark:bg-[#0A0A0A] dark:text-white rounded-full focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-500/20"
+                className="w-full h-[48px] sm:h-[50px] px-5 sm:px-6 text-[15px] border border-gray-300 dark:border-white/5 dark:bg-[#0A0A0A] dark:text-white rounded-full focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-500/20"
               />
             </motion.div>
           )}
@@ -345,12 +336,12 @@ export function OnboardingWizard({ userName, onComplete }: OnboardingWizardProps
               initial={{ opacity: 0, x: 20 }}
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: -20 }}
-              className="flex flex-col justify-center min-h-[50vh]"
+              className="flex flex-col py-2 sm:py-4"
             >
-              <h2 className="text-[32px] font-bold text-gray-900 dark:text-white mb-2">
+              <h2 className="text-2xl sm:text-[32px] font-bold text-gray-900 dark:text-white mb-2">
                 {t('onboarding.usernameTitle')}
               </h2>
-              <p className="text-[15px] text-gray-500 dark:text-gray-400 mb-4">
+              <p className="text-sm sm:text-[15px] text-gray-500 dark:text-gray-400 mb-3 sm:mb-4">
                 {t('onboarding.usernameHint')}
               </p>
               <div className="relative">
@@ -362,7 +353,7 @@ export function OnboardingWizard({ userName, onComplete }: OnboardingWizardProps
                   placeholder={t('onboarding.usernamePlaceholder')}
                   autoCapitalize="off"
                   autoCorrect="off"
-                  className="w-full h-[50px] pl-9 pr-12 text-[15px] border border-gray-300 dark:border-white/5 dark:bg-[#0A0A0A] dark:text-white rounded-full focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-500/20"
+                  className="w-full h-[48px] sm:h-[50px] pl-9 pr-12 text-[15px] border border-gray-300 dark:border-white/5 dark:bg-[#0A0A0A] dark:text-white rounded-full focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-500/20"
                 />
                 <div className="absolute right-4 top-1/2 -translate-y-1/2">
                   {usernameStatus === 'checking' && (
@@ -400,16 +391,22 @@ export function OnboardingWizard({ userName, onComplete }: OnboardingWizardProps
           )}
 
           {currentStep === 3 && (
-            <motion.div key="step3" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="pb-4">
-              <h2 className="text-[32px] font-bold text-gray-900 dark:text-white mb-2">{t('onboarding.avatarBioTitle')}</h2>
-              <p className="text-[15px] text-gray-500 dark:text-gray-400 mb-6">{t('onboarding.avatarBioSubtitle')}</p>
+            <motion.div
+              key="step3"
+              initial={{ opacity: 0, x: 20 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -20 }}
+              className="py-2 sm:py-4"
+            >
+              <h2 className="text-2xl sm:text-[32px] font-bold text-gray-900 dark:text-white mb-2">{t('onboarding.avatarBioTitle')}</h2>
+              <p className="text-sm sm:text-[15px] text-gray-500 dark:text-gray-400 mb-4 sm:mb-6">{t('onboarding.avatarBioSubtitle')}</p>
 
               <p className="text-[14px] font-semibold text-gray-700 dark:text-gray-300 mb-2">{t('onboarding.photoTitle')}</p>
-              <div className="w-32 h-32 rounded-full border-2 border-dashed border-orange-400 flex items-center justify-center mb-4 overflow-hidden">
+              <div className="w-28 h-28 sm:w-32 sm:h-32 rounded-full border-2 border-dashed border-orange-400 flex items-center justify-center mb-3 sm:mb-4 overflow-hidden">
                 {profileImagePreview ? (
                   <img src={profileImagePreview} alt="" className="w-full h-full object-cover" />
                 ) : (
-                  <Camera className="w-10 h-10 text-orange-500" />
+                  <Camera className="w-9 h-9 sm:w-10 sm:h-10 text-orange-500" />
                 )}
               </div>
               <input ref={fileInputRef} type="file" accept="image/*" onChange={handleImageSelect} className="hidden" />
@@ -420,24 +417,30 @@ export function OnboardingWizard({ userName, onComplete }: OnboardingWizardProps
               >
                 {t('onboarding.uploadPhoto')}
               </button>
-              <p className="text-xs text-gray-500 dark:text-gray-400 mb-6">{t('onboarding.photoOptionalHint')}</p>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mb-4 sm:mb-6">{t('onboarding.photoOptionalHint')}</p>
 
               <p className="text-[14px] font-semibold text-gray-700 dark:text-gray-300 mb-2">{t('onboarding.bioTitle')}</p>
               <textarea
                 value={formData.bio}
                 onChange={(e) => updateForm({ bio: e.target.value })}
                 placeholder={t('onboarding.bioPlaceholder')}
-                className="w-full px-6 py-4 border border-gray-300 dark:border-white/5 dark:bg-[#0A0A0A] dark:text-white rounded-2xl focus:border-orange-500 focus:outline-none text-[15px]"
-                rows={4}
+                className="w-full px-5 sm:px-6 py-3 sm:py-4 border border-gray-300 dark:border-white/5 dark:bg-[#0A0A0A] dark:text-white rounded-2xl focus:border-orange-500 focus:outline-none text-[15px] min-h-[96px] sm:min-h-[112px]"
+                rows={3}
               />
             </motion.div>
           )}
 
           {currentStep === 4 && (
-            <motion.div key="step4" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
-              <h2 className="text-[32px] font-bold text-gray-900 dark:text-white mb-2">{t('onboarding.legalTitle')}</h2>
-              <p className="text-[15px] text-gray-500 dark:text-gray-400 mb-6">{t('onboarding.legalSubtitle')}</p>
-              <label className="flex items-start gap-3 text-[15px] text-gray-700 dark:text-gray-300 cursor-pointer">
+            <motion.div
+              key="step4"
+              initial={{ opacity: 0, x: 20 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -20 }}
+              className="py-2 sm:py-4"
+            >
+              <h2 className="text-2xl sm:text-[32px] font-bold text-gray-900 dark:text-white mb-2">{t('onboarding.legalTitle')}</h2>
+              <p className="text-sm sm:text-[15px] text-gray-500 dark:text-gray-400 mb-4 sm:mb-6">{t('onboarding.legalSubtitle')}</p>
+              <label className="flex items-start gap-3 text-sm sm:text-[15px] text-gray-700 dark:text-gray-300 cursor-pointer">
                 <div className="relative flex-shrink-0 mt-0.5">
                   <input
                     type="checkbox"
@@ -464,48 +467,60 @@ export function OnboardingWizard({ userName, onComplete }: OnboardingWizardProps
         {error && <p className="mt-4 text-sm text-red-600">{error}</p>}
       </div>
 
-      {currentStep > 0 && (
-        <div className="px-6 pb-8 flex items-center justify-between gap-3">
+      <div className="shrink-0 border-t border-gray-100 dark:border-white/5 bg-white/95 dark:bg-black/95 backdrop-blur-md px-4 sm:px-6 pt-3 pb-[max(12px,env(safe-area-inset-bottom,0px))]">
+        {currentStep === 0 ? (
           <motion.button
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
             type="button"
-            onClick={handleBack}
-            className="px-5 h-[48px] rounded-full font-semibold disabled:opacity-30 disabled:cursor-not-allowed bg-gray-100 text-gray-700 border border-gray-200 dark:bg-black dark:text-gray-100 dark:border-[#1f2123]"
+            onClick={handleNext}
+            className="w-full h-[48px] bg-orange-600 text-white rounded-full font-semibold text-base shadow-md"
           >
-            {t('onboarding.back')}
+            {t('onboarding.continue')}
           </motion.button>
-          {currentStep < totalSteps - 1 ? (
+        ) : (
+          <div className="flex items-center justify-between gap-3">
             <motion.button
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
               type="button"
-              onClick={handleNext}
-              disabled={
-                loading ||
-                (currentStep === 2 &&
-                  (usernameStatus !== 'available' ||
-                    !formData.username ||
-                    normalizeUsernameInput(formData.username).length < 3))
-              }
-              className="flex-1 h-[48px] bg-orange-600 text-white rounded-full font-semibold text-base shadow-md disabled:opacity-50 disabled:cursor-not-allowed"
+              onClick={handleBack}
+              className="px-5 h-[48px] rounded-full font-semibold disabled:opacity-30 disabled:cursor-not-allowed bg-gray-100 text-gray-700 border border-gray-200 dark:bg-black dark:text-gray-100 dark:border-[#1f2123]"
             >
-              {t('onboarding.continue')}
+              {t('onboarding.back')}
             </motion.button>
-          ) : (
-            <motion.button
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-              type="button"
-              onClick={handleFinish}
-              disabled={loading || !formData.legalAccepted}
-              className="flex-1 h-[48px] bg-orange-600 text-white rounded-full font-semibold text-base shadow-md disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {loading ? t('onboarding.saving') : t('onboarding.finish')}
-            </motion.button>
-          )}
-        </div>
-      )}
+            {currentStep < totalSteps - 1 ? (
+              <motion.button
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                type="button"
+                onClick={handleNext}
+                disabled={
+                  loading ||
+                  (currentStep === 2 &&
+                    (usernameStatus !== 'available' ||
+                      !formData.username ||
+                      normalizeUsernameInput(formData.username).length < 3))
+                }
+                className="flex-1 h-[48px] bg-orange-600 text-white rounded-full font-semibold text-base shadow-md disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {t('onboarding.continue')}
+              </motion.button>
+            ) : (
+              <motion.button
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                type="button"
+                onClick={handleFinish}
+                disabled={loading || !formData.legalAccepted}
+                className="flex-1 h-[48px] bg-orange-600 text-white rounded-full font-semibold text-base shadow-md disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {loading ? t('onboarding.saving') : t('onboarding.finish')}
+              </motion.button>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
