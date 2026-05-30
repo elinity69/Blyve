@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { subscribeTypingBroadcast } from '../lib/typingBroadcast';
-import { supabase } from '../lib/supabase';
 import { debounce } from '../lib/requestThrottle';
+import { fetchConversationIds } from '../lib/conversationMembership';
 
 const MAX_TYPING_CHANNELS = 15;
 
@@ -24,16 +24,17 @@ export function useTypingRealtime(currentUserId: string | null) {
     let cancelled = false;
 
     const syncSubscriptions = async (extraConversationId?: string) => {
-      const { data } = await supabase
-        .from('conversations')
-        .select('id')
-        .or(`user1_id.eq.${currentUserId},user2_id.eq.${currentUserId}`)
-        .order('updated_at', { ascending: false })
-        .limit(MAX_TYPING_CHANNELS);
+      let ids: string[] = [];
+      try {
+        ids = await fetchConversationIds(currentUserId, { limit: MAX_TYPING_CHANNELS });
+      } catch (error) {
+        console.warn('useTypingRealtime syncSubscriptions:', error);
+        return;
+      }
 
       if (cancelled) return;
 
-      const nextIds = new Set((data || []).map((row) => row.id));
+      const nextIds = new Set(ids);
       if (extraConversationId) {
         nextIds.add(extraConversationId);
       }

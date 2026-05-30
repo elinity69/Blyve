@@ -12,6 +12,7 @@ import type { User } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
 import { api } from '../lib/api';
 import { getCachedUser, initAuthSession, resolveAuthUser, subscribeAuth } from '../lib/authSession';
+import { invalidateConversationMembershipCache } from '../lib/conversationMembership';
 import { Conversation } from '../hooks/useChat';
 
 /**
@@ -80,7 +81,7 @@ const AppDataContext = createContext<AppDataContextType>(defaultAppDataContext);
 
 export function AppDataProvider({ children }: { children: ReactNode }) {
   const [conversations, setConversations] = useState<Conversation[]>([]);
-  const [isLoadingConversations, setIsLoadingConversations] = useState(true);
+  const [isLoadingConversations, setIsLoadingConversations] = useState(false);
   const [currentUserProfile, setCurrentUserProfile] = useState<any | null>(null);
   const [isLoadingProfile, setIsLoadingProfile] = useState(true);
 
@@ -434,15 +435,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
           console.error('❌ AppDataContext: Error loading profile:', err);
         });
         
-        console.log('🔄 Debug: [loadUserData] Calling refreshConversations...');
-        const conversationsPromise = refreshConversations(user).catch(err => {
-          console.error('❌ AppDataContext: Error loading conversations:', err);
-        });
-        
-        const loadDataPromise = Promise.allSettled([
-          profilePromise,
-          conversationsPromise,
-        ]);
+        const loadDataPromise = Promise.allSettled([profilePromise]);
         
         console.log('🔄 Debug: [loadUserData] Waiting for all promises to settle...');
         // Timeout nur in Production, im Dev-Modus deaktiviert
@@ -459,7 +452,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
         
         // DETAILLIERTES LOGGING: Welches Promise hat funktioniert, welches nicht?
         console.log('📊 Debug: [loadUserData] Promise.allSettled results:');
-        const promiseNames = ['refreshCurrentUserProfile', 'refreshConversations'];
+        const promiseNames = ['refreshCurrentUserProfile'];
         results.forEach((result, index) => {
           if (result.status === 'fulfilled') {
             console.log(`  ✅ ${promiseNames[index]}: FULFILLED`);
@@ -591,6 +584,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
         isLoadingRef.current = false;
         lastLoadUserIdRef.current = null;
         currentUserIdRef.current = null;
+        invalidateConversationMembershipCache();
       }
     });
 
@@ -608,6 +602,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       if (user) {
         void loadUserData(user);
       }
+      window.dispatchEvent(new CustomEvent('conversation-list-reload-requested'));
     };
     window.addEventListener('app-data-reload', handleReload);
     return () => window.removeEventListener('app-data-reload', handleReload);

@@ -4,6 +4,9 @@ import { initAuthSession, resolveAuthUser } from '../lib/authSession';
 import { RealtimeChannel } from '@supabase/supabase-js';
 import { Conversation } from './useChat';
 import { onAppForeground, shouldResubscribeRealtimeChannel } from '../lib/realtimeReconnect';
+import { seedConversationIdsCache } from '../lib/conversationMembership';
+
+const CONVERSATION_LIST_MIN_RELOAD_MS = 10_000;
 
 export function useConversations() {
   const [conversations, setConversations] = useState<Conversation[]>([]);
@@ -12,13 +15,24 @@ export function useConversations() {
   const channelRef = useRef<RealtimeChannel | null>(null);
   const reloadTimeoutRef = useRef<number | null>(null);
   const conversationsRef = useRef<Conversation[]>([]);
-  const loadConversationsRef = useRef<() => Promise<void>>(async () => {});
+  const loadConversationsRef = useRef<(force?: boolean) => Promise<void>>(async () => {});
   const resubscribeTimeoutRef = useRef<number | null>(null);
   const channelHealthyRef = useRef(false);
+  const lastFullLoadAtRef = useRef(0);
 
   conversationsRef.current = conversations;
 
-  const loadConversations = useCallback(async () => {
+  const loadConversations = useCallback(async (force = false) => {
+    const now = Date.now();
+    if (
+      !force &&
+      conversationsRef.current.length > 0 &&
+      now - lastFullLoadAtRef.current < CONVERSATION_LIST_MIN_RELOAD_MS
+    ) {
+      return;
+    }
+    lastFullLoadAtRef.current = now;
+
     try {
       setError(null);
       const user = await resolveAuthUser();
@@ -116,7 +130,12 @@ export function useConversations() {
         return dateB - dateA;
       };
 
-      setConversations(validConvs.sort(sortByActivity));
+      const sorted = validConvs.sort(sortByActivity);
+      setConversations(sorted);
+      seedConversationIdsCache(
+        user.id,
+        sorted.map((conv) => conv.id)
+      );
     } catch (err: any) {
       console.error('Load Error:', err);
       setError(err.message);
@@ -176,12 +195,21 @@ export function useConversations() {
         last_message_at?: string;
       };
 
-      if (updated?.id && updated.last_message && updated.last_message_at) {
+      if (!updated?.id) {
+        scheduleReload();
+        return;
+      }
+
+      if (updated.last_message && updated.last_message_at) {
         applyConversationPreview(
           updated.id,
           updated.last_message,
           updated.last_message_at
         );
+        return;
+      }
+
+      if (conversationsRef.current.some((c) => c.id === updated.id)) {
         return;
       }
 
@@ -191,7 +219,7 @@ export function useConversations() {
   );
 
   useEffect(() => {
-    void loadConversations();
+    void loadConversations(true);
     let cancelled = false;
 
     const scheduleResubscribe = (setupFn: () => Promise<void>) => {
@@ -292,6 +320,7 @@ export function useConversations() {
     });
 
     const handleListReload = () => {
+      lastFullLoadAtRef.current = 0;
       scheduleReload();
     };
 
@@ -334,5 +363,10 @@ export function useConversations() {
     };
   }, [applyConversationPreview]);
 
-  return { conversations, loading, error, reload: loadConversations };
+  return {
+    conversations,
+    loading,
+    error,
+    reload: () => loadConversations(true),
+  };
 }

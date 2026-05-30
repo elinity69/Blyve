@@ -40,6 +40,7 @@ import {
   resolveAuthUser,
   subscribeAuth,
 } from './lib/authSession';
+import { invalidateConversationMembershipCache } from './lib/conversationMembership';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -318,6 +319,7 @@ function AppContent({ onUserIdChange }: AppContentProps = {}) {
         setCurrentUserId(null);
         onUserIdChange?.(null);
         window.dispatchEvent(new CustomEvent('user-id-change', { detail: { userId: null } }));
+        invalidateConversationMembershipCache();
         return;
       }
       
@@ -428,6 +430,7 @@ function AppContent({ onUserIdChange }: AppContentProps = {}) {
             setIsAuthenticated(true);
             
             window.dispatchEvent(new CustomEvent('app-data-reload'));
+            window.dispatchEvent(new CustomEvent('conversation-list-reload-requested'));
           } else {
             console.warn('⚠️ Onboarding not complete in database, staying in onboarding');
           }
@@ -478,6 +481,7 @@ function AppContent({ onUserIdChange }: AppContentProps = {}) {
       if (event === 'SIGNED_OUT') {
         clearThemeCache();
         applyThemePreference(undefined);
+        invalidateConversationMembershipCache();
         return;
       }
 

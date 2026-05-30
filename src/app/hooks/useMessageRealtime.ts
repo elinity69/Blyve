@@ -12,6 +12,11 @@ import { NotificationManager } from '../lib/notifications';
 import { supabase } from '../lib/supabase';
 import { debounce } from '../lib/requestThrottle';
 import { onAppForeground, shouldResubscribeRealtimeChannel } from '../lib/realtimeReconnect';
+import {
+  addConversationIdToCache,
+  fetchConversationIds,
+  invalidateConversationMembershipCache,
+} from '../lib/conversationMembership';
 import { appendDmMessageToCache } from '../lib/chatMessages';
 import type { Message } from './useChat';
 
@@ -56,8 +61,8 @@ export function useMessageRealtime(currentUserId: string | null) {
   const conversationIdsRef = useRef<Set<string>>(new Set());
   const groupIdsRef = useRef<Set<string>>(new Set());
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
-  const lastConversationIdsLoadRef = useRef(0);
   const lastGroupIdsLoadRef = useRef(0);
+  const lastMembershipSignatureRef = useRef('');
   const channelHealthyRef = useRef(false);
   const resubscribeTimeoutRef = useRef<number | null>(null);
 
@@ -67,22 +72,15 @@ export function useMessageRealtime(currentUserId: string | null) {
     let cancelled = false;
 
     const loadConversationIds = async (force = false) => {
-      const now = Date.now();
-      if (!force && now - lastConversationIdsLoadRef.current < MEMBERSHIP_RELOAD_MS) {
+      try {
+        const ids = await fetchConversationIds(currentUserId, { force });
+        if (cancelled) return false;
+        conversationIdsRef.current = new Set(ids);
+        return true;
+      } catch (error) {
+        console.warn('loadConversationIds:', error);
         return false;
       }
-      lastConversationIdsLoadRef.current = now;
-
-      const { data } = await supabase
-        .from('conversations')
-        .select('id')
-        .or(`user1_id.eq.${currentUserId},user2_id.eq.${currentUserId}`)
-        .order('updated_at', { ascending: false })
-        .limit(200);
-
-      if (cancelled) return false;
-      conversationIdsRef.current = new Set((data || []).map((row) => row.id));
-      return true;
     };
 
     const loadGroupIds = async (force = false) => {
@@ -259,7 +257,7 @@ export function useMessageRealtime(currentUserId: string | null) {
           filter: `user1_id=eq.${currentUserId}`,
         },
         () => {
-          void refreshMembershipAndResubscribe();
+          void refreshMembershipAndResubscribe({ listReload: true });
         }
       );
       channel.on(
@@ -271,7 +269,7 @@ export function useMessageRealtime(currentUserId: string | null) {
           filter: `user2_id=eq.${currentUserId}`,
         },
         () => {
-          void refreshMembershipAndResubscribe();
+          void refreshMembershipAndResubscribe({ listReload: true });
         }
       );
 
@@ -361,11 +359,25 @@ export function useMessageRealtime(currentUserId: string | null) {
       subscribeFilteredChannel();
     };
 
-    const refreshMembershipAndResubscribe = debounce(async () => {
+    const refreshMembershipAndResubscribe = debounce(async (options?: { listReload?: boolean }) => {
+      const previousSignature = lastMembershipSignatureRef.current;
       await Promise.all([loadConversationIds(true), loadGroupIds(true)]);
       if (cancelled) return;
-      dispatchConversationListReloadRequested();
-      subscribeFilteredChannel();
+
+      const signature = [
+        [...conversationIdsRef.current].sort().join(','),
+        [...groupIdsRef.current].sort().join(','),
+      ].join('|');
+
+      const membershipChanged = signature !== previousSignature;
+      lastMembershipSignatureRef.current = signature;
+
+      if (membershipChanged) {
+        subscribeFilteredChannel();
+        if (options?.listReload) {
+          dispatchConversationListReloadRequested();
+        }
+      }
     }, 1000);
 
     void setup();
@@ -374,14 +386,25 @@ export function useMessageRealtime(currentUserId: string | null) {
       void refreshMembershipAndResubscribe();
     });
 
-    window.addEventListener('conversation-opened', refreshMembershipAndResubscribe);
-    window.addEventListener('conversation-closed', refreshMembershipAndResubscribe);
+    const handleConversationOpened = (event: Event) => {
+      const conversationId = (event as CustomEvent<{ conversationId?: string }>).detail
+        ?.conversationId;
+      if (!conversationId) return;
+
+      if (!conversationIdsRef.current.has(conversationId)) {
+        conversationIdsRef.current.add(conversationId);
+        addConversationIdToCache(currentUserId, conversationId);
+        subscribeFilteredChannel();
+      }
+    };
+
+    window.addEventListener('conversation-opened', handleConversationOpened);
 
     return () => {
       cancelled = true;
+      invalidateConversationMembershipCache(currentUserId);
       unsubscribeForeground();
-      window.removeEventListener('conversation-opened', refreshMembershipAndResubscribe);
-      window.removeEventListener('conversation-closed', refreshMembershipAndResubscribe);
+      window.removeEventListener('conversation-opened', handleConversationOpened);
       if (resubscribeTimeoutRef.current) {
         window.clearTimeout(resubscribeTimeoutRef.current);
         resubscribeTimeoutRef.current = null;

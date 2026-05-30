@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useEffect, ReactNode, useCallback, useMemo, useRef } from 'react';
 import { NotificationManager } from '../lib/notifications';
 import { supabase } from '../lib/supabase';
+import { fetchConversationIds } from '../lib/conversationMembership';
 
 interface UnreadContextType {
   totalUnread: number;
@@ -97,20 +98,14 @@ export const UnreadProvider = ({
     lastRefreshAtRef.current = now;
 
     try {
-      const { data: conversations } = await supabase
-        .from('conversations')
-        .select('id')
-        .or(`user1_id.eq.${currentUserId},user2_id.eq.${currentUserId}`)
-        .limit(200);
+      const conversationIds = await fetchConversationIds(currentUserId);
 
-      if (!conversations || conversations.length === 0) {
+      if (conversationIds.length === 0) {
         setTotalUnread(0);
         setUnreadByConversation({});
         NotificationManager.updateBadge(0);
         return;
       }
-
-      const conversationIds = conversations.map((c) => c.id);
 
       const { data: unreadRows, error } = await supabase
         .from('messages')

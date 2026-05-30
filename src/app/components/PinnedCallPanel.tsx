@@ -29,7 +29,7 @@ function connectionLabel(state: string, t: (key: string) => string) {
 
 export function PinnedCallPanel(_props: PinnedCallPanelProps) {
   const { t } = useTranslation();
-  const { currentUserProfile, conversations } = useAppData();
+  const { currentUserProfile } = useAppData();
   const {
     state,
     activeCall,
@@ -107,11 +107,9 @@ export function PinnedCallPanel(_props: PinnedCallPanelProps) {
       const channel = activeCall.channelName || t('groups.voiceChannelsHeading');
       return `${group} · ${channel}`;
     }
-    const conversation = conversations.find((entry) => entry.id === activeCall.conversationId);
-    const peer = conversation?.other_user;
     const remote = activeCall.participants[0];
-    return peer?.display_name || peer?.name || remote?.name || t('call.inCall');
-  }, [activeCall, conversations, t]);
+    return remote?.name || t('call.inCall');
+  }, [activeCall, t]);
 
   const stageParticipants = useMemo(() => {
     const localName =
