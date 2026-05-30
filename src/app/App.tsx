@@ -121,27 +121,8 @@ function AppContent({ onUserIdChange }: AppContentProps = {}) {
       let sessionUser: { id: string; email?: string | null } | null = null;
 
       try {
-        // First, try to restore token from localStorage (fast, synchronous)
-        const storedToken = localStorage.getItem('accessToken');
-        if (storedToken) {
-          console.log('App Start - Restoring token from localStorage');
-          api.setAccessToken(storedToken);
-        }
-        
         const session = await initAuthSession();
         sessionUser = session?.user ?? null;
-        console.log('App Start - Session:', sessionUser?.id);
-        if (session?.access_token) {
-          // Update token if session has a newer token
-          if (session.access_token !== storedToken) {
-            console.log('App Start - Updating token from Supabase session');
-          api.setAccessToken(session.access_token);
-          }
-        } else if (storedToken) {
-          // Session expired but we have a stored token - keep it for now
-          // The auth flow will handle validation
-          console.log('App Start - Session expired, but keeping stored token for auth flow');
-        }
 
         // Apply cached theme immediately, then sync from profile once session is known
         const sessionUserId = sessionUser?.id ?? null;
@@ -165,18 +146,14 @@ function AppContent({ onUserIdChange }: AppContentProps = {}) {
         // Fallback: try to restore from localStorage even if session check fails
         const storedToken = localStorage.getItem('accessToken');
         if (storedToken) {
-          console.log('App Start - Fallback: Restoring token from localStorage after error');
           api.setAccessToken(storedToken);
         }
         applyBootTheme();
       }
 
       const token = getCachedAccessToken() ?? (await api.getAccessToken());
-      console.log('=== APP INITIALIZATION ===');
-      console.log('Initial token check:', token && typeof token === 'string' ? `Token exists (${token.substring(0, 20)}...)` : 'No token found');
-      
+
       if (token && typeof token === 'string') {
-      console.log('Verifying token validity...');
       try {
         const user = sessionUser ?? getCachedUser() ?? (await resolveAuthUser());
         if (!user) {
@@ -280,14 +257,12 @@ function AppContent({ onUserIdChange }: AppContentProps = {}) {
         } catch (error: any) {
           // Token expired or invalid
           console.error('❌ Token validation failed:', error.message);
-          console.log('Clearing invalid token and redirecting to auth...');
           api.signout();
           setIsAuthenticated(false);
         } finally {
           setLoading(false);
         }
       } else {
-        console.log('No existing token - showing auth screen');
         setLoading(false);
       }
     };

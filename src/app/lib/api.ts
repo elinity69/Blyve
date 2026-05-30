@@ -11,14 +11,14 @@ export class ApiClient {
   private accessToken: string | null = null;
 
   setAccessToken(token: string | null) {
-    console.log('API - setAccessToken called with:', token ? `Token (${token.substring(0, 30)}...)` : 'null');
+    if (this.accessToken === token) {
+      return;
+    }
     this.accessToken = token;
     if (token) {
       localStorage.setItem('accessToken', token);
-      console.log('API - Token saved to localStorage');
     } else {
       localStorage.removeItem('accessToken');
-      console.log('API - Token removed from localStorage');
     }
   }
 
@@ -29,21 +29,20 @@ export class ApiClient {
 
     const cachedToken = getCachedAccessToken();
     if (cachedToken) {
-      this.accessToken = cachedToken;
+      this.setAccessToken(cachedToken);
       return cachedToken;
     }
 
     const storedToken = localStorage.getItem('accessToken');
     if (storedToken) {
-      this.accessToken = storedToken;
+      this.setAccessToken(storedToken);
       return storedToken;
     }
 
     await initAuthSession();
     const hydratedToken = getCachedAccessToken();
     if (hydratedToken) {
-      this.accessToken = hydratedToken;
-      localStorage.setItem('accessToken', hydratedToken);
+      this.setAccessToken(hydratedToken);
       return hydratedToken;
     }
 
@@ -165,18 +164,11 @@ export class ApiClient {
         throw new Error('Sign in failed: No user or session returned');
       }
 
-    console.log('API - Signin response:', { 
-        hasAccessToken: !!authData.session.access_token,
-        userId: authData.user.id 
-    });
-
       if (authData.session.access_token) {
-      console.log('API - Storing access token in localStorage');
         this.setAccessToken(authData.session.access_token);
-      console.log('API - Token stored successfully');
-    } else {
+      } else {
         console.error('API - No access token received from Supabase!');
-    }
+      }
 
       return {
         userId: authData.user.id,
