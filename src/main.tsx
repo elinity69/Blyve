@@ -11,9 +11,16 @@
   // Service worker only in production — avoids stale cache + chrome-extension errors in dev
   if ('serviceWorker' in navigator && import.meta.env.PROD) {
     window.addEventListener('load', () => {
-      navigator.serviceWorker.register('/sw.js').catch((error) => {
-        console.error('Service worker registration failed:', error);
-      });
+      navigator.serviceWorker
+        .register('/sw.js')
+        .then(() =>
+          import('./app/lib/notifications').then(({ syncSystemPushPreferenceToServiceWorker }) =>
+            syncSystemPushPreferenceToServiceWorker(),
+          ),
+        )
+        .catch((error) => {
+          console.error('Service worker registration failed:', error);
+        });
     });
   }
   

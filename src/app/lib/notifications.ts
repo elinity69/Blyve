@@ -7,6 +7,39 @@ import { subscribeToWebPush, unsubscribeFromWebPush } from './webPush';
 
 const MUTE_SOUND_IN_CHAT_KEY = 'mute_notification_sound_in_chat_conversations';
 const MUTE_NOTIFICATIONS_IN_GROUP_KEY = 'mute_notifications_in_group_servers';
+const SYSTEM_PUSH_ENABLED_KEY = 'blyve_system_push_enabled';
+const PUSH_PREFS_CACHE = 'blyve-push-prefs';
+const PUSH_PREFS_URL = '/prefs/system-push';
+
+export function isSystemPushEnabled(): boolean {
+  try {
+    return localStorage.getItem(SYSTEM_PUSH_ENABLED_KEY) !== 'false';
+  } catch {
+    return true;
+  }
+}
+
+export function setSystemPushEnabled(enabled: boolean): void {
+  localStorage.setItem(SYSTEM_PUSH_ENABLED_KEY, enabled ? 'true' : 'false');
+  void syncSystemPushPreferenceToServiceWorker(enabled);
+}
+
+/** Persist OS/PWA push preference for the service worker (runs when app is closed). */
+export async function syncSystemPushPreferenceToServiceWorker(
+  enabled?: boolean,
+): Promise<void> {
+  if (typeof window === 'undefined' || !('serviceWorker' in navigator)) return;
+
+  const value = enabled ?? isSystemPushEnabled();
+  try {
+    const cache = await caches.open(PUSH_PREFS_CACHE);
+    await cache.put(PUSH_PREFS_URL, new Response(JSON.stringify({ enabled: value })));
+    const registration = await navigator.serviceWorker.getRegistration('/');
+    registration?.active?.postMessage({ type: 'set-system-push-enabled', enabled: value });
+  } catch (error) {
+    console.warn('Failed to sync system push preference to service worker:', error);
+  }
+}
 
 export class NotificationManager {
   private static permission: NotificationPermission = 'default';
@@ -237,6 +270,7 @@ export class NotificationManager {
    * Re-sync push subscription when permission is already granted (e.g. after login).
    */
   static async syncPushSubscription(userId: string): Promise<void> {
+    if (!isSystemPushEnabled()) return;
     if (this.getPermission() !== 'granted') return;
     await subscribeToWebPush(userId);
   }
@@ -282,6 +316,10 @@ export class NotificationManager {
    * @param playSound - Whether to play notification sound (default: false - only chat notifications play sound)
    */
   static showNotification(title: string, options?: NotificationOptions & { playSound?: boolean }) {
+    if (!isSystemPushEnabled()) {
+      return null;
+    }
+
     if (this.permission !== 'granted') {
       // Update permission status
       this.permission = Notification.permission;

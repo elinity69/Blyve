@@ -409,6 +409,17 @@ const resources = {
         deleteAccount: "Delete Account",
         deleteAccountDesc: "Permanently delete your account and all data",
         deleteConfirm: "Are you sure? This action will permanently delete your account.",
+        systemPushSection: "Notifications",
+        systemPushTitle: "System notifications",
+        systemPushDesc:
+          "OS notifications when Blyve is in the background or closed. In-app message toasts are not affected.",
+        systemPushEnabledTitle: "System notifications enabled",
+        systemPushEnabledDesc: "You will receive OS notifications when the app is in the background.",
+        systemPushDisabledTitle: "System notifications disabled",
+        systemPushDisabledDesc: "You will only see in-app notifications while using Blyve.",
+        systemPushEnableFailedTitle: "Could not enable",
+        systemPushEnableFailedDesc:
+          "Please allow notifications in your browser or device settings and try again.",
       },
       onboarding: {
         languageTitle: "Choose your language",
@@ -884,6 +895,17 @@ const resources = {
         deleteAccount: "Konto löschen",
         deleteAccountDesc: "Lösche dein Konto und alle Daten dauerhaft",
         deleteConfirm: "Bist du sicher? Dieser Vorgang löscht dein Konto unwiderruflich.",
+        systemPushSection: "Benachrichtigungen",
+        systemPushTitle: "System-Benachrichtigungen",
+        systemPushDesc:
+          "OS-Hinweise, wenn Blyve im Hintergrund oder geschlossen ist. In-App-Nachrichten-Toasts bleiben unverändert.",
+        systemPushEnabledTitle: "System-Benachrichtigungen aktiv",
+        systemPushEnabledDesc: "Du erhältst OS-Hinweise, wenn die App im Hintergrund ist.",
+        systemPushDisabledTitle: "System-Benachrichtigungen aus",
+        systemPushDisabledDesc: "Du siehst nur noch Benachrichtigungen in der App.",
+        systemPushEnableFailedTitle: "Aktivierung fehlgeschlagen",
+        systemPushEnableFailedDesc:
+          "Bitte erlaube Benachrichtigungen in den Browser- oder Geräteeinstellungen und versuche es erneut.",
       },
       onboarding: {
         languageTitle: "Sprache wählen",
@@ -1360,6 +1382,17 @@ const resources = {
         deleteAccount: "Eliminar cuenta",
         deleteAccountDesc: "Eliminar permanentemente tu cuenta y todos los datos",
         deleteConfirm: "¿Estás seguro? Esta acción eliminará permanentemente tu cuenta.",
+        systemPushSection: "Notificaciones",
+        systemPushTitle: "Notificaciones del sistema",
+        systemPushDesc:
+          "Avisos del sistema cuando Blyve está en segundo plano o cerrado. Los avisos dentro de la app no cambian.",
+        systemPushEnabledTitle: "Notificaciones del sistema activadas",
+        systemPushEnabledDesc: "Recibirás avisos del sistema cuando la app esté en segundo plano.",
+        systemPushDisabledTitle: "Notificaciones del sistema desactivadas",
+        systemPushDisabledDesc: "Solo verás notificaciones dentro de la app.",
+        systemPushEnableFailedTitle: "No se pudo activar",
+        systemPushEnableFailedDesc:
+          "Permite las notificaciones en el navegador o en los ajustes del dispositivo e inténtalo de nuevo.",
       },
       onboarding: {
         languageTitle: "Elige tu idioma",

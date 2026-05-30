@@ -1,5 +1,33 @@
 const CACHE_NAME = 'blyve-v3';
 const PRECACHE_URLS = ['/', '/manifest.json'];
+const PUSH_PREFS_CACHE = 'blyve-push-prefs';
+const PUSH_PREFS_URL = '/prefs/system-push';
+
+async function getSystemPushEnabled() {
+  try {
+    const cache = await caches.open(PUSH_PREFS_CACHE);
+    const res = await cache.match(PUSH_PREFS_URL);
+    if (!res) return true;
+    const data = await res.json();
+    return data.enabled !== false;
+  } catch {
+    return true;
+  }
+}
+
+async function setSystemPushEnabledInCache(enabled) {
+  const cache = await caches.open(PUSH_PREFS_CACHE);
+  await cache.put(PUSH_PREFS_URL, new Response(JSON.stringify({ enabled })));
+}
+
+function isAppClientVisible(clientList) {
+  return clientList.some((client) => client.visibilityState === 'visible');
+}
+
+self.addEventListener('message', (event) => {
+  if (event.data?.type !== 'set-system-push-enabled') return;
+  event.waitUntil(setSystemPushEnabledInCache(Boolean(event.data.enabled)));
+});
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
@@ -29,17 +57,25 @@ self.addEventListener('push', (event) => {
   const data = payload.data ?? {};
 
   event.waitUntil(
-    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
-      // Send play-sound message to all open clients so the app's audio can play
-      for (const client of clientList) {
-        client.postMessage({
-          type: 'play-notification-sound',
-          conversationId: data.conversationId ?? null,
-          groupId: data.groupId ?? null,
-        });
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(async (clientList) => {
+      const appVisible = isAppClientVisible(clientList);
+
+      // In-app sound/toasts are handled by the open client — only forward when app is open
+      if (appVisible) {
+        for (const client of clientList) {
+          client.postMessage({
+            type: 'play-notification-sound',
+            conversationId: data.conversationId ?? null,
+            groupId: data.groupId ?? null,
+          });
+        }
       }
 
-      // Always show a native toast, but keep it silent to avoid duplicate system sound
+      const systemPushEnabled = await getSystemPushEnabled();
+      if (!systemPushEnabled || appVisible) {
+        return undefined;
+      }
+
       return self.registration.showNotification(title, {
         body: payload.body ?? '',
         icon: payload.icon ?? '/icon.png',

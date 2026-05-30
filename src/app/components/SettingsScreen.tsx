@@ -1,4 +1,4 @@
-import { Settings, LogOut, AlertCircle, Eye, Globe, ChevronLeft, Moon, Sun } from 'lucide-react';
+import { Settings, LogOut, AlertCircle, Eye, Globe, ChevronLeft, Moon, Sun, Bell } from 'lucide-react';
 import { Button } from './ui/button';
 import { useState, useEffect } from 'react';
 import { api } from '../lib/api';
@@ -14,7 +14,11 @@ import {
   syncThemeFromProfile,
 } from '../lib/theme';
 // NavigationStack is handled by parent - no need to import
-import { NotificationManager } from '../lib/notifications';
+import {
+  isSystemPushEnabled,
+  setSystemPushEnabled,
+  NotificationManager,
+} from '../lib/notifications';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -45,6 +49,10 @@ export function SettingsScreen({ onSignOut, onBack, previousScreen }: SettingsSc
     return mode === 'light' || mode === 'dark' || mode === 'oled' ? mode : 'dark';
   });
   const [updatingTheme, setUpdatingTheme] = useState(false);
+  const [systemPushEnabled, setSystemPushEnabledState] = useState(() => isSystemPushEnabled());
+  const [updatingSystemPush, setUpdatingSystemPush] = useState(false);
+  const showSystemPushSetting =
+    typeof window !== 'undefined' && 'Notification' in window;
 
   const fetchProfile = async () => {
     try {
@@ -106,6 +114,41 @@ export function SettingsScreen({ onSignOut, onBack, previousScreen }: SettingsSc
       toast.error(t('profile.error'), error.message || t('profile.failedToDelete'));
     } finally {
       setDeletingAccount(false);
+    }
+  };
+
+  const handleToggleSystemPush = async () => {
+    if (updatingSystemPush) return;
+    setUpdatingSystemPush(true);
+    try {
+      const user = getCachedUser() ?? (await resolveAuthUser());
+      if (!user) {
+        throw new Error('Nicht eingeloggt');
+      }
+
+      if (systemPushEnabled) {
+        setSystemPushEnabled(false);
+        await NotificationManager.disablePushNotifications();
+        setSystemPushEnabledState(false);
+        toast.success(t('settings.systemPushDisabledTitle'), t('settings.systemPushDisabledDesc'));
+      } else {
+        const ok = await NotificationManager.enablePushNotifications(user.id);
+        if (!ok) {
+          toast.error(
+            t('settings.systemPushEnableFailedTitle'),
+            t('settings.systemPushEnableFailedDesc'),
+          );
+          return;
+        }
+        setSystemPushEnabled(true);
+        setSystemPushEnabledState(true);
+        toast.success(t('settings.systemPushEnabledTitle'), t('settings.systemPushEnabledDesc'));
+      }
+    } catch (error: any) {
+      console.error('Failed to update system push setting:', error);
+      toast.error(t('profile.error'), error.message || t('profile.failedToUpdate'));
+    } finally {
+      setUpdatingSystemPush(false);
     }
   };
 
@@ -312,6 +355,45 @@ export function SettingsScreen({ onSignOut, onBack, previousScreen }: SettingsSc
               </div>
             </div>
           </div>
+
+          {/* System / PWA push (not in-app toasts) */}
+          {showSystemPushSetting && (
+            <div>
+              <div className="flex items-center gap-2 mb-4">
+                <Bell className="w-5 h-5 text-orange-600" />
+                <h2 className="font-bold text-gray-900 dark:text-white">
+                  {t('settings.systemPushSection')}
+                </h2>
+              </div>
+              <div className="blyve-settings-card border border-orange-200 dark:border-white/5 rounded-2xl p-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="font-semibold mb-1 text-gray-900 dark:text-white">
+                      {t('settings.systemPushTitle')}
+                    </h3>
+                    <p className="text-xs text-gray-600 dark:text-gray-300">
+                      {t('settings.systemPushDesc')}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleToggleSystemPush}
+                    disabled={updatingSystemPush}
+                    className={`relative w-14 h-7 rounded-full transition-colors flex-shrink-0 ${
+                      systemPushEnabled ? 'bg-orange-600' : 'bg-gray-300'
+                    }`}
+                    aria-label={t('settings.systemPushTitle')}
+                  >
+                    <div
+                      className={`absolute top-1 left-1 w-5 h-5 bg-white rounded-full transition-transform ${
+                        systemPushEnabled ? 'translate-x-7' : 'translate-x-0'
+                      }`}
+                    />
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Ghost mode (reduced visibility / privacy) */}
           <div>

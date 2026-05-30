@@ -16,7 +16,7 @@ import { Toaster } from './components/ui/sonner';
 import { AppDataProvider } from './context/AppDataContext';
 import { ToastProvider } from './context/ToastContext';
 import { ErrorBoundary } from './components/ErrorBoundary';
-import { NotificationManager } from './lib/notifications';
+import { NotificationManager, syncSystemPushPreferenceToServiceWorker } from './lib/notifications';
 import { useMessageRealtime } from './hooks/useMessageRealtime';
 import { useTypingRealtime } from './hooks/useTypingRealtime';
 import { NotificationPrompt } from './components/NotificationPrompt';
@@ -512,6 +512,7 @@ function AppContent({ onUserIdChange }: AppContentProps = {}) {
 
   useEffect(() => {
     if (!isAuthenticated || !currentUserId) return;
+    void syncSystemPushPreferenceToServiceWorker();
     void NotificationManager.syncPushSubscription(currentUserId);
   }, [isAuthenticated, currentUserId]);
 
