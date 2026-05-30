@@ -40,7 +40,6 @@ export function useSwipeToReply(onReply: () => void, enabled = true) {
         return;
       }
 
-      // Discord-style: swipe left (finger moves left, message follows)
       if (dx < -8) {
         const next = Math.max(dx, -SWIPE_MAX);
         offsetRef.current = Math.abs(next);

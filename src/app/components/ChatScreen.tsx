@@ -707,25 +707,7 @@ export function ChatScreen({
                   }
                   className={getChatMessageRowClass(isGroupStart, isNewSender)}
                 >
-                  <MessageRowReplyWrapper
-                    onReply={() =>
-                      setReplyTarget(buildReplyTarget(msg, getSenderLabel(msg.sender_id)))
-                    }
-                  >
-                    <MessageContextMenuWrapper
-                      canDelete={isMe}
-                      onReply={() =>
-                        setReplyTarget(buildReplyTarget(msg, getSenderLabel(msg.sender_id)))
-                      }
-                      onDelete={() => {
-                        const confirmed = window.confirm(t('chat.deleteMessageConfirm'));
-                        if (!confirmed) return;
-                        void deleteMessage(msg.id).then((ok) => {
-                          if (!ok) toast.error(t('chat.deleteMessageFailedTitle'));
-                        });
-                      }}
-                    >
-                    <div className={`flex w-full flex-col ${isMe ? 'items-end' : 'items-start'}`}>
+                  <div className={`flex w-full flex-col ${isMe ? 'items-end' : 'items-start'}`}>
                       <div
                         className={`${
                           isBundled ? CHAT_MESSAGE_ROW_INNER_GROUPED_CLASS : CHAT_MESSAGE_ROW_INNER_CLASS
@@ -748,15 +730,35 @@ export function ChatScreen({
                               isMe ? 'flex-row-reverse' : 'flex-row'
                             }`}
                           >
-                            <ChatMessageBody
-                              content={msg.content}
-                              isMe={isMe}
-                              isBundled={isBundled}
-                              replyQuote={replyQuote}
-                              bubblePosition={groupPosition}
-                              messageTime={messageTime}
-                              isRead={isOutgoingMessageRead(msg, messages, currentUserId)}
-                            />
+                            <MessageRowReplyWrapper
+                              onReply={() =>
+                                setReplyTarget(buildReplyTarget(msg, getSenderLabel(msg.sender_id)))
+                              }
+                            >
+                              <MessageContextMenuWrapper
+                                canDelete={isMe}
+                                onReply={() =>
+                                  setReplyTarget(buildReplyTarget(msg, getSenderLabel(msg.sender_id)))
+                                }
+                                onDelete={() => {
+                                  const confirmed = window.confirm(t('chat.deleteMessageConfirm'));
+                                  if (!confirmed) return;
+                                  void deleteMessage(msg.id).then((ok) => {
+                                    if (!ok) toast.error(t('chat.deleteMessageFailedTitle'));
+                                  });
+                                }}
+                              >
+                                <ChatMessageBody
+                                  content={msg.content}
+                                  isMe={isMe}
+                                  isBundled={isBundled}
+                                  replyQuote={replyQuote}
+                                  bubblePosition={groupPosition}
+                                  messageTime={messageTime}
+                                  isRead={isOutgoingMessageRead(msg, messages, currentUserId)}
+                                />
+                              </MessageContextMenuWrapper>
+                            </MessageRowReplyWrapper>
                             <MessageRowReplyButton
                               onReply={() =>
                                 setReplyTarget(buildReplyTarget(msg, getSenderLabel(msg.sender_id)))
@@ -772,8 +774,6 @@ export function ChatScreen({
                         </div>
                       </div>
                     </div>
-                    </MessageContextMenuWrapper>
-                  </MessageRowReplyWrapper>
                 </motion.div>
               );
             })}

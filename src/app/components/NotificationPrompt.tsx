@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Bell, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { NotificationManager } from '../lib/notifications';
+import { isWebPushSupported } from '../lib/webPush';
 
 interface NotificationPromptProps {
   userId?: string | null;
@@ -30,13 +31,17 @@ export const NotificationPrompt = ({ userId }: NotificationPromptProps) => {
   }, []);
 
   const handleEnable = async () => {
+    localStorage.setItem('notification-asked', 'true');
+    setIsVisible(false);
+
     if (userId) {
-      await NotificationManager.enablePushNotifications(userId);
+      const ok = await NotificationManager.enablePushNotifications(userId);
+      if (!ok && isWebPushSupported() && Notification.permission === 'granted') {
+        console.warn('Notifications allowed, but push subscription could not be saved.');
+      }
     } else {
       await NotificationManager.requestPermission();
     }
-    localStorage.setItem('notification-asked', 'true');
-    setIsVisible(false);
   };
 
   const handleDismiss = () => {

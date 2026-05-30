@@ -579,33 +579,33 @@ export function GroupThreadScreen({
                 data-message-id={m.id}
                 className={getChatMessageRowClass(isGroupStart, isNewSender)}
               >
-                <MessageRowReplyWrapper
-                  onReply={() =>
-                    setReplyTarget(buildReplyTarget(m, getSenderLabel(m.sender_id, m)))
-                  }
-                >
-                  <div className={`flex w-full flex-col ${mine ? 'items-end' : 'items-start'}`}>
-                    <div
-                      className={`${
-                        isBundled ? CHAT_MESSAGE_ROW_INNER_GROUPED_CLASS : CHAT_MESSAGE_ROW_INNER_CLASS
-                      } ${mine ? 'flex-row-reverse' : 'flex-row'}`}
-                    >
-                      <MessageRowAvatarSlot
-                        visible={isGroupEnd}
-                        imageUrl={mine ? meAvatarUrl : m.sender?.avatar_url}
-                        label={senderLabel}
-                      />
-                      <div className={`min-w-0 flex-1 flex flex-col ${mine ? 'items-end' : 'items-start'}`}>
-                        {isGroupStart && (
-                          <MessageGroupHeader
-                            name={senderLabel}
-                            align={mine ? 'end' : 'start'}
-                          />
-                        )}
-                        <div
-                          className={`group/bubble flex max-w-full min-w-0 items-start gap-1.5 ${
-                            mine ? 'flex-row-reverse' : 'flex-row'
-                          }`}
+                <div className={`flex w-full flex-col ${mine ? 'items-end' : 'items-start'}`}>
+                  <div
+                    className={`${
+                      isBundled ? CHAT_MESSAGE_ROW_INNER_GROUPED_CLASS : CHAT_MESSAGE_ROW_INNER_CLASS
+                    } ${mine ? 'flex-row-reverse' : 'flex-row'}`}
+                  >
+                    <MessageRowAvatarSlot
+                      visible={isGroupEnd}
+                      imageUrl={mine ? meAvatarUrl : m.sender?.avatar_url}
+                      label={senderLabel}
+                    />
+                    <div className={`min-w-0 flex-1 flex flex-col ${mine ? 'items-end' : 'items-start'}`}>
+                      {isGroupStart && (
+                        <MessageGroupHeader
+                          name={senderLabel}
+                          align={mine ? 'end' : 'start'}
+                        />
+                      )}
+                      <div
+                        className={`group/bubble flex max-w-full min-w-0 items-start gap-1.5 ${
+                          mine ? 'flex-row-reverse' : 'flex-row'
+                        }`}
+                      >
+                        <MessageRowReplyWrapper
+                          onReply={() =>
+                            setReplyTarget(buildReplyTarget(m, getSenderLabel(m.sender_id, m)))
+                          }
                         >
                           <ChatMessageBody
                             content={m.content}
@@ -616,16 +616,16 @@ export function GroupThreadScreen({
                             messageTime={messageTime}
                             isRead={false}
                           />
-                          <MessageRowReplyButton
-                            onReply={() =>
-                              setReplyTarget(buildReplyTarget(m, getSenderLabel(m.sender_id, m)))
-                            }
-                          />
-                        </div>
+                        </MessageRowReplyWrapper>
+                        <MessageRowReplyButton
+                          onReply={() =>
+                            setReplyTarget(buildReplyTarget(m, getSenderLabel(m.sender_id, m)))
+                          }
+                        />
                       </div>
                     </div>
                   </div>
-                </MessageRowReplyWrapper>
+                </div>
               </div>
             );
           })

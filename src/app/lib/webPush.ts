@@ -32,29 +32,50 @@ export function isWebPushSupported(): boolean {
 export async function ensureServiceWorkerReady(): Promise<ServiceWorkerRegistration | null> {
   if (!('serviceWorker' in navigator)) return null;
   try {
+    let registration = await navigator.serviceWorker.getRegistration('/');
+    if (!registration) {
+      registration = await navigator.serviceWorker.register('/sw.js');
+    }
     return await navigator.serviceWorker.ready;
-  } catch {
+  } catch (error) {
+    console.warn('Service worker unavailable for push:', error);
     return null;
   }
 }
 
 export async function subscribeToWebPush(userId: string): Promise<boolean> {
-  if (!isWebPushSupported() || !VAPID_PUBLIC_KEY) return false;
+  if (!isWebPushSupported() || !VAPID_PUBLIC_KEY) {
+    if (import.meta.env.PROD && Notification.permission === 'granted' && !isWebPushConfigured()) {
+      console.warn('Web Push: VITE_VAPID_PUBLIC_KEY is missing on the client.');
+    }
+    return false;
+  }
   if (Notification.permission !== 'granted') return false;
 
   const registration = await ensureServiceWorkerReady();
-  if (!registration?.pushManager) return false;
+  if (!registration?.pushManager) {
+    console.warn('Web Push: pushManager unavailable (service worker not ready).');
+    return false;
+  }
 
   let subscription = await registration.pushManager.getSubscription();
   if (!subscription) {
-    subscription = await registration.pushManager.subscribe({
-      userVisibleOnly: true,
-      applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
-    });
+    try {
+      subscription = await registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
+      });
+    } catch (error) {
+      console.warn('Web Push subscription failed:', error);
+      return false;
+    }
   }
 
   const json = subscription.toJSON();
-  if (!json.endpoint || !json.keys?.p256dh || !json.keys?.auth) return false;
+  if (!json.endpoint || !json.keys?.p256dh || !json.keys?.auth) {
+    console.warn('Web Push: subscription missing keys.');
+    return false;
+  }
 
   const { error } = await supabase.from('push_subscriptions').upsert(
     {

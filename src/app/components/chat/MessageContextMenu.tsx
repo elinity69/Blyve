@@ -2,7 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNo
 import { createPortal } from 'react-dom';
 import { Reply, Trash2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { useLongPress } from '../../hooks/useLongPress';
+import { useIsMdUp } from '../ui/use-mobile';
 
 const MENU_Z_BACKDROP = 400;
 const MENU_Z_PANEL = 401;
@@ -136,32 +136,36 @@ interface MessageContextMenuWrapperProps {
   onDelete: () => void;
 }
 
+/** Desktop only: right-click on the message bubble opens reply/delete. Mobile uses swipe-to-reply. */
 export function MessageContextMenuWrapper({
   children,
   canDelete,
   onReply,
   onDelete,
 }: MessageContextMenuWrapperProps) {
+  const isMdUp = useIsMdUp();
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
 
   const openMenu = useCallback((clientX: number, clientY: number) => {
     setMenu({ x: clientX, y: clientY });
   }, []);
 
-  const longPress = useLongPress((event) => {
-    openMenu(event.clientX, event.clientY);
-  });
+  const handleContextMenu = useCallback(
+    (event: React.MouseEvent) => {
+      if (!isMdUp) return;
+      event.preventDefault();
+      event.stopPropagation();
+      openMenu(event.clientX, event.clientY);
+    },
+    [isMdUp, openMenu],
+  );
 
   return (
     <>
       <div
-        className="w-full"
-        onContextMenuCapture={(event) => {
-          event.preventDefault();
-          event.stopPropagation();
-          openMenu(event.clientX, event.clientY);
-        }}
-        {...longPress}
+        className="inline-flex max-w-full min-w-0"
+        data-message-bubble
+        onContextMenuCapture={isMdUp ? handleContextMenu : undefined}
       >
         {children}
       </div>

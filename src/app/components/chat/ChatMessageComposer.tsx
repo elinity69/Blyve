@@ -7,7 +7,7 @@ import {
   type ReactNode,
   type RefObject,
 } from 'react';
-import { Film, ImagePlus, Loader2, Mic, Send, Square, X } from 'lucide-react';
+import { Film, ImagePlus, Loader2, Mic, Send, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { FavoriteEmbedsPicker } from './FavoriteEmbedsPicker';
 import { useFavoriteEmbeds } from '../../hooks/useFavoriteEmbeds';
@@ -71,9 +71,10 @@ export function ChatMessageComposer({
   const showSyncDot = isCloudEnabled && syncStatus === 'syncing';
 
   const hasText = value.trim().length > 0;
+  const hasStagedMedia = stagedFiles.length > 0;
   const busy = sending || mediaUploading;
-  const showSendButton = hasText && !recording;
-  const showMicButton = !hasText && !recording && !mediaUploading;
+  const showSendButton = (hasText || hasStagedMedia) && !recording;
+  const showMicButton = !hasText && !hasStagedMedia && !recording && !mediaUploading;
 
   const assignRootRef = useCallback((node: HTMLDivElement | null) => {
     setInVisualViewportShell(!!node?.closest('[data-visual-viewport-shell]'));
@@ -216,6 +217,18 @@ export function ChatMessageComposer({
     [onSendVoiceMemo],
   );
 
+  const handlePrimarySend = useCallback(async () => {
+    if (recording) {
+      await stopRecording(true);
+      return;
+    }
+    if (hasStagedMedia) {
+      await confirmStagedSend();
+      return;
+    }
+    await onSend();
+  }, [recording, hasStagedMedia, stopRecording, confirmStagedSend, onSend]);
+
   useEffect(() => {
     return () => {
       const recorder = mediaRecorderRef.current;
@@ -327,41 +340,23 @@ export function ChatMessageComposer({
           >
             <X className="h-4 w-4" />
           </button>
-          <button
-            type="button"
-            disabled={busy}
-            onClick={() => void confirmStagedSend()}
-            className="shrink-0 rounded-full bg-gradient-to-br from-orange-500 to-pink-500 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
-          >
-            {t('chat.sendStagedMedia')}
-          </button>
         </div>
       ) : null}
 
       {recording ? (
-        <div className="mb-2 flex items-center justify-between rounded-lg bg-red-50 px-3 py-2 dark:bg-red-500/10">
+        <button
+          type="button"
+          onClick={() => void stopRecording(false)}
+          className="mb-2 flex w-full items-center justify-between rounded-lg bg-red-50 px-3 py-2 text-left dark:bg-red-500/10"
+          aria-label={t('chat.voiceMemoCancel')}
+        >
           <span className="text-sm font-medium text-red-600 dark:text-red-400">
             {t('chat.voiceMemoRecording', { seconds: recordingSeconds })}
           </span>
-          <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={() => void stopRecording(false)}
-              className="rounded-full p-2 text-gray-600 hover:bg-black/5 dark:text-gray-300"
-              aria-label={t('chat.voiceMemoCancel')}
-            >
-              <X className="h-5 w-5" />
-            </button>
-            <button
-              type="button"
-              onClick={() => void stopRecording(true)}
-              className="rounded-full bg-red-500 p-2 text-white"
-              aria-label={t('chat.voiceMemoSend')}
-            >
-              <Send className="h-5 w-5" />
-            </button>
-          </div>
-        </div>
+          <span className="text-xs text-red-500/80 dark:text-red-400/80">
+            {t('chat.voiceMemoTapToCancel')}
+          </span>
+        </button>
       ) : null}
 
       <input
@@ -424,9 +419,9 @@ export function ChatMessageComposer({
           value={value}
           onChange={(event) => onChange(event.target.value)}
           onKeyDown={(event) => {
-            if (event.key === 'Enter' && !event.shiftKey && hasText) {
+            if (event.key === 'Enter' && !event.shiftKey && (hasText || hasStagedMedia) && !recording) {
               event.preventDefault();
-              void onSend();
+              void handlePrimarySend();
             }
           }}
           onFocus={() => {
@@ -453,33 +448,24 @@ export function ChatMessageComposer({
           >
             <Loader2 className="h-6 w-6 animate-spin text-orange-500" />
           </div>
-        ) : showSendButton ? (
+        ) : showSendButton || recording ? (
           <button
             type="button"
             onMouseDown={(event) => event.preventDefault()}
-            onClick={() => void onSend()}
+            onClick={() => void handlePrimarySend()}
             disabled={busy}
             className="flex shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-orange-500 via-red-500 to-pink-500 p-3 disabled:opacity-50"
             style={{
               touchAction: 'manipulation',
               WebkitTapHighlightColor: 'transparent',
             }}
-            aria-label={t('chat.sendMessage')}
+            aria-label={recording ? t('chat.voiceMemoSend') : t('chat.sendMessage')}
           >
             {sending ? (
               <Loader2 className="h-5 w-5 animate-spin text-white" />
             ) : (
               <Send className="h-5 w-5 text-white" />
             )}
-          </button>
-        ) : recording ? (
-          <button
-            type="button"
-            onClick={() => void stopRecording(true)}
-            className="flex shrink-0 items-center justify-center rounded-full bg-red-500 p-3"
-            aria-label={t('chat.voiceMemoSend')}
-          >
-            <Square className="h-5 w-5 fill-white text-white" />
           </button>
         ) : showMicButton ? (
           <button
@@ -499,8 +485,8 @@ export function ChatMessageComposer({
           <button
             type="button"
             onMouseDown={(event) => event.preventDefault()}
-            onClick={() => void onSend()}
-            disabled={!hasText || busy}
+            onClick={() => void handlePrimarySend()}
+            disabled={busy}
             className="flex shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-orange-500 via-red-500 to-pink-500 p-3 disabled:opacity-50"
             aria-label={t('chat.sendMessage')}
           >
