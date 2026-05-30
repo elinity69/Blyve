@@ -30,31 +30,23 @@ self.addEventListener('push', (event) => {
 
   event.waitUntil(
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
-      const hasAnyClient = clientList.length > 0;
-      const hasVisibleClient = clientList.some((client) => client.visibilityState === 'visible');
-
-      if (hasAnyClient) {
-        for (const client of clientList) {
-          client.postMessage({
-            type: 'play-notification-sound',
-            conversationId: data.conversationId ?? null,
-            groupId: data.groupId ?? null,
-          });
-        }
+      // Send play-sound message to all open clients so the app's audio can play
+      for (const client of clientList) {
+        client.postMessage({
+          type: 'play-notification-sound',
+          conversationId: data.conversationId ?? null,
+          groupId: data.groupId ?? null,
+        });
       }
 
-      // Visible tab: realtime already shows in-app toast — only play custom sound, no OS banner.
-      if (hasVisibleClient) {
-        return undefined;
-      }
-
+      // Always show a native toast, but keep it silent to avoid duplicate system sound
       return self.registration.showNotification(title, {
         body: payload.body ?? '',
         icon: payload.icon ?? '/icon.png',
         badge: '/icon.png',
         tag: payload.tag,
         data,
-        silent: hasAnyClient,
+        silent: true,
         requireInteraction: false,
       });
     }),

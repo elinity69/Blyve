@@ -129,6 +129,7 @@ export function useMessageRealtime(currentUserId: string | null) {
         dispatchUnreadRefreshRequest();
       }
 
+      // Play app notification sound even when the tab is not visible.
       NotificationManager.playNotificationSound({ conversationId: message.conversation_id });
 
       if (isChatOpen) {
@@ -170,7 +171,7 @@ export function useMessageRealtime(currentUserId: string | null) {
           badge: '/icon.png',
           tag: `message-${message.id}`,
           requireInteraction: false,
-          silent: true,
+          silent: false,
           playSound: false,
           data: {
             conversationId: message.conversation_id,
@@ -194,7 +195,10 @@ export function useMessageRealtime(currentUserId: string | null) {
         return;
       }
 
-      NotificationManager.playNotificationSound({ groupId: message.group_id });
+      const appIsVisible = NotificationManager.isAppVisible();
+      if (appIsVisible) {
+        NotificationManager.playNotificationSound({ groupId: message.group_id });
+      }
 
       const [{ data: sender }, { data: channel }, { data: group }] = await Promise.all([
         supabase
@@ -215,7 +219,8 @@ export function useMessageRealtime(currentUserId: string | null) {
           ? `${message.content.substring(0, 100)}...`
           : message.content || 'New message';
 
-      if (NotificationManager.isAppVisible()) {
+      const appIsVisible = NotificationManager.isAppVisible();
+      if (appIsVisible) {
         showToastRef.current({
           type: 'info',
           variant: 'message',

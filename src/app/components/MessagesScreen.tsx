@@ -401,7 +401,7 @@ export function MessagesScreen() {
     [typingByConversation]
   );
   const handleLeaveChat = React.useCallback(
-    (conversationId: string) => {
+    (conversationId: string, options?: { clearSelection?: boolean }) => {
       if (
         callState === 'in_call' &&
         isCallForConversation(conversationId) &&
@@ -409,8 +409,12 @@ export function MessagesScreen() {
       ) {
         enterCallPip();
       }
-      setSelectedConversationId(null);
-      setSelectedOtherUser(null);
+
+      if (options?.clearSelection ?? true) {
+        setSelectedConversationId(null);
+        setSelectedOtherUser(null);
+      }
+
       lastPushedChatIdRef.current = null;
     },
     [callPinned, callState, enterCallPip, isCallForConversation]
@@ -1568,8 +1572,6 @@ export function MessagesScreen() {
     baseContent,
     onStackChange: (stackDepth) => {
       if (stackDepth === 0) {
-        setSelectedConversationId(null);
-        setSelectedOtherUser(null);
         lastPushedChatIdRef.current = null;
         if (lastPushedGroupIdRef.current) {
           setSelectedChannelId(null);
@@ -2126,7 +2128,7 @@ export function MessagesScreen() {
         otherUser={{ ...selectedOtherUser, age: selectedOtherUser.age }}
         currentUserId={currentUserId}
         onBack={() => {
-          handleLeaveChat(selectedConversationId);
+          handleLeaveChat(selectedConversationId, { clearSelection: false });
           popScreenRef.current();
         }}
         onOpenProfilePreview={setProfilePreviewUserId}

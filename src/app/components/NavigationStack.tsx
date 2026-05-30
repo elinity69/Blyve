@@ -21,6 +21,9 @@ const shellStyle = {
   backgroundColor: 'var(--color-background, #0d0d0d)',
   boxShadow: '-5px 0 20px rgba(0,0,0,0.15)',
   overflow: 'hidden' as const,
+  overscrollBehavior: 'contain' as const,
+  overscrollBehaviorX: 'contain' as const,
+  overscrollBehaviorY: 'none' as const,
 };
 
 export function NavigationStack({ children, onBack, skipEnterAnimation = false }: NavigationStackProps) {
@@ -30,10 +33,14 @@ export function NavigationStack({ children, onBack, skipEnterAnimation = false }
   const startXRef = useRef(0);
   const startYRef = useRef(0);
   const currentXRef = useRef(0);
+  const lastTouchXRef = useRef(0);
+  const lastTouchTimeRef = useRef(0);
   const directionLockedRef = useRef(false);
   const isVerticalScrollRef = useRef(false);
   const isDraggingRef = useRef(false);
   const animationFrameRef = useRef<number | null>(null);
+  const translateXRef = useRef(0);
+  const pendingTranslateFrameRef = useRef<number | null>(null);
   useMobileViewportDriver(isMobile);
 
   const setSwipeBackLock = (locked: boolean) => {
@@ -62,6 +69,9 @@ export function NavigationStack({ children, onBack, skipEnterAnimation = false }
       if (animationFrameRef.current) {
         cancelAnimationFrame(animationFrameRef.current);
       }
+      if (pendingTranslateFrameRef.current !== null) {
+        cancelAnimationFrame(pendingTranslateFrameRef.current);
+      }
     };
   }, []);
 
@@ -70,23 +80,25 @@ export function NavigationStack({ children, onBack, skipEnterAnimation = false }
       cancelAnimationFrame(animationFrameRef.current);
       animationFrameRef.current = null;
     }
+    if (pendingTranslateFrameRef.current !== null) {
+      cancelAnimationFrame(pendingTranslateFrameRef.current);
+      pendingTranslateFrameRef.current = null;
+    }
 
     const startX = e.touches[0].clientX;
     const startY = e.touches[0].clientY;
+    const now = performance.now();
 
     startXRef.current = startX;
     startYRef.current = startY;
     currentXRef.current = startX;
+    lastTouchXRef.current = startX;
+    lastTouchTimeRef.current = now;
+    translateXRef.current = 0;
+    setTranslateX(0);
     directionLockedRef.current = false;
     isVerticalScrollRef.current = false;
     setSwipeBackLock(false);
-
-    // Swipe-back from the left edge — capture phase wins over chat scroll containers.
-    if (startX > 56) {
-      directionLockedRef.current = true;
-      isVerticalScrollRef.current = true;
-    }
-  };
 
   const handleTouchMove = (e: React.TouchEvent) => {
     const currentX = e.touches[0].clientX;
@@ -130,54 +142,46 @@ export function NavigationStack({ children, onBack, skipEnterAnimation = false }
 
       currentXRef.current = currentX;
       const constrainedDelta = Math.min(positiveDeltaX, window.innerWidth);
+      translateXRef.current = constrainedDelta;
 
-      setTranslateX(constrainedDelta);
+      const now = performance.now();
+      lastTouchXRef.current = currentX;
+      lastTouchTimeRef.current = now;
+
+      if (pendingTranslateFrameRef.current === null) {
+        pendingTranslateFrameRef.current = requestAnimationFrame(() => {
+          setTranslateX(translateXRef.current);
+          pendingTranslateFrameRef.current = null;
+        });
+      }
     }
   };
 
   const handleTouchEnd = () => {
-    directionLockedRef.current = false;
-    isVerticalScrollRef.current = false;
-
-    if (!isDraggingRef.current) {
-      return;
+    if (pendingTranslateFrameRef.current !== null) {
+      cancelAnimationFrame(pendingTranslateFrameRef.current);
+      pendingTranslateFrameRef.current = null;
     }
 
-    const deltaX = Math.max(0, currentXRef.current - startXRef.current);
-    const threshold = window.innerWidth * 0.4;
+    const width = window.innerWidth;
+    const deltaX = currentXRef.current - startXRef.current;
+    const timeDelta = performance.now() - lastTouchTimeRef.current;
+    const velocity = timeDelta > 0 ? (currentXRef.current - lastTouchXRef.current) / timeDelta : 0;
+    const distance = translateXRef.current;
+    const velocityThreshold = 0.35;
+    const distanceThreshold = Math.max(56, width * 0.33);
+
+    const shouldGoBack = velocity > velocityThreshold || distance > distanceThreshold;
+
+    if (shouldGoBack) {
+      setTranslateX(width);
+      requestAnimationFrame(onBack);
+    } else if (distance > 0) {
+      animateToZero(distance);
+    }
 
     setSwipeBackLock(false);
-
-    if (deltaX > threshold) {
-      animateToComplete(deltaX);
-    } else {
-      animateToZero(deltaX);
-    }
-  };
-
-  const animateToComplete = (startValue: number) => {
-    const targetValue = window.innerWidth;
-    const startTime = performance.now();
-    const duration = 200;
-
-    const animate = (currentTime: number) => {
-      const elapsed = currentTime - startTime;
-      const progress = Math.min(elapsed / duration, 1);
-      const eased = 1 - Math.pow(1 - progress, 3);
-      const currentValue = startValue + (targetValue - startValue) * eased;
-
-      setTranslateX(currentValue);
-
-      if (progress < 1) {
-        animationFrameRef.current = requestAnimationFrame(animate);
-      } else {
-        onBack();
-        setTranslateX(0);
-        animationFrameRef.current = null;
-      }
-    };
-
-    animationFrameRef.current = requestAnimationFrame(animate);
+    translateXRef.current = 0;
   };
 
   const animateToZero = (startValue: number) => {
@@ -225,7 +229,7 @@ export function NavigationStack({ children, onBack, skipEnterAnimation = false }
         onTouchCancelCapture={handleTouchEnd}
         style={{
           ...shellStyle,
-          willChange: swipeBackLocked ? 'transform' : 'auto',
+          willChange: 'transform',
           touchAction: swipeBackLocked ? 'none' : 'pan-y',
         }}
       >

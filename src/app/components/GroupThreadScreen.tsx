@@ -539,6 +539,10 @@ export function GroupThreadScreen({
         }}
         style={{
           WebkitOverflowScrolling: 'touch',
+          touchAction: 'pan-y',
+          overscrollBehavior: 'contain',
+          overscrollBehaviorX: 'hidden',
+          overscrollBehaviorY: 'contain',
           ...(typingClearance > 0 ? { paddingBottom: typingClearance } : {}),
         }}
       >
