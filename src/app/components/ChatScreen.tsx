@@ -315,13 +315,14 @@ export function ChatScreen({
   }, [isPartnerTyping]);
 
   useLayoutEffect(() => {
-    if (!isPartnerTyping || typingClearance <= 0) return;
+    if (!isPartnerTyping || typingClearance <= 0 || !scrollAnchorReady) return;
     const container = messagesContainerRef.current;
-    if (!container || !initialScrollDoneRef.current) return;
+    if (!container) return;
+
     if (isNearBottom(container)) {
-      scrollContainerToBottomStable(container);
+      requestAnimationFrame(() => scrollContainerToBottomStable(container));
     }
-  }, [isPartnerTyping, typingClearance]);
+  }, [isPartnerTyping, typingClearance, scrollAnchorReady]);
 
   const loadOlderAndPreserveScroll = useCallback(async () => {
     if (loadingMore || !hasMore || isLoadingOlderRef.current) return;

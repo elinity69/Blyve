@@ -494,6 +494,9 @@ export function MessagesScreen() {
   const lastPushedVoiceKeyRef = useRef<string | null>(null);
   const pendingConversationIdRef = useRef<string | null>(null);
   const lastOpenedConversationIdRef = useRef<string | null>(null);
+  const pushScreenRef = useRef<(content: React.ReactNode, id?: string) => void>(() => {});
+  const popScreenRef = useRef<() => void>(() => {});
+  const clearStackRef = useRef<() => void>(() => {});
 
   const openDmChat = React.useCallback(
     (conv: Conversation) => {
@@ -1560,7 +1563,6 @@ export function MessagesScreen() {
       loadProfile();
   }, [profilePreviewUserId]);
 
-  const [baseContent, setBaseContent] = useState<React.ReactNode>(<div />);
   const reopenLastConversation = React.useCallback(() => {
     const conversationId = lastOpenedConversationIdRef.current;
     if (!conversationId || !currentUserId) return;
@@ -1568,31 +1570,22 @@ export function MessagesScreen() {
     openConversationById(conversationId);
   }, [currentUserId, openConversationById]);
 
-  const { pushScreen, popScreen, clearStack, renderLayers } = useEdgeBackNavigation({
-    baseContent,
-    onStackChange: (stackDepth) => {
-      if (stackDepth === 0) {
-        lastPushedChatIdRef.current = null;
-        if (lastPushedGroupIdRef.current) {
-          setSelectedChannelId(null);
-          lastPushedGroupIdRef.current = null;
-        }
-      }
-    },
-    onForwardSwipe: reopenLastConversation,
-  });
-  const pushScreenRef = useRef(pushScreen);
-  const popScreenRef = useRef(popScreen);
-  const clearStackRef = useRef(clearStack);
+  const handleNavigationStackChange = React.useCallback((stackDepth: number) => {
+    if (stackDepth !== 0) return;
 
-  useEffect(() => {
-    pushScreenRef.current = pushScreen;
-    popScreenRef.current = popScreen;
-  }, [pushScreen, popScreen]);
+    const wasChatOpen = lastPushedChatIdRef.current !== null;
+    const wasGroupOpen = lastPushedGroupIdRef.current !== null;
 
-  useEffect(() => {
-    clearStackRef.current = clearStack;
-  }, [clearStack]);
+    lastPushedChatIdRef.current = null;
+    if (wasGroupOpen) {
+      setSelectedChannelId(null);
+      lastPushedGroupIdRef.current = null;
+    }
+    if (wasChatOpen) {
+      setSelectedConversationId(null);
+      setSelectedOtherUser(null);
+    }
+  }, []);
 
   const selectDmHome = React.useCallback(() => {
     if (!isDesktop) {
@@ -2074,9 +2067,17 @@ export function MessagesScreen() {
     callDisplayMode,
   ]);
 
+  const { pushScreen, popScreen, clearStack, renderLayers } = useEdgeBackNavigation({
+    baseContent: MessagesContent,
+    onStackChange: handleNavigationStackChange,
+    onForwardSwipe: reopenLastConversation,
+  });
+
   useEffect(() => {
-    setBaseContent(MessagesContent);
-  }, [MessagesContent]);
+    pushScreenRef.current = pushScreen;
+    popScreenRef.current = popScreen;
+    clearStackRef.current = clearStack;
+  }, [pushScreen, popScreen, clearStack]);
 
   useEffect(() => {
     const storedConversationId = localStorage.getItem('openConversation');

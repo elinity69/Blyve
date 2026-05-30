@@ -219,7 +219,6 @@ export function useMessageRealtime(currentUserId: string | null) {
           ? `${message.content.substring(0, 100)}...`
           : message.content || 'New message';
 
-      const appIsVisible = NotificationManager.isAppVisible();
       if (appIsVisible) {
         showToastRef.current({
           type: 'info',

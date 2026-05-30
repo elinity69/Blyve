@@ -363,10 +363,12 @@ export function useConversations() {
     };
   }, [applyConversationPreview]);
 
+  const reload = useCallback(() => loadConversations(true), [loadConversations]);
+
   return {
     conversations,
     loading,
     error,
-    reload: () => loadConversations(true),
+    reload,
   };
 }

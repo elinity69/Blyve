@@ -22,6 +22,7 @@ import { TypingBubble } from './TypingBubble';
 import { NotificationManager } from '../lib/notifications';
 import { MessageReplyComposerBar } from './chat/MessageReplyComposerBar';
 import { ChatMessageComposer } from './chat/ChatMessageComposer';
+import { scrollContainerToBottomStable } from '../lib/chatScroll';
 import { useChatMediaSend } from '../hooks/useChatMediaSend';
 import { MessageRowReplyWrapper } from './chat/MessageRowReplyWrapper';
 import { MessageRowReplyButton } from './chat/MessageRowReplyButton';
@@ -298,9 +299,7 @@ export function GroupThreadScreen({
     if (typers.length === 0 || typingClearance <= 0) return;
     const el = scrollRef.current;
     if (!el) return;
-    requestAnimationFrame(() => {
-      el.scrollTop = el.scrollHeight;
-    });
+    requestAnimationFrame(() => scrollContainerToBottomStable(el));
   }, [typers.length, typingClearance]);
 
   const handleLeave = async () => {
