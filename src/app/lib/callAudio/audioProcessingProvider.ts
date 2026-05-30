@@ -1,4 +1,4 @@
-/** Standard Blyve call audio backend — Jitsi iframe RNNoise via setNoiseSuppressionEnabled. */
+/** Blyve call audio: Jitsi RNNoise (on/off) + Web Audio filter for owned mic streams. */
 export type AudioProcessingBackend = 'jitsi-native';
 
 export function describeActiveBackend(): AudioProcessingBackend {

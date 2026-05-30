@@ -108,7 +108,7 @@ export function useEdgeBackNavigation({
 
         {overlayScreen ? (
           <NavigationStack
-            key={overlayScreen.id}
+            key={topStack ? `stack-${overlayScreen.id}` : `forward-${overlayScreen.id}`}
             isForwardPull={isForwardPull}
             forwardShellRef={previewShellRef}
             skipEnterAnimation={topStack?.skipEnterAnimation ?? true}

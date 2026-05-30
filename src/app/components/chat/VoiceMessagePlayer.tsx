@@ -10,6 +10,11 @@ function formatAudioTime(seconds: number): string {
   return `${mins}:${secs.toString().padStart(2, '0')}`;
 }
 
+function readAudioDuration(audio: HTMLAudioElement): number {
+  const value = audio.duration;
+  return Number.isFinite(value) && value > 0 ? value : 0;
+}
+
 function buildWaveformBars(seed: string, count = 28): number[] {
   let hash = 0;
   for (let i = 0; i < seed.length; i += 1) {
@@ -109,8 +114,8 @@ export function VoiceMessagePlayer({ src, isMe = false }: VoiceMessagePlayerProp
   const syncTimes = useCallback(() => {
     const audio = audioRef.current;
     if (!audio) return;
-    const nextDuration = Number.isFinite(audio.duration) ? audio.duration : 0;
-    setDuration(nextDuration);
+    const nextDuration = readAudioDuration(audio);
+    if (nextDuration > 0) setDuration(nextDuration);
     setCurrentTime(Number.isFinite(audio.currentTime) ? audio.currentTime : 0);
   }, []);
 
@@ -125,6 +130,46 @@ export function VoiceMessagePlayer({ src, isMe = false }: VoiceMessagePlayerProp
     const audio = audioRef.current;
     if (!audio) return undefined;
 
+    let cancelled = false;
+    let seekProbeActive = false;
+
+    const applyDuration = (value: number) => {
+      if (cancelled || value <= 0) return;
+      setDuration(value);
+    };
+
+    const probeWebmDuration = () => {
+      if (seekProbeActive || readAudioDuration(audio) > 0) return;
+      seekProbeActive = true;
+
+      const onSeeked = () => {
+        audio.removeEventListener('seeked', onSeeked);
+        seekProbeActive = false;
+        const resolved = readAudioDuration(audio);
+        if (resolved > 0) applyDuration(resolved);
+        if (!audio.paused) return;
+        try {
+          audio.currentTime = 0;
+        } catch {
+          // ignore reset failures
+        }
+        syncTimes();
+      };
+
+      audio.addEventListener('seeked', onSeeked);
+      try {
+        audio.currentTime = Number.MAX_SAFE_INTEGER;
+      } catch {
+        audio.removeEventListener('seeked', onSeeked);
+        seekProbeActive = false;
+      }
+    };
+
+    const onMetadata = () => {
+      syncTimes();
+      if (readAudioDuration(audio) <= 0) probeWebmDuration();
+    };
+
     const onPlay = () => setPlaying(true);
     const onPause = () => setPlaying(false);
     const onEnded = () => {
@@ -132,16 +177,28 @@ export function VoiceMessagePlayer({ src, isMe = false }: VoiceMessagePlayerProp
       setCurrentTime(0);
     };
 
-    audio.addEventListener('loadedmetadata', syncTimes);
+    setDuration(0);
+    setCurrentTime(0);
+    setPlaying(false);
+
+    audio.addEventListener('loadedmetadata', onMetadata);
     audio.addEventListener('durationchange', syncTimes);
+    audio.addEventListener('loadeddata', onMetadata);
+    audio.addEventListener('canplay', onMetadata);
     audio.addEventListener('timeupdate', syncTimes);
     audio.addEventListener('play', onPlay);
     audio.addEventListener('pause', onPause);
     audio.addEventListener('ended', onEnded);
 
+    audio.load();
+    if (audio.readyState >= HTMLMediaElement.HAVE_METADATA) onMetadata();
+
     return () => {
-      audio.removeEventListener('loadedmetadata', syncTimes);
+      cancelled = true;
+      audio.removeEventListener('loadedmetadata', onMetadata);
       audio.removeEventListener('durationchange', syncTimes);
+      audio.removeEventListener('loadeddata', onMetadata);
+      audio.removeEventListener('canplay', onMetadata);
       audio.removeEventListener('timeupdate', syncTimes);
       audio.removeEventListener('play', onPlay);
       audio.removeEventListener('pause', onPause);

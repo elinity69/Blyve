@@ -1,4 +1,5 @@
 import type { AudioProcessingBackend } from './audioProcessingProvider';
+import { applyAggressiveNoiseFilter, stopAggressiveNoiseFilter } from './aggressiveNoiseFilter';
 import {
   applyJitsiNoiseSuppression,
   registerJitsiMeetingApi,
@@ -10,10 +11,12 @@ import {
 
 export type { JitsiCommandApi };
 
-/** Standard call audio: Jitsi RNNoise via setNoiseSuppressionEnabled (always on, no user toggle). */
+/** Jitsi RNNoise (toggle only) + supplemental Web Audio filter for Blyve-owned streams. */
 const JITSI_NATIVE_BACKEND: AudioProcessingBackend = 'jitsi-native';
 
 let sessionActive = false;
+let processedStream: MediaStream | null = null;
+let rawInputStream: MediaStream | null = null;
 
 export const premiumCallAudio = {
   getActiveBackend(): AudioProcessingBackend {
@@ -21,7 +24,7 @@ export const premiumCallAudio = {
   },
 
   getProcessedStream(): MediaStream | null {
-    return null;
+    return processedStream;
   },
 
   async prepareForCall(_deviceId?: string | null): Promise<void> {
@@ -55,6 +58,7 @@ export const premiumCallAudio = {
     sessionActive = false;
     setCallAudioSessionActive(false);
     unregisterJitsiMeetingApi();
+    releaseProcessedMic();
   },
 
   isSessionActive(): boolean {
@@ -66,6 +70,22 @@ export async function ensurePremiumCallAudio(_deviceId?: string | null): Promise
   await premiumCallAudio.prepareForCall();
 }
 
-export function applyNoiseCancellationToStream(stream: MediaStream): MediaStream {
-  return stream;
+export async function applyNoiseCancellationToStream(stream: MediaStream): Promise<MediaStream> {
+  releaseProcessedMic();
+  rawInputStream = stream;
+  processedStream = await applyAggressiveNoiseFilter(stream);
+  return processedStream;
+}
+
+export function releaseNoiseCancellation(): void {
+  releaseProcessedMic();
+}
+
+function releaseProcessedMic(): void {
+  stopAggressiveNoiseFilter();
+  processedStream = null;
+  if (rawInputStream) {
+    rawInputStream.getAudioTracks().forEach((track) => track.stop());
+  }
+  rawInputStream = null;
 }

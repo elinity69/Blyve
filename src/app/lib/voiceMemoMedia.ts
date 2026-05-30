@@ -1,4 +1,5 @@
-import { premiumCallAudio } from './callAudio/ensurePremiumCallAudio';
+import { applyNoiseCancellationToStream, premiumCallAudio, releaseNoiseCancellation } from './callAudio/ensurePremiumCallAudio';
+import { getPremiumMicConstraintsForPreflight } from './callAudio/browserCapabilities';
 import { markJitsiMicGranted, shouldSkipJitsiPrejoin } from './jitsiMicStorage';
 import {
   checkMicrophonePermission,
@@ -18,6 +19,7 @@ function stopStreamTracks(stream: MediaStream | null) {
 export function releaseVoiceMemoStream(): void {
   stopStreamTracks(warmStream);
   warmStream = null;
+  releaseNoiseCancellation();
 }
 
 /**
@@ -51,10 +53,10 @@ export async function acquireVoiceMemoStream(): Promise<MediaStream | null> {
   }
 
   try {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    const stream = await navigator.mediaDevices.getUserMedia(getPremiumMicConstraintsForPreflight());
     markJitsiMicGranted();
-    warmStream = stream;
-    return stream;
+    warmStream = await applyNoiseCancellationToStream(stream);
+    return warmStream;
   } catch {
     return null;
   }

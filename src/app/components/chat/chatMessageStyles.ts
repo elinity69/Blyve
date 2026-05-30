@@ -2,8 +2,17 @@
 export const CHAT_MESSAGE_LIST_CLASS =
   'min-h-0 flex-1 max-w-full overflow-x-hidden overflow-y-auto overflow-anchor-none overscroll-y-contain blyve-screen-bg px-2 pt-2 pb-1 scroll-pb-2';
 
-/** Extra space below the list when a typing bubble sits above the composer. */
-export const CHAT_TYPING_CLEARANCE_EXTRA_PX = 4;
+/** Gap between the last message bubble and the typing indicator. */
+export const CHAT_TYPING_CLEARANCE_EXTRA_PX = 12;
+
+/** Total vertical space to reserve when a typing indicator is visible. */
+export function measureTypingIndicatorClearance(element: HTMLElement): number {
+  const style = getComputedStyle(element);
+  const marginTop = parseFloat(style.marginTop) || 0;
+  const marginBottom = parseFloat(style.marginBottom) || 0;
+  const height = element.getBoundingClientRect().height;
+  return Math.ceil(height + marginTop + marginBottom + CHAT_TYPING_CLEARANCE_EXTRA_PX);
+}
 /** Space above a new group; no bottom margin so follow-ups stay tight. */
 export const CHAT_MESSAGE_ROW_CLASS = 'w-full mt-2 mb-0 px-0.5';
 /** Extra space when the previous message was from someone else. */

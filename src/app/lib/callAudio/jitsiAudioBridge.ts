@@ -40,7 +40,10 @@ function scheduleNoiseSuppressionReinforcement() {
   }
 }
 
-/** Enables Jitsi extra noise suppression (RNNoise) on the local audio track. */
+/**
+ * Enables Jitsi extra noise suppression (RNNoise) on the local audio track.
+ * Jitsi exposes only on/off — there is no intensity/strength parameter in the iframe API.
+ */
 export function enableJitsiNoiseSuppression(api: JitsiCommandApi | null = activeApi): boolean {
   if (!api || !callAudioSessionActive) return false;
 
@@ -97,11 +100,17 @@ export function reinforceJitsiNoiseSuppressionOnUnmute(): void {
   scheduleNoiseSuppressionReinforcement();
 }
 
-/** Jitsi iframe config: keep audio processing + extra NS enabled (standard for all calls). */
+/**
+ * Jitsi iframe config: browser NS/AEC/HPF + RNNoise (via setNoiseSuppressionEnabled).
+ * disableAGC reduces keyboard/breath pumping between words; RNNoise has no strength knob.
+ */
 export function buildJitsiNoiseSuppressionConfigOverwrite(): Record<string, unknown> {
   return {
     disableNS: false,
     disableAP: false,
+    disableAEC: false,
+    disableHPF: false,
+    disableAGC: true,
     enableNoisyMicDetection: false,
     enableTalkWhileMuted: false,
   };

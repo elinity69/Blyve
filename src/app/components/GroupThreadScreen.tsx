@@ -33,10 +33,10 @@ import {
 } from '../lib/messageReply';
 import {
   CHAT_MESSAGE_LIST_CLASS,
-  CHAT_TYPING_CLEARANCE_EXTRA_PX,
   CHAT_MESSAGE_ROW_INNER_CLASS,
   CHAT_MESSAGE_ROW_INNER_GROUPED_CLASS,
   getChatMessageRowClass,
+  measureTypingIndicatorClearance,
 } from './chat/chatMessageStyles';
 import { MessageRowAvatarSlot } from './chat/MessageRowAvatarSlot';
 import { MessageGroupHeader } from './chat/MessageGroupHeader';
@@ -280,11 +280,14 @@ export function GroupThreadScreen({
 
     const measure = () => {
       const el = typingIndicatorRef.current;
-      const height = el?.offsetHeight ?? 40;
-      setTypingClearance(height + CHAT_TYPING_CLEARANCE_EXTRA_PX);
+      if (!el) return;
+      setTypingClearance(measureTypingIndicatorClearance(el));
     };
     measure();
-    requestAnimationFrame(measure);
+    requestAnimationFrame(() => {
+      measure();
+      requestAnimationFrame(measure);
+    });
 
     let observer: ResizeObserver | undefined;
     if (indicator) {

@@ -39,10 +39,10 @@ import {
 } from '../lib/messageReply';
 import {
   CHAT_MESSAGE_LIST_CLASS,
-  CHAT_TYPING_CLEARANCE_EXTRA_PX,
   CHAT_MESSAGE_ROW_INNER_CLASS,
   CHAT_MESSAGE_ROW_INNER_GROUPED_CLASS,
   getChatMessageRowClass,
+  measureTypingIndicatorClearance,
 } from './chat/chatMessageStyles';
 import { MessageRowAvatarSlot } from './chat/MessageRowAvatarSlot';
 import { MessageGroupHeader } from './chat/MessageGroupHeader';
@@ -308,11 +308,14 @@ export function ChatScreen({
 
     const measure = () => {
       const el = typingIndicatorRef.current;
-      const height = el?.offsetHeight ?? 40;
-      setTypingClearance(height + CHAT_TYPING_CLEARANCE_EXTRA_PX);
+      if (!el) return;
+      setTypingClearance(measureTypingIndicatorClearance(el));
     };
     measure();
-    requestAnimationFrame(measure);
+    requestAnimationFrame(() => {
+      measure();
+      requestAnimationFrame(measure);
+    });
 
     let observer: ResizeObserver | undefined;
     const indicator = typingIndicatorRef.current;
@@ -323,6 +326,13 @@ export function ChatScreen({
 
     return () => observer?.disconnect();
   }, [isPartnerTyping]);
+
+  useLayoutEffect(() => {
+    if (!isPartnerTyping || typingClearance <= 0) return;
+    const container = messagesContainerRef.current;
+    if (!container) return;
+    requestAnimationFrame(() => scrollContainerToBottomStable(container));
+  }, [isPartnerTyping, typingClearance]);
 
   const loadOlderAndPreserveScroll = useCallback(async () => {
     if (loadingMore || !hasMore || isLoadingOlderRef.current) return;
