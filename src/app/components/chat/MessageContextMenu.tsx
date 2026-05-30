@@ -4,7 +4,6 @@ import { Reply, Trash2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useIsMdUp } from '../ui/use-mobile';
 
-const MENU_Z_BACKDROP = 400;
 const MENU_Z_PANEL = 401;
 const OPEN_GRACE_MS = 320;
 
@@ -74,57 +73,44 @@ function MessageContextMenu({
   if (typeof document === 'undefined') return null;
 
   return createPortal(
-    <>
-      <button
-        type="button"
-        className="fixed inset-0 cursor-default bg-black/10"
-        style={{ zIndex: MENU_Z_BACKDROP }}
-        aria-label="Close message menu"
-        onClick={onClose}
-        onContextMenu={(event) => {
-          event.preventDefault();
-          onClose();
-        }}
-      />
-      <div
-        ref={menuRef}
-        className="fixed min-w-[180px] max-w-[min(92vw,280px)] overflow-hidden rounded-xl border border-gray-200 bg-white shadow-2xl dark:border-white/10 dark:bg-[#1e1f22]"
-        style={{ left: position.x, top: position.y, zIndex: MENU_Z_PANEL }}
-        role="menu"
-        onPointerDown={(event) => event.stopPropagation()}
-        onClick={(event) => event.stopPropagation()}
-        onContextMenu={(event) => event.preventDefault()}
-      >
-        <div className="py-1">
+    <div
+      ref={menuRef}
+      className="fixed min-w-[180px] max-w-[min(92vw,280px)] overflow-hidden rounded-xl border border-gray-200 bg-white shadow-2xl dark:border-white/10 dark:bg-[#1e1f22]"
+      style={{ left: position.x, top: position.y, zIndex: MENU_Z_PANEL }}
+      role="menu"
+      onPointerDown={(event) => event.stopPropagation()}
+      onClick={(event) => event.stopPropagation()}
+      onContextMenu={(event) => event.preventDefault()}
+    >
+      <div className="py-1">
+        <button
+          type="button"
+          role="menuitem"
+          onClick={() => {
+            onReply();
+            onClose();
+          }}
+          className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm text-gray-800 transition-colors hover:bg-gray-50 dark:text-gray-100 dark:hover:bg-white/5"
+        >
+          <Reply className="h-4 w-4 shrink-0" aria-hidden />
+          <span>{t('chat.replyToMessage')}</span>
+        </button>
+        {canDelete ? (
           <button
             type="button"
             role="menuitem"
             onClick={() => {
-              onReply();
+              onDelete();
               onClose();
             }}
-            className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm text-gray-800 transition-colors hover:bg-gray-50 dark:text-gray-100 dark:hover:bg-white/5"
+            className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm text-red-600 transition-colors hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-500/10"
           >
-            <Reply className="h-4 w-4 shrink-0" aria-hidden />
-            <span>{t('chat.replyToMessage')}</span>
+            <Trash2 className="h-4 w-4 shrink-0" aria-hidden />
+            <span>{t('chat.deleteMessage')}</span>
           </button>
-          {canDelete ? (
-            <button
-              type="button"
-              role="menuitem"
-              onClick={() => {
-                onDelete();
-                onClose();
-              }}
-              className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm text-red-600 transition-colors hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-500/10"
-            >
-              <Trash2 className="h-4 w-4 shrink-0" aria-hidden />
-              <span>{t('chat.deleteMessage')}</span>
-            </button>
-          ) : null}
-        </div>
+        ) : null}
       </div>
-    </>,
+    </div>,
     document.body
   );
 }
