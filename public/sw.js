@@ -1,4 +1,4 @@
-const CACHE_NAME = 'blyve-v2';
+const CACHE_NAME = 'blyve-v3';
 const PRECACHE_URLS = ['/', '/manifest.json'];
 
 self.addEventListener('install', (event) => {
@@ -26,17 +26,39 @@ self.addEventListener('push', (event) => {
   }
 
   const title = payload.title ?? 'Blyve';
-  const options = {
-    body: payload.body ?? '',
-    icon: payload.icon ?? '/icon.png',
-    badge: '/icon.png',
-    tag: payload.tag,
-    data: payload.data ?? {},
-    silent: false,
-    requireInteraction: false,
-  };
+  const data = payload.data ?? {};
 
-  event.waitUntil(self.registration.showNotification(title, options));
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
+      const hasAnyClient = clientList.length > 0;
+      const hasVisibleClient = clientList.some((client) => client.visibilityState === 'visible');
+
+      if (hasAnyClient) {
+        for (const client of clientList) {
+          client.postMessage({
+            type: 'play-notification-sound',
+            conversationId: data.conversationId ?? null,
+            groupId: data.groupId ?? null,
+          });
+        }
+      }
+
+      // Visible tab: realtime already shows in-app toast — only play custom sound, no OS banner.
+      if (hasVisibleClient) {
+        return undefined;
+      }
+
+      return self.registration.showNotification(title, {
+        body: payload.body ?? '',
+        icon: payload.icon ?? '/icon.png',
+        badge: '/icon.png',
+        tag: payload.tag,
+        data,
+        silent: hasAnyClient,
+        requireInteraction: false,
+      });
+    }),
+  );
 });
 
 self.addEventListener('notificationclick', (event) => {

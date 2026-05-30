@@ -566,8 +566,17 @@ function AppContent({ onUserIdChange }: AppContentProps = {}) {
 
     const handleServiceWorkerMessage = (event: MessageEvent) => {
       const data = event.data;
-      if (!data || data.type !== 'notification-click') return;
-      if (data.conversationId) {
+      if (!data?.type) return;
+
+      if (data.type === 'play-notification-sound') {
+        NotificationManager.playNotificationSound({
+          conversationId: data.conversationId ? String(data.conversationId) : undefined,
+          groupId: data.groupId ? String(data.groupId) : undefined,
+        });
+        return;
+      }
+
+      if (data.type === 'notification-click' && data.conversationId) {
         openConversationInMessages(String(data.conversationId));
       }
     };
