@@ -21,9 +21,20 @@ export const CHAT_MESSAGE_ROW_GROUPED_CLASS = 'w-full mt-0.5 mb-0 px-0.5';
 export const CHAT_MESSAGE_ROW_INNER_CLASS = 'flex w-full items-end gap-2';
 export const CHAT_MESSAGE_ROW_INNER_GROUPED_CLASS = 'flex w-full items-end gap-2';
 export const CHAT_MESSAGE_BUBBLE_TEXT_CLASS =
-  'text-[15px] leading-[1.3] whitespace-pre-wrap break-words';
+  'max-w-full text-[15px] leading-[1.3] whitespace-pre-wrap break-words [overflow-wrap:anywhere]';
 export const CHAT_MESSAGE_BUBBLE_TEXT_GROUPED_CLASS =
-  'text-[15px] leading-[1.25] whitespace-pre-wrap break-words';
+  'max-w-full text-[15px] leading-[1.25] whitespace-pre-wrap break-words [overflow-wrap:anywhere]';
+
+/** Bubble width cap (fixed rem — never use max-w-full / % here; flex parents are ~500px+ wide). */
+export const CHAT_MESSAGE_BUBBLE_MAX_WIDTH_CLASS = 'max-w-80';
+/** Shrink-wrap to content, capped at 20rem (MessageBubble root). */
+export const CHAT_MESSAGE_BUBBLE_SHELL_CLASS = `relative w-max min-w-[3rem] ${CHAT_MESSAGE_BUBBLE_MAX_WIDTH_CLASS}`;
+/** Context-menu target: no box of its own — avoids an extra full-width block in the row. */
+export const CHAT_MESSAGE_BUBBLE_CONTEXT_TARGET_CLASS = 'contents';
+/** Stacked quote + bubble + footer (voice/media). */
+export const CHAT_MESSAGE_BODY_STACK_CLASS = `flex w-max flex-col ${CHAT_MESSAGE_BUBBLE_MAX_WIDTH_CLASS}`;
+/** Align bubble + reply control to the correct side inside the full-width message column. */
+export const CHAT_MESSAGE_BUBBLE_ROW_ALIGN_CLASS = 'flex w-full min-w-0';
 
 export function getChatMessageRowClass(
   isGroupStart: boolean,
@@ -32,4 +43,8 @@ export function getChatMessageRowClass(
   if (!isGroupStart) return CHAT_MESSAGE_ROW_GROUPED_CLASS;
   if (isNewSender) return CHAT_MESSAGE_ROW_NEW_SENDER_CLASS;
   return CHAT_MESSAGE_ROW_CLASS;
+}
+
+export function getChatMessageBubbleRowAlignClass(isMe: boolean): string {
+  return `${CHAT_MESSAGE_BUBBLE_ROW_ALIGN_CLASS} ${isMe ? 'justify-end' : 'justify-start'}`;
 }

@@ -35,6 +35,7 @@ import {
   CHAT_MESSAGE_ROW_INNER_CLASS,
   CHAT_MESSAGE_ROW_INNER_GROUPED_CLASS,
   getChatMessageRowClass,
+  getChatMessageBubbleRowAlignClass,
   measureTypingIndicatorClearance,
 } from './chat/chatMessageStyles';
 import { MessageRowAvatarSlot } from './chat/MessageRowAvatarSlot';
@@ -602,22 +603,24 @@ export function GroupThreadScreen({
                           align={mine ? 'end' : 'start'}
                         />
                       )}
-                      <MessageBubbleActionRow
-                        isMe={mine}
-                        onReply={() =>
-                          setReplyTarget(buildReplyTarget(m, getSenderLabel(m.sender_id, m)))
-                        }
-                      >
-                        <ChatMessageBody
-                          content={m.content}
+                      <div className={getChatMessageBubbleRowAlignClass(mine)}>
+                        <MessageBubbleActionRow
                           isMe={mine}
-                          isBundled={isBundled}
-                          replyQuote={replyQuote}
-                          bubblePosition={groupPosition}
-                          messageTime={messageTime}
-                          isRead={false}
-                        />
-                      </MessageBubbleActionRow>
+                          onReply={() =>
+                            setReplyTarget(buildReplyTarget(m, getSenderLabel(m.sender_id, m)))
+                          }
+                        >
+                          <ChatMessageBody
+                            content={m.content}
+                            isMe={mine}
+                            isBundled={isBundled}
+                            replyQuote={replyQuote}
+                            bubblePosition={groupPosition}
+                            messageTime={messageTime}
+                            isRead={false}
+                          />
+                        </MessageBubbleActionRow>
+                      </div>
                     </div>
                   </div>
                 </div>

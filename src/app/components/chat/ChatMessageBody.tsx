@@ -5,8 +5,10 @@ import { MessageReplyQuote } from './MessageReplyQuote';
 import type { ReplyQuoteData } from '../../lib/messageReply';
 import type { MessageGroupPosition } from '../../lib/messageGrouping';
 import {
+  CHAT_MESSAGE_BUBBLE_MAX_WIDTH_CLASS,
   CHAT_MESSAGE_BUBBLE_TEXT_CLASS,
   CHAT_MESSAGE_BUBBLE_TEXT_GROUPED_CLASS,
+  CHAT_MESSAGE_BODY_STACK_CLASS,
 } from './chatMessageStyles';
 import { MessageTextContent } from './MessageTextContent';
 import { useMessageContentParts } from './MessageContent';
@@ -40,7 +42,7 @@ export function ChatMessageBody({
 
   if (voiceOnly) {
     return (
-      <div className={`flex w-max max-w-full flex-col ${isMe ? 'items-end' : 'items-start'}`}>
+      <div className={`${CHAT_MESSAGE_BODY_STACK_CLASS} ${isMe ? 'items-end' : 'items-start'}`}>
         {replyQuote ? (
           <div className="mb-1 max-w-full">
             <MessageReplyQuote quote={replyQuote} isMe={isMe} />
@@ -56,13 +58,13 @@ export function ChatMessageBody({
 
   if (mediaOnly) {
     return (
-      <div className={`flex w-max max-w-full flex-col ${isMe ? 'items-end' : 'items-start'}`}>
+      <div className={`${CHAT_MESSAGE_BODY_STACK_CLASS} ${isMe ? 'items-end' : 'items-start'}`}>
         {replyQuote ? (
           <div className="mb-1 max-w-full">
             <MessageReplyQuote quote={replyQuote} isMe={isMe} />
           </div>
         ) : null}
-        <div className="max-w-full min-w-0 sm:max-w-[min(100%,20rem)]">
+        <div className={`w-max min-w-0 ${CHAT_MESSAGE_BUBBLE_MAX_WIDTH_CLASS}`}>
           <MessageEmbedList embeds={embeds} isMe={isMe} />
         </div>
         <MessageEmbedTimeFooter time={messageTime} isMe={isMe} isRead={isRead} />
@@ -71,20 +73,18 @@ export function ChatMessageBody({
   }
 
   return (
-    <div className={`flex w-max max-w-full flex-col ${isMe ? 'items-end' : 'items-start'}`}>
-      <MessageBubble position={bubblePosition} isMe={isMe} time={messageTime} isRead={isRead}>
-        {replyQuote ? <MessageReplyQuote quote={replyQuote} isMe={isMe} /> : null}
-        {showText ? (
-          <MessageTextContent
-            content={content}
-            isMe={isMe}
-            className={textClassName}
-            suppressUrls={suppressUrls}
-            embeds={embeds}
-          />
-        ) : null}
-        {embeds.length > 0 ? <MessageEmbedList embeds={embeds} inBubble isMe={isMe} /> : null}
-      </MessageBubble>
-    </div>
+    <MessageBubble position={bubblePosition} isMe={isMe} time={messageTime} isRead={isRead}>
+      {replyQuote ? <MessageReplyQuote quote={replyQuote} isMe={isMe} /> : null}
+      {showText ? (
+        <MessageTextContent
+          content={content}
+          isMe={isMe}
+          className={textClassName}
+          suppressUrls={suppressUrls}
+          embeds={embeds}
+        />
+      ) : null}
+      {embeds.length > 0 ? <MessageEmbedList embeds={embeds} inBubble isMe={isMe} /> : null}
+    </MessageBubble>
   );
 }

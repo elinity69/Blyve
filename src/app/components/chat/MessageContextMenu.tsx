@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { Reply, Trash2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useIsMdUp } from '../ui/use-mobile';
+import { CHAT_MESSAGE_BUBBLE_CONTEXT_TARGET_CLASS } from './chatMessageStyles';
 
 const MENU_Z_PANEL = 401;
 const OPEN_GRACE_MS = 320;
@@ -149,7 +150,7 @@ export function MessageContextMenuWrapper({
   return (
     <>
       <div
-        className="w-max max-w-full min-w-0"
+        className={CHAT_MESSAGE_BUBBLE_CONTEXT_TARGET_CLASS}
         data-message-bubble
         onContextMenuCapture={isMdUp ? handleContextMenu : undefined}
       >

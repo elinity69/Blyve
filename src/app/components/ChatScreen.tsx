@@ -28,9 +28,7 @@ import { MessageReplyComposerBar } from './chat/MessageReplyComposerBar';
 import { ChatMessageComposer } from './chat/ChatMessageComposer';
 import { useChatMediaSend } from '../hooks/useChatMediaSend';
 import { normalizeGifUrlForMessage } from '../lib/embedMediaResolver';
-import { MessageContextMenuWrapper } from './chat/MessageContextMenu';
-import { MessageRowReplyWrapper } from './chat/MessageRowReplyWrapper';
-import { MessageRowReplyButton } from './chat/MessageRowReplyButton';
+import { MessageBubbleActionRow } from './chat/MessageBubbleActionRow';
 import {
   buildReplyTarget,
   resolveReplyQuote,
@@ -42,6 +40,7 @@ import {
   CHAT_MESSAGE_ROW_INNER_CLASS,
   CHAT_MESSAGE_ROW_INNER_GROUPED_CLASS,
   getChatMessageRowClass,
+  getChatMessageBubbleRowAlignClass,
 } from './chat/chatMessageStyles';
 import { MessageRowAvatarSlot } from './chat/MessageRowAvatarSlot';
 import { MessageGroupHeader } from './chat/MessageGroupHeader';
@@ -730,45 +729,31 @@ export function ChatScreen({
                               align={isMe ? 'end' : 'start'}
                             />
                           )}
-                          <div
-                            className={`group/bubble flex max-w-full min-w-0 items-start gap-1.5 ${
-                              isMe ? 'flex-row-reverse' : 'flex-row'
-                            }`}
-                          >
-                            <MessageRowReplyWrapper
+                          <div className={getChatMessageBubbleRowAlignClass(isMe)}>
+                            <MessageBubbleActionRow
+                              isMe={isMe}
+                              canDelete={isMe}
                               onReply={() =>
                                 setReplyTarget(buildReplyTarget(msg, getSenderLabel(msg.sender_id)))
                               }
+                              onDelete={() => {
+                                const confirmed = window.confirm(t('chat.deleteMessageConfirm'));
+                                if (!confirmed) return;
+                                void deleteMessage(msg.id).then((ok) => {
+                                  if (!ok) toast.error(t('chat.deleteMessageFailedTitle'));
+                                });
+                              }}
                             >
-                              <MessageContextMenuWrapper
-                                canDelete={isMe}
-                                onReply={() =>
-                                  setReplyTarget(buildReplyTarget(msg, getSenderLabel(msg.sender_id)))
-                                }
-                                onDelete={() => {
-                                  const confirmed = window.confirm(t('chat.deleteMessageConfirm'));
-                                  if (!confirmed) return;
-                                  void deleteMessage(msg.id).then((ok) => {
-                                    if (!ok) toast.error(t('chat.deleteMessageFailedTitle'));
-                                  });
-                                }}
-                              >
-                                <ChatMessageBody
-                                  content={msg.content}
-                                  isMe={isMe}
-                                  isBundled={isBundled}
-                                  replyQuote={replyQuote}
-                                  bubblePosition={groupPosition}
-                                  messageTime={messageTime}
-                                  isRead={isOutgoingMessageRead(msg, messages, currentUserId)}
-                                />
-                              </MessageContextMenuWrapper>
-                            </MessageRowReplyWrapper>
-                            <MessageRowReplyButton
-                              onReply={() =>
-                                setReplyTarget(buildReplyTarget(msg, getSenderLabel(msg.sender_id)))
-                              }
-                            />
+                              <ChatMessageBody
+                                content={msg.content}
+                                isMe={isMe}
+                                isBundled={isBundled}
+                                replyQuote={replyQuote}
+                                bubblePosition={groupPosition}
+                                messageTime={messageTime}
+                                isRead={isOutgoingMessageRead(msg, messages, currentUserId)}
+                              />
+                            </MessageBubbleActionRow>
                           </div>
                           {isLastOwnMessage && isGroupEnd && msg.read_at && (
                             <div className="mt-0.5 text-right text-[10px] leading-none text-[#8E8E93]">

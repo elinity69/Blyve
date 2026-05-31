@@ -1,6 +1,7 @@
 import React from 'react';
 import { CheckCheck } from 'lucide-react';
 import type { MessageGroupPosition } from '../../lib/messageGrouping';
+import { CHAT_MESSAGE_BUBBLE_SHELL_CLASS } from './chatMessageStyles';
 import {
   getMessageBubbleColors,
   getMessageBubbleRadius,
@@ -25,12 +26,12 @@ export function MessageBubble({
   const tailClass = getMessageBubbleTailClass(position, isMe);
 
   return (
-    <div className="relative w-max max-w-full min-w-[3rem] sm:max-w-[min(100%,20rem)]">
+    <div className={CHAT_MESSAGE_BUBBLE_SHELL_CLASS}>
       <div
         className={`relative px-3 py-1.5 ${getMessageBubbleRadius(position, isMe)} ${getMessageBubbleColors(isMe)} ${tailClass}`}
       >
-        <div className="flex w-full max-w-full flex-col gap-0.5">
-          <div className="min-w-0 max-w-full">{children}</div>
+        <div className="flex min-w-0 flex-col gap-0.5">
+          <div className="min-w-0">{children}</div>
           {time ? (
             <span
               className={`inline-flex shrink-0 items-center gap-0.5 self-end whitespace-nowrap text-[10px] leading-none ${

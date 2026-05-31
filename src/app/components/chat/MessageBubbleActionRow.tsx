@@ -29,7 +29,7 @@ export function MessageBubbleActionRow({
 
   const bubble = (
     <div
-      className="relative w-max max-w-full min-w-0 touch-pan-y"
+      className="relative w-max min-w-0 shrink touch-pan-y"
       style={{
         transform: offsetX < 0 ? `translateX(${offsetX}px)` : undefined,
         transition: offsetX < 0 ? 'none' : 'transform 0.2s ease-out',
@@ -55,17 +55,13 @@ export function MessageBubbleActionRow({
           {children}
         </MessageContextMenuWrapper>
       ) : (
-        <div className="w-max max-w-full min-w-0">{children}</div>
+        children
       )}
     </div>
   );
 
   return (
-    <div
-      className={`group/bubble inline-flex w-max max-w-full min-w-0 items-center gap-1.5 flex-row ${
-        isMe ? 'self-end' : 'self-start'
-      }`}
-    >
+    <div className="group/bubble flex w-max min-w-0 items-center gap-1.5">
       {isMe ? (
         <>
           <MessageRowReplyButton onReply={onReply} />
