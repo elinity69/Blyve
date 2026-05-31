@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useQueryClient, useQuery } from '@tanstack/react-query';
 import { useEdgeBackNavigation } from '../hooks/useEdgeBackNavigation';
+import { navDebug } from '../lib/navDebug';
 import { useConversations } from '../hooks/useConversations';
 import { ChatScreen } from './ChatScreen';
 import { GroupThreadScreen } from './GroupThreadScreen';
@@ -507,21 +508,26 @@ export function MessagesScreen({ isTabActive = true }: MessagesScreenProps) {
     (conv: Conversation) => {
       const otherUser = conv.other_user;
       const imageUrl = otherUser.imageUrl ? getOptimizedImageUrl(otherUser.imageUrl, 200) : undefined;
-      lastOpenedConversationIdRef.current = conv.id;
-      setSelectedGroup(null);
-      setSelectedChannelId(null);
-      lastPushedGroupIdRef.current = null;
-      setSelectedConversationId(conv.id);
-      setSelectedOtherUser({
-        id: otherUser.id,
-        name: otherUser.name,
-        display_name: otherUser.display_name,
-        username: otherUser.username,
-        imageUrl,
-        is_online: otherUser.is_online,
-        age: otherUser.age,
-      });
-      void ensureFreshDmMessages(queryClient, conv.id);
+
+      const applyOpen = () => {
+        lastOpenedConversationIdRef.current = conv.id;
+        setSelectedGroup(null);
+        setSelectedChannelId(null);
+        lastPushedGroupIdRef.current = null;
+        setSelectedConversationId(conv.id);
+        setSelectedOtherUser({
+          id: otherUser.id,
+          name: otherUser.name,
+          display_name: otherUser.display_name,
+          username: otherUser.username,
+          imageUrl,
+          is_online: otherUser.is_online,
+          age: otherUser.age,
+        });
+        void ensureFreshDmMessages(queryClient, conv.id);
+      };
+
+      applyOpen();
     },
     [queryClient]
   );
@@ -1574,10 +1580,12 @@ export function MessagesScreen({ isTabActive = true }: MessagesScreenProps) {
     openConversationById(conversationId);
   }, [currentUserId, openConversationById]);
 
+  const mobileStackDepthRef = useRef(0);
+
   const handleNavigationStackChange = React.useCallback((stackDepth: number) => {
+    mobileStackDepthRef.current = stackDepth;
     if (stackDepth !== 0) return;
 
-    const wasChatOpen = lastPushedChatIdRef.current !== null;
     const wasGroupOpen = lastPushedGroupIdRef.current !== null;
 
     lastPushedChatIdRef.current = null;
@@ -1585,10 +1593,7 @@ export function MessagesScreen({ isTabActive = true }: MessagesScreenProps) {
       setSelectedChannelId(null);
       lastPushedGroupIdRef.current = null;
     }
-    if (wasChatOpen) {
-      setSelectedConversationId(null);
-      setSelectedOtherUser(null);
-    }
+    // Keep DM selection when popping to forward-pull cache (onBack uses clearSelection: false).
   }, []);
 
   const selectDmHome = React.useCallback(() => {
@@ -1678,7 +1683,7 @@ export function MessagesScreen({ isTabActive = true }: MessagesScreenProps) {
 
     return (
       <div
-        className="h-full min-h-0 w-full flex flex-row blyve-app-bg overflow-hidden pb-16 box-border"
+        className="h-full min-h-0 w-full flex flex-row blyve-app-bg overflow-hidden box-border"
       >
         <div
           className="flex flex-col items-center gap-2 py-3 px-1.5 w-[4.5rem] shrink-0 overflow-visible bg-[#1e1f22] border-r border-black/30"
@@ -1877,7 +1882,7 @@ export function MessagesScreen({ isTabActive = true }: MessagesScreenProps) {
           </div>
           <div
             data-messages-preview-scroll
-            className="flex-1 min-h-0 overflow-y-auto overscroll-y-contain [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]"
+            className="flex-1 min-h-0 overflow-y-auto overscroll-y-contain pb-16 md:pb-0 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]"
           >
           {!selectedGroup ? (
             conversations.length === 0 ? (
@@ -2130,7 +2135,18 @@ export function MessagesScreen({ isTabActive = true }: MessagesScreenProps) {
       lastPushedChatIdRef.current = null;
       return;
     }
-    if (lastPushedChatIdRef.current === selectedConversationId) return;
+    if (
+      lastPushedChatIdRef.current === selectedConversationId &&
+      mobileStackDepthRef.current > 0
+    ) {
+      return;
+    }
+    navDebug.log('messages', 'pushChatEffect', {
+      conversationId: selectedConversationId,
+      stackDepth: mobileStackDepthRef.current,
+      lastPushed: lastPushedChatIdRef.current,
+      trace: navDebug.captureTrace(),
+    });
     lastPushedChatIdRef.current = selectedConversationId;
     pushScreenRef.current(
       <ChatScreen
@@ -2139,6 +2155,10 @@ export function MessagesScreen({ isTabActive = true }: MessagesScreenProps) {
         otherUser={{ ...selectedOtherUser, age: selectedOtherUser.age }}
         currentUserId={currentUserId}
         onBack={() => {
+          navDebug.log('messages', 'chatHeaderBack', {
+            conversationId: selectedConversationId,
+            trace: navDebug.captureTrace(),
+          });
           handleLeaveChat(selectedConversationId, { clearSelection: false });
           popScreenRef.current();
         }}
@@ -2756,7 +2776,7 @@ function GroupRailIcon({
   onOpenActions,
 }: GroupRailIconProps) {
   const { t } = useTranslation();
-  const longPress = useLongPress(onOpenActions);
+  const { bind: longPress } = useLongPress(onOpenActions);
   const { onPointerDown: onLongPressPointerDown, ...longPressHandlers } = longPress;
   const hue = groupAccentHue(group.id);
   const initial = (group.name?.trim().charAt(0) || '?').toUpperCase();
@@ -2805,7 +2825,7 @@ interface ServerTitleButtonProps {
 }
 
 function ServerTitleButton({ name, onOpenActions }: ServerTitleButtonProps) {
-  const longPress = useLongPress(onOpenActions);
+  const { bind: longPress } = useLongPress(onOpenActions);
 
   return (
     <div
@@ -2864,7 +2884,8 @@ function ConversationListRow({
   onOpenActions,
 }: ConversationListRowProps) {
   const { t } = useTranslation();
-  const longPress = useLongPress(onOpenActions);
+  const { bind: longPress, wasTriggered } = useLongPress(onOpenActions);
+  const touchOpenedRef = useRef(false);
 
   const lastMessagePreview = useMemo(
     () =>
@@ -2885,7 +2906,14 @@ function ConversationListRow({
     <div
       role="button"
       tabIndex={0}
-      onClick={onOpenChat}
+      onClick={(event) => {
+        if (touchOpenedRef.current) {
+          event.preventDefault();
+          touchOpenedRef.current = false;
+          return;
+        }
+        onOpenChat();
+      }}
       onKeyDown={(event) => {
         if (event.key === 'Enter' || event.key === ' ') {
           event.preventDefault();
@@ -2896,7 +2924,12 @@ function ConversationListRow({
         onPrefetch();
         longPress.onPointerDown(event);
       }}
-      onPointerUp={longPress.onPointerUp}
+      onPointerUp={(event) => {
+        longPress.onPointerUp(event);
+        if (event.pointerType !== 'touch' || wasTriggered()) return;
+        touchOpenedRef.current = true;
+        onOpenChat();
+      }}
       onPointerLeave={longPress.onPointerLeave}
       onPointerCancel={longPress.onPointerCancel}
       onClickCapture={longPress.onClickCapture}

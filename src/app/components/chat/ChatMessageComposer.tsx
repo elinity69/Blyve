@@ -55,7 +55,11 @@ export function ChatMessageComposer({
   onDropActiveChange,
 }: ChatMessageComposerProps) {
   const { t } = useTranslation();
-  const [inVisualViewportShell, setInVisualViewportShell] = useState(false);
+  const [inVisualViewportShell, setInVisualViewportShell] = useState(() =>
+    typeof document !== 'undefined'
+      ? !!document.querySelector('[data-visual-viewport-shell]')
+      : false
+  );
   const fileInputRef = useRef<HTMLInputElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const voiceStreamRef = useRef<MediaStream | null>(null);
@@ -283,9 +287,9 @@ export function ChatMessageComposer({
     <div
       ref={assignRootRef}
       data-chat-composer
-      className={`relative z-20 mt-auto shrink-0 border-t border-gray-200 blyve-border-subtle blyve-screen-bg px-4 pt-2 ${
-        dropActive ? 'ring-2 ring-inset ring-orange-400/60' : ''
-      }`}
+      className={`relative mt-auto shrink-0 border-t border-gray-200 blyve-border-subtle blyve-screen-bg px-4 pt-2 ${
+        isMobile && inVisualViewportShell ? 'z-30' : 'z-20'
+      } ${dropActive ? 'ring-2 ring-inset ring-orange-400/60' : ''}`}
       style={{ paddingBottom: composerPaddingBottom }}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}

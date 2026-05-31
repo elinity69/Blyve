@@ -135,7 +135,7 @@ export function SharedProfileView({
     onOpenConversationActions(event, conversationId);
   };
 
-  const profileLongPress = useLongPress(openActionsFromProfile);
+  const { bind: profileLongPress } = useLongPress(openActionsFromProfile);
   const profileActionHandlers =
     conversationId && onOpenConversationActions
       ? {

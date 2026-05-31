@@ -1,9 +1,17 @@
 import { useCallback, useRef } from 'react';
 
+export type LongPressBind = {
+  onPointerDown: (event: React.PointerEvent) => void;
+  onPointerUp: (event: React.PointerEvent) => void;
+  onPointerLeave: (event: React.PointerEvent) => void;
+  onPointerCancel: (event: React.PointerEvent) => void;
+  onClickCapture: (event: React.MouseEvent) => void;
+};
+
 export function useLongPress(
   onLongPress: (event: React.PointerEvent) => void,
   delay = 500
-) {
+): { bind: LongPressBind; wasTriggered: () => boolean } {
   const timeoutRef = useRef<number | null>(null);
   const longPressTriggeredRef = useRef(false);
 
@@ -35,11 +43,15 @@ export function useLongPress(
     }
   }, []);
 
-  return {
+  const wasTriggered = useCallback(() => longPressTriggeredRef.current, []);
+
+  const bind: LongPressBind = {
     onPointerDown,
     onPointerUp: clear,
     onPointerLeave: clear,
     onPointerCancel: clear,
     onClickCapture,
   };
+
+  return { bind, wasTriggered };
 }

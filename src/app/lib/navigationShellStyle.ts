@@ -1,16 +1,46 @@
 import { MOBILE_VV_CSS } from './mobileViewport';
 
-export const NAV_SWIPE_EASE = [0.32, 0.72, 0, 1] as const;
-export const NAV_SWIPE_COMPLETE_S = 0.28;
-export const NAV_SWIPE_CANCEL_MS = 200;
-export const NAV_SWIPE_VELOCITY_THRESHOLD = 0.35;
+/** Framer spring for snap / cancel (iOS-style settle). */
+export const NAV_SWIPE_SPRING = {
+  type: 'spring' as const,
+  stiffness: 380,
+  damping: 36,
+  mass: 0.85,
+  restDelta: 0.75,
+  restSpeed: 0.75,
+};
+/** Static enter/exit when not finger-tracking. */
+export const NAV_SWIPE_EASE = [0.22, 0.61, 0.36, 1] as const;
+/** Push enter — slower ease-out so the panel does not overshoot past x=0. */
+export const NAV_ENTER_EASE = [0.25, 0.46, 0.45, 0.94] as const;
+export const NAV_SWIPE_COMPLETE_S = 0.32;
+export const NAV_ENTER_DURATION_S = 0.4;
+export const NAV_SWIPE_CANCEL_MS = 280;
+export const NAV_SWIPE_VELOCITY_THRESHOLD = 0.28;
 export const NAV_SWIPE_DISTANCE_RATIO = 0.33;
 export const NAV_SWIPE_MIN_DISTANCE_PX = 56;
 /** Snap / hide threshold so the panel never rests slightly on-screen. */
 export const NAV_SWIPE_OFFSCREEN_EPSILON_PX = 0.5;
+/** Ignore touches right after push — blocks tap ghost from the list row. */
+/** Block swipe-back from list-row tap ghost (starts at push). */
+export const NAV_ENTER_GRACE_MS = 720;
+/** Extra block after enter animation completes (extends grace, never shortens). */
+export const NAV_POST_ENTER_GRACE_MS = 520;
+/** Extra px off-screen so preview/chat never peek through subpixel gaps. */
+export const NAV_PANEL_HIDE_OVERSHOOT_PX = 24;
+/** Fixed `BottomNavigation` row (`h-16`) — stack viewport stops above this band. */
+export const MOBILE_BOTTOM_NAV_HEIGHT_PX = 64;
+
+/** Left bleed cover when the stack panel is fully open (hides preview edge peek). */
+export function stackPanelOpenBoxShadow(): string {
+  const bg = 'var(--color-background, #0d0d0d)';
+  return `-${NAV_PANEL_HIDE_OVERSHOOT_PX}px 0 0 0 ${bg}, -5px 0 20px rgba(0,0,0,0.15)`;
+}
 /** Right-edge inset for forward (re-open) swipe — left 50% of screen is list-only. */
 export const FORWARD_EDGE_RATIO = 0.5;
 export const FORWARD_EDGE_INSET_RATIO = FORWARD_EDGE_RATIO;
+/** Left-edge inset for swipe-back — ignores taps from the conversation list center. */
+export const BACK_EDGE_INSET_RATIO = 0.18;
 
 export function clearNavSwipeLocks(shell?: HTMLDivElement | null) {
   if (typeof document === 'undefined') return;
@@ -50,11 +80,10 @@ export const navigationStackShellStyle = {
   top: `var(${MOBILE_VV_CSS.offsetTop}, 0px)`,
   left: 0,
   right: 0,
+  bottom: 0,
   boxSizing: 'border-box' as const,
-  height: `calc(var(${MOBILE_VV_CSS.height}, 100dvh) + var(${MOBILE_VV_CSS.bottomInset}, 0px))`,
   paddingBottom: `var(${MOBILE_VV_CSS.bottomInset}, 0px)`,
-  bottom: 'auto' as const,
-  zIndex: 10,
+  zIndex: 55,
   backgroundColor: 'var(--color-background, #0d0d0d)',
   boxShadow: '-5px 0 20px rgba(0,0,0,0.15)',
   overflowX: 'hidden' as const,
@@ -65,16 +94,25 @@ export const navigationStackShellStyle = {
 };
 
 export const navigationPreviewShellStyle = {
-  ...navigationStackShellStyle,
-  zIndex: 5,
+  position: 'absolute' as const,
+  inset: 0,
+  zIndex: 0,
+  overflow: 'hidden' as const,
+  backgroundColor: 'var(--color-background, #0d0d0d)',
 };
 
 export const navigationStackShellStyleDesktop = {
-  ...navigationStackShellStyle,
-  top: 0,
+  position: 'relative' as const,
+  top: 'auto',
+  left: 'auto',
+  right: 'auto',
+  bottom: 'auto',
+  width: '100%',
   height: '100%',
-  paddingBottom: 0,
+  zIndex: 'auto' as const,
+  backgroundColor: 'var(--color-background, #0d0d0d)',
+  boxShadow: 'none',
   overflowX: 'hidden' as const,
-  overflowY: 'auto' as const,
-  WebkitOverflowScrolling: 'touch' as const,
+  overflowY: 'hidden' as const,
+  overscrollBehavior: 'contain' as const,
 };

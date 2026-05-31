@@ -189,7 +189,7 @@ export function ChatScreen({
     },
     [conversationId, otherDisplay, otherUser.id, otherUser.imageUrl, otherUser.username]
   );
-  const profileLongPress = useLongPress(openProfileActions);
+  const { bind: profileLongPress } = useLongPress(openProfileActions);
 
   const handleRemoveFriend = useCallback(async () => {
     const confirmed = window.confirm(t('chat.deleteFriendConfirm', { name: otherDisplay }));

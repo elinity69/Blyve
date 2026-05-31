@@ -75,22 +75,9 @@ function AppContent({ onUserIdChange }: AppContentProps = {}) {
   const [showCallJoin, setShowCallJoin] = useState(() => parseCallJoinParams() != null);
   const { state: callState, callDisplayMode } = useCall();
   const isMobile = useIsMobile();
-  const [mobileChatStackOpen, setMobileChatStackOpen] = useState(false);
-
-  useEffect(() => {
-    const onOpen = () => setMobileChatStackOpen(true);
-    const onClose = () => setMobileChatStackOpen(false);
-    window.addEventListener('mobile-chat-stack-open', onOpen);
-    window.addEventListener('mobile-chat-stack-close', onClose);
-    return () => {
-      window.removeEventListener('mobile-chat-stack-open', onOpen);
-      window.removeEventListener('mobile-chat-stack-close', onClose);
-    };
-  }, []);
-
-  const hideBottomNavigation =
-    (isMobile && mobileChatStackOpen) ||
-    (callState === 'in_call' && callDisplayMode === 'fullscreen');
+  const hideBottomNavigationForCall =
+    callState === 'in_call' && callDisplayMode === 'fullscreen';
+  const showBottomNavigation = !hideBottomNavigationForCall;
 
   const refreshCallJoinRoute = useCallback(() => {
     const params = parseCallJoinParams();
@@ -686,7 +673,7 @@ function AppContent({ onUserIdChange }: AppContentProps = {}) {
         />
       ) : (
         <>
-          <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden blyve-app-bg shadow-none md:shadow-none w-full">
+          <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden blyve-app-bg shadow-none md:shadow-none w-full md:pb-16 box-border">
             {/* Virtual Slide Map - Alle Screens permanent gemountet, horizontal positioniert */}
             <div className="relative min-h-0 flex-1 w-full overflow-hidden blyve-app-bg">
               {(['messages', 'profile'] as const).map((tab, index) => {
@@ -781,7 +768,7 @@ function AppContent({ onUserIdChange }: AppContentProps = {}) {
               })}
             </div>
           </div>
-          {!hideBottomNavigation ? (
+          {showBottomNavigation ? (
             <BottomNavigation
               activeTab={activeTab}
               onTabChange={(tab) => {
