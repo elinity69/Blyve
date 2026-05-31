@@ -1,7 +1,5 @@
 export interface ReadReceiptMessage {
-  id?: string;
   sender_id: string;
-  created_at: string;
   read_at?: string | null;
   is_read?: boolean | null;
 }
@@ -38,8 +36,7 @@ export function getUnreadMessageIdsFromOthers(
       (message) =>
         message.sender_id !== currentUserId && !message.is_read && !message.read_at
     )
-    .map((message) => message.id!)
-    .filter(Boolean)
+    .map((message) => message.id)
     .sort();
 }
 
@@ -57,39 +54,7 @@ export function hasUnreadMessagesFromOthers(
   return getUnreadMessageIdsFromOthers(messages, currentUserId).length > 0;
 }
 
-function readReceiptMs(message: ReadReceiptMessage): number {
-  if (message.read_at) {
-    const ms = new Date(message.read_at).getTime();
-    if (!Number.isNaN(ms)) return ms;
-  }
-  if (message.is_read) {
-    const ms = new Date(message.created_at).getTime();
-    if (!Number.isNaN(ms)) return ms;
-  }
-  return 0;
-}
-
-/** Latest read receipt timestamp among own messages (for “Gelesen” label). */
-export function getLatestOwnReadAt(
-  messages: ReadReceiptMessage[],
-  currentUserId: string
-): string | null {
-  let bestMs = 0;
-  let bestAt: string | null = null;
-
-  for (const message of messages) {
-    if (message.sender_id !== currentUserId) continue;
-    const ms = readReceiptMs(message);
-    if (ms > bestMs) {
-      bestMs = ms;
-      bestAt = message.read_at ?? message.created_at;
-    }
-  }
-
-  return bestAt;
-}
-
-/** Own messages at or before the latest read receipt count as read. */
+/** If the last own message is read, all earlier own messages count as read too. */
 export function isOutgoingMessageRead(
   message: ReadReceiptMessage,
   messages: ReadReceiptMessage[],
@@ -97,14 +62,12 @@ export function isOutgoingMessageRead(
 ): boolean {
   if (message.sender_id !== currentUserId) return false;
 
-  let latestReadMs = 0;
-  for (const row of messages) {
-    if (row.sender_id !== currentUserId) continue;
-    latestReadMs = Math.max(latestReadMs, readReceiptMs(row));
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const lastOwn = messages[i];
+    if (lastOwn.sender_id !== currentUserId) continue;
+    if (lastOwn.read_at || lastOwn.is_read) return true;
+    break;
   }
 
-  if (latestReadMs === 0) return false;
-
-  const messageMs = new Date(message.created_at).getTime();
-  return !Number.isNaN(messageMs) && messageMs <= latestReadMs;
+  return !!(message.read_at || message.is_read);
 }

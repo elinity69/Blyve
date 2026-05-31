@@ -17,7 +17,6 @@ import {
   DM_MESSAGES_PAGE_SIZE,
   dmMessagesQueryKey,
   fetchDmMessages,
-  mergeDmMessageRecord,
   mergeDmMessagesById,
 } from '../lib/chatMessages';
 import {
@@ -230,7 +229,9 @@ export function useChat(conversationId: string | null, onMessageSent?: (conversa
     if (fetchedMessages) {
       setMessages((prev) => {
         const incoming = fetchedMessages as Message[];
-        if (prev.length === 0) return incoming;
+        if (conversationChanged || prev.length === 0) {
+          return incoming;
+        }
         return mergeDmMessagesById(prev, incoming);
       });
       setHasMore(fetchedMessages.length === pageSize);
@@ -364,20 +365,14 @@ export function useChat(conversationId: string | null, onMessageSent?: (conversa
             ) {
               const updatedMessage = payload.new as Message;
               setMessages((prev) =>
-                prev.map((m) =>
-                  m.id === updatedMessage.id
-                    ? mergeDmMessageRecord(m, updatedMessage)
-                    : m
-                )
+                prev.map((m) => (m.id === updatedMessage.id ? updatedMessage : m))
               );
               queryClient.setQueryData<Message[]>(
                 dmMessagesQueryKey(conversationId),
                 (cached) => {
                   if (!cached?.length) return cached;
                   return cached.map((m) =>
-                    m.id === updatedMessage.id
-                      ? mergeDmMessageRecord(m, updatedMessage)
-                      : m
+                    m.id === updatedMessage.id ? updatedMessage : m
                   );
                 }
               );
@@ -386,20 +381,7 @@ export function useChat(conversationId: string | null, onMessageSent?: (conversa
 
             const updatedMessage = payload.new as Message;
             setMessages((prev) =>
-              prev.map((m) =>
-                m.id === updatedMessage.id ? mergeDmMessageRecord(m, updatedMessage) : m
-              )
-            );
-            queryClient.setQueryData<Message[]>(
-              dmMessagesQueryKey(conversationId),
-              (cached) => {
-                if (!cached?.length) return cached;
-                return cached.map((m) =>
-                  m.id === updatedMessage.id
-                    ? mergeDmMessageRecord(m, updatedMessage)
-                    : m
-                );
-              }
+              prev.map((m) => (m.id === updatedMessage.id ? updatedMessage : m))
             );
           }
         )
@@ -504,7 +486,7 @@ export function useChat(conversationId: string | null, onMessageSent?: (conversa
             (cached) => {
               const base = cached ?? [];
               if (base.some((m) => m.id === newMessage.id)) return base;
-              return mergeDmMessagesById(base, [newMessage as Message]);
+              return [...base, newMessage as Message];
             }
           );
 

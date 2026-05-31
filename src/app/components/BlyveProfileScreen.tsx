@@ -3,7 +3,7 @@ import { AnimatePresence } from 'framer-motion';
 import { Settings, Edit2, Camera } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useProfile } from '../hooks/useProfile';
-import { useEdgeBackNavigation } from '../hooks/useEdgeBackNavigation';
+import { MobileNavStack, type MobileNavStackApi } from './MobileNavStack';
 import { SettingsScreen } from './SettingsScreen';
 import { EditProfileScreen } from './EditProfileScreen';
 import { MediaEditScreen } from './MediaEditScreen';
@@ -101,21 +101,20 @@ export function BlyveProfileScreen({
     }
   }, [cachedProfile, profile]);
 
-  // Stack navigation (edge back on mobile)
-  const [baseContent, setBaseContent] = useState<React.ReactNode>(<div />);
-  
-  const { pushScreen, popScreen, clearStack, renderLayers } = useEdgeBackNavigation({
-    baseContent,
-  });
+  const mobileNavApiRef = useRef<MobileNavStackApi | null>(null);
+  const [profilePreview, setProfilePreview] = useState<React.ReactNode>(<div />);
 
-  // ✅ Store pushScreen/popScreen in refs to avoid dependency issues
-  const pushScreenRef = useRef(pushScreen);
-  const popScreenRef = useRef(popScreen);
-  
-  useEffect(() => {
-    pushScreenRef.current = pushScreen;
-    popScreenRef.current = popScreen;
-  }, [pushScreen, popScreen]);
+  const pushScreen = React.useCallback((content: React.ReactNode, id?: string) => {
+    mobileNavApiRef.current?.pushScreen(content, id);
+  }, []);
+
+  const popScreen = React.useCallback(() => {
+    mobileNavApiRef.current?.popScreen();
+  }, []);
+
+  const clearStack = React.useCallback(() => {
+    mobileNavApiRef.current?.clearStack();
+  }, []);
 
   // ✅ Layer A: Profile Content (useMemo for optimization)
   const ProfileContent = useMemo(() => {
@@ -166,9 +165,9 @@ export function BlyveProfileScreen({
             <div className="flex items-center gap-4 mt-2">
               <button
                 onClick={() => {
-                  pushScreenRef.current(
+                  pushScreen(
                     <SettingsScreen
-                      onBack={popScreenRef.current}
+                      onBack={popScreen}
                       onSignOut={onSignOut}
                     />,
                     'settings'
@@ -188,12 +187,12 @@ export function BlyveProfileScreen({
               </button>
               <button
                 onClick={() => {
-                  pushScreenRef.current(
+                  pushScreen(
                     <EditProfileScreen
-                      onBack={popScreenRef.current}
+                      onBack={popScreen}
                       onSave={() => {
                         loadProfile();
-                        popScreenRef.current();
+                        popScreen();
                       }}
                     />,
                     'edit-profile'
@@ -216,12 +215,12 @@ export function BlyveProfileScreen({
               </button>
               <button
                 onClick={() => {
-                  pushScreenRef.current(
+                  pushScreen(
                     <MediaEditScreen
                       profile={profile}
                       onBack={() => {
                         loadProfile();
-                        popScreenRef.current();
+                        popScreen();
                       }}
                     />,
                     'add-media'
@@ -260,7 +259,7 @@ export function BlyveProfileScreen({
     
     if (prevDepsRef.current !== depsKey) {
       prevDepsRef.current = depsKey;
-      setBaseContent(ProfileContent);
+      setProfilePreview(ProfileContent);
     }
   }, [ProfileContent, profile?.id, loading, profileProgress]);
 
@@ -296,6 +295,7 @@ export function BlyveProfileScreen({
     return null;
   }
 
-  // ✅ Render both layers using the navigation hook
-  return renderLayers();
-  }
+  return (
+    <MobileNavStack preview={profilePreview} apiRef={mobileNavApiRef} />
+  );
+}

@@ -149,7 +149,7 @@ export function MessageContextMenuWrapper({
   return (
     <>
       <div
-        className="inline-flex max-w-full min-w-0"
+        className="w-max max-w-full min-w-0"
         data-message-bubble
         onContextMenuCapture={isMdUp ? handleContextMenu : undefined}
       >

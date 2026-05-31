@@ -13,7 +13,6 @@ import { useAppData } from '../context/AppDataContext';
 import { TypingBubble } from './TypingBubble';
 import { useIsMdUp, useIsMobile } from './ui/use-mobile';
 import { useChatScrollAnchor } from '../hooks/useChatScrollAnchor';
-import { useChatBottomFollow } from '../hooks/useChatBottomFollow';
 import { useCall } from '../context/CallContext';
 import { ChatEmbeddedCallBar } from './ChatEmbeddedCallBar';
 import { NotificationManager } from '../lib/notifications';
@@ -39,10 +38,10 @@ import {
 } from '../lib/messageReply';
 import {
   CHAT_MESSAGE_LIST_CLASS,
+  CHAT_TYPING_CLEARANCE_EXTRA_PX,
   CHAT_MESSAGE_ROW_INNER_CLASS,
   CHAT_MESSAGE_ROW_INNER_GROUPED_CLASS,
   getChatMessageRowClass,
-  measureTypingIndicatorClearance,
 } from './chat/chatMessageStyles';
 import { MessageRowAvatarSlot } from './chat/MessageRowAvatarSlot';
 import { MessageGroupHeader } from './chat/MessageGroupHeader';
@@ -55,9 +54,10 @@ import {
   isMessageGroupStart,
   isNewSenderGroupStart,
 } from '../lib/messageGrouping';
-import { getLatestOwnReadAt, isOutgoingMessageRead } from '../lib/messageReadReceipts';
+import { isOutgoingMessageRead } from '../lib/messageReadReceipts';
 import {
   findFirstUnreadMessageId,
+  isNearBottom,
   scrollContainerToBottomStable,
   scrollContainerToMessage,
 } from '../lib/chatScroll';
@@ -128,6 +128,7 @@ export function ChatScreen({
   const [dropActive, setDropActive] = useState(false);
   const initialScrollDoneRef = useRef(false);
   const canLoadOlderRef = useRef(false);
+  const lastMessageIdRef = useRef<string | null>(null);
   const lastAppliedViewedAtRef = useRef<string | null>(null);
   const [scrollAnchorReady, setScrollAnchorReady] = useState(false);
 
@@ -145,26 +146,9 @@ export function ChatScreen({
 
   const assignMessagesContainer = useChatScrollAnchor(
     messagesContainerRef,
-    scrollAnchorReady,
+    isMobile && scrollAnchorReady,
     messagesEndRef
   );
-
-  const messagesBottomSyncKey = useMemo(() => {
-    const tail = messages.length > 0 ? messages[messages.length - 1] : null;
-    let ownReadSig = '';
-    for (let i = messages.length - 1; i >= 0; i -= 1) {
-      const m = messages[i];
-      if (m.sender_id !== currentUserId) continue;
-      ownReadSig = `${m.id}:${m.read_at ?? ''}:${m.is_read ? 1 : 0}`;
-      break;
-    }
-    return `${messages.length}:${tail?.id ?? ''}:${tail?.content?.length ?? 0}:${typingClearance}:${ownReadSig}`;
-  }, [messages, currentUserId, typingClearance]);
-
-  const { forceFollow: forceScrollToBottom } = useChatBottomFollow(messagesContainerRef, {
-    enabled: scrollAnchorReady && !loading && messages.length > 0,
-    deps: [messagesBottomSyncKey, lastViewedAt],
-  });
 
   const isGhostMode = !!currentUserProfile?.ghost_mode;
 
@@ -246,13 +230,9 @@ export function ChatScreen({
     return null;
   }, [messages, currentUserId]);
 
-  const lastOwnReadAt = useMemo(
-    () => getLatestOwnReadAt(messages, currentUserId),
-    [messages, currentUserId]
-  );
-
   useEffect(() => {
     initialScrollDoneRef.current = false;
+    lastMessageIdRef.current = null;
     lastAppliedViewedAtRef.current = null;
     setScrollAnchorReady(false);
   }, [conversationId]);
@@ -285,8 +265,18 @@ export function ChatScreen({
     if (!initialScrollDoneRef.current) {
       applyInitialScrollPosition();
       initialScrollDoneRef.current = true;
+      lastMessageIdRef.current = messages[messages.length - 1]?.id ?? null;
       lastAppliedViewedAtRef.current = lastViewedAt;
       requestAnimationFrame(() => setScrollAnchorReady(true));
+      return;
+    }
+
+    const lastMessage = messages[messages.length - 1];
+    if (lastMessageIdRef.current !== lastMessage.id) {
+      lastMessageIdRef.current = lastMessage.id;
+      if (isNearBottom(container)) {
+        scrollContainerToBottomStable(container);
+      }
       return;
     }
 
@@ -308,14 +298,11 @@ export function ChatScreen({
 
     const measure = () => {
       const el = typingIndicatorRef.current;
-      if (!el) return;
-      setTypingClearance(measureTypingIndicatorClearance(el));
+      const height = el?.offsetHeight ?? 40;
+      setTypingClearance(height + CHAT_TYPING_CLEARANCE_EXTRA_PX);
     };
     measure();
-    requestAnimationFrame(() => {
-      measure();
-      requestAnimationFrame(measure);
-    });
+    requestAnimationFrame(measure);
 
     let observer: ResizeObserver | undefined;
     const indicator = typingIndicatorRef.current;
@@ -328,11 +315,14 @@ export function ChatScreen({
   }, [isPartnerTyping]);
 
   useLayoutEffect(() => {
-    if (!isPartnerTyping || typingClearance <= 0) return;
+    if (!isPartnerTyping || typingClearance <= 0 || !scrollAnchorReady) return;
     const container = messagesContainerRef.current;
     if (!container) return;
-    requestAnimationFrame(() => scrollContainerToBottomStable(container));
-  }, [isPartnerTyping, typingClearance]);
+
+    if (isNearBottom(container)) {
+      requestAnimationFrame(() => scrollContainerToBottomStable(container));
+    }
+  }, [isPartnerTyping, typingClearance, scrollAnchorReady]);
 
   const loadOlderAndPreserveScroll = useCallback(async () => {
     if (loadingMore || !hasMore || isLoadingOlderRef.current) return;
@@ -452,11 +442,9 @@ export function ChatScreen({
       if (activeReply) {
         setReplyTarget(activeReply);
       }
-    } else {
-      forceScrollToBottom();
     }
     focusMessageInput();
-  }, [messageInput, sending, mediaUploading, sendMessage, focusMessageInput, replyTarget, forceScrollToBottom]);
+  }, [messageInput, sending, mediaUploading, sendMessage, focusMessageInput, replyTarget]);
 
   const handleSendFiles = useCallback(
     async (files: File[], caption?: string) => {
@@ -465,10 +453,9 @@ export function ChatScreen({
       setReplyTarget(null);
       const ok = await sendMediaFiles(files, { caption, replyToMessageId: replyToId });
       if (!ok && activeReply) setReplyTarget(activeReply);
-      else forceScrollToBottom();
       focusMessageInput();
     },
-    [replyTarget, sendMediaFiles, focusMessageInput, forceScrollToBottom],
+    [replyTarget, sendMediaFiles, focusMessageInput],
   );
 
   const handleSendVoiceMemo = useCallback(
@@ -478,10 +465,9 @@ export function ChatScreen({
       setReplyTarget(null);
       const ok = await sendVoiceMemo(blob, replyToId);
       if (!ok && activeReply) setReplyTarget(activeReply);
-      else forceScrollToBottom();
       focusMessageInput();
     },
-    [replyTarget, sendVoiceMemo, focusMessageInput, forceScrollToBottom],
+    [replyTarget, sendVoiceMemo, focusMessageInput],
   );
 
   const handleSendUrl = useCallback(
@@ -495,12 +481,10 @@ export function ChatScreen({
       const sent = await sendMessage(content, replyToId);
       if (!sent && activeReply) {
         setReplyTarget(activeReply);
-      } else if (sent) {
-        forceScrollToBottom();
       }
       focusMessageInput();
     },
-    [sending, sendMessage, focusMessageInput, replyTarget, forceScrollToBottom]
+    [sending, sendMessage, focusMessageInput, replyTarget]
   );
 
   const handleReportUser = () => {
@@ -786,13 +770,10 @@ export function ChatScreen({
                               }
                             />
                           </div>
-                          {isLastOwnMessage &&
-                            isGroupEnd &&
-                            isOutgoingMessageRead(msg, messages, currentUserId) &&
-                            lastOwnReadAt && (
+                          {isLastOwnMessage && isGroupEnd && msg.read_at && (
                             <div className="mt-0.5 text-right text-[10px] leading-none text-[#8E8E93]">
                               {t('chat.read')}{' '}
-                              {formatMessageTime(lastOwnReadAt, timeLocale, timeLocale === 'en-US')}
+                              {formatMessageTime(msg.read_at, timeLocale, timeLocale === 'en-US')}
                             </div>
                           )}
                         </div>

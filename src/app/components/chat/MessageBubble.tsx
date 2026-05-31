@@ -25,15 +25,15 @@ export function MessageBubble({
   const tailClass = getMessageBubbleTailClass(position, isMe);
 
   return (
-    <div className="relative w-fit max-w-full min-w-[3rem] sm:max-w-[min(100%,20rem)]">
+    <div className="relative w-max max-w-full min-w-[3rem] sm:max-w-[min(100%,20rem)]">
       <div
         className={`relative px-3 py-1.5 ${getMessageBubbleRadius(position, isMe)} ${getMessageBubbleColors(isMe)} ${tailClass}`}
       >
-        <div className="flex w-fit max-w-full items-end gap-1.5">
-          <div className="min-w-0">{children}</div>
+        <div className="flex w-full max-w-full flex-col gap-0.5">
+          <div className="min-w-0 max-w-full">{children}</div>
           {time ? (
             <span
-              className={`inline-flex shrink-0 items-center gap-0.5 whitespace-nowrap pb-px text-[10px] leading-none ${
+              className={`inline-flex shrink-0 items-center gap-0.5 self-end whitespace-nowrap text-[10px] leading-none ${
                 isMe ? 'text-white/75 dark:text-[#8fa4b8]' : 'text-gray-500 dark:text-[#6b7d8f]'
               }`}
             >

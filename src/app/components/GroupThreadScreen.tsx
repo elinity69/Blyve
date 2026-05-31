@@ -24,8 +24,7 @@ import { MessageReplyComposerBar } from './chat/MessageReplyComposerBar';
 import { ChatMessageComposer } from './chat/ChatMessageComposer';
 import { scrollContainerToBottomStable } from '../lib/chatScroll';
 import { useChatMediaSend } from '../hooks/useChatMediaSend';
-import { MessageRowReplyWrapper } from './chat/MessageRowReplyWrapper';
-import { MessageRowReplyButton } from './chat/MessageRowReplyButton';
+import { MessageBubbleActionRow } from './chat/MessageBubbleActionRow';
 import {
   buildReplyTarget,
   resolveReplyQuote,
@@ -603,32 +602,22 @@ export function GroupThreadScreen({
                           align={mine ? 'end' : 'start'}
                         />
                       )}
-                      <div
-                        className={`group/bubble flex max-w-full min-w-0 items-start gap-1.5 ${
-                          mine ? 'flex-row-reverse' : 'flex-row'
-                        }`}
+                      <MessageBubbleActionRow
+                        isMe={mine}
+                        onReply={() =>
+                          setReplyTarget(buildReplyTarget(m, getSenderLabel(m.sender_id, m)))
+                        }
                       >
-                        <MessageRowReplyWrapper
-                          onReply={() =>
-                            setReplyTarget(buildReplyTarget(m, getSenderLabel(m.sender_id, m)))
-                          }
-                        >
-                          <ChatMessageBody
-                            content={m.content}
-                            isMe={mine}
-                            isBundled={isBundled}
-                            replyQuote={replyQuote}
-                            bubblePosition={groupPosition}
-                            messageTime={messageTime}
-                            isRead={false}
-                          />
-                        </MessageRowReplyWrapper>
-                        <MessageRowReplyButton
-                          onReply={() =>
-                            setReplyTarget(buildReplyTarget(m, getSenderLabel(m.sender_id, m)))
-                          }
+                        <ChatMessageBody
+                          content={m.content}
+                          isMe={mine}
+                          isBundled={isBundled}
+                          replyQuote={replyQuote}
+                          bubblePosition={groupPosition}
+                          messageTime={messageTime}
+                          isRead={false}
                         />
-                      </div>
+                      </MessageBubbleActionRow>
                     </div>
                   </div>
                 </div>

@@ -40,7 +40,7 @@ export function ChatMessageBody({
 
   if (voiceOnly) {
     return (
-      <div className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}>
+      <div className={`flex w-max max-w-full flex-col ${isMe ? 'items-end' : 'items-start'}`}>
         {replyQuote ? (
           <div className="mb-1 max-w-full">
             <MessageReplyQuote quote={replyQuote} isMe={isMe} />
@@ -56,7 +56,7 @@ export function ChatMessageBody({
 
   if (mediaOnly) {
     return (
-      <div className={`flex max-w-full flex-col ${isMe ? 'items-end' : 'items-start'}`}>
+      <div className={`flex w-max max-w-full flex-col ${isMe ? 'items-end' : 'items-start'}`}>
         {replyQuote ? (
           <div className="mb-1 max-w-full">
             <MessageReplyQuote quote={replyQuote} isMe={isMe} />
@@ -71,7 +71,7 @@ export function ChatMessageBody({
   }
 
   return (
-    <div className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}>
+    <div className={`flex w-max max-w-full flex-col ${isMe ? 'items-end' : 'items-start'}`}>
       <MessageBubble position={bubblePosition} isMe={isMe} time={messageTime} isRead={isRead}>
         {replyQuote ? <MessageReplyQuote quote={replyQuote} isMe={isMe} /> : null}
         {showText ? (

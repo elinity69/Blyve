@@ -1,6 +1,3 @@
-/** Shared threshold for “stuck to bottom” across chat scroll helpers. */
-export const CHAT_NEAR_BOTTOM_PX = 96;
-
 interface ScrollTargetMessage {
   id: string;
   sender_id: string;
@@ -64,10 +61,7 @@ export function findFirstUnreadMessageId(
   return null;
 }
 
-export function isNearBottom(
-  container: HTMLElement,
-  thresholdPx = CHAT_NEAR_BOTTOM_PX,
-): boolean {
+export function isNearBottom(container: HTMLElement, thresholdPx = 120): boolean {
   return (
     container.scrollHeight - container.scrollTop - container.clientHeight < thresholdPx
   );

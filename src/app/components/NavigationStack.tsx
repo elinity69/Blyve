@@ -2,6 +2,7 @@ import React, { useState, useEffect, useLayoutEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { useMobileViewportDriver } from '../hooks/useMobileViewportInsets';
 import {
+  clearNavSwipeLocks,
   FORWARD_EDGE_RATIO,
   NAV_SWIPE_CANCEL_MS,
   NAV_SWIPE_COMPLETE_S,
@@ -11,41 +12,35 @@ import {
   NAV_SWIPE_VELOCITY_THRESHOLD,
   navigationStackShellStyle,
   navigationStackShellStyleDesktop,
+  setNavForwardSwipeLock,
+  setNavSwipeBackLock,
 } from '../lib/navigationShellStyle';
 
 interface NavigationStackProps {
   children: React.ReactNode;
   onBack: () => void;
   skipEnterAnimation?: boolean;
+  screenId?: string;
+  onBeforeBack?: () => void;
+  onSwipeBackStart?: () => void;
+  onSwipeBackEnd?: () => void;
   /** Pull cached screen in from the right edge (Discord-style). */
   isForwardPull?: boolean;
   forwardShellRef?: React.RefObject<HTMLDivElement | null>;
   onForwardComplete?: () => void;
 }
 
-function getViewportWidth(shell?: HTMLElement | null) {
-  if (shell?.offsetWidth) return shell.offsetWidth;
-  if (typeof window !== 'undefined' && window.visualViewport?.width) {
-    return window.visualViewport.width;
-  }
+function getViewportWidth() {
   return typeof window !== 'undefined' ? window.innerWidth : 0;
-}
-
-function setForwardSwipeLock(locked: boolean, shell?: HTMLDivElement | null) {
-  if (typeof document === 'undefined') return;
-  if (locked) {
-    document.documentElement.dataset.forwardSwipeLock = '1';
-    if (shell) shell.style.touchAction = 'none';
-  } else {
-    delete document.documentElement.dataset.forwardSwipeLock;
-    if (shell) shell.style.touchAction = '';
-  }
 }
 
 export function NavigationStack({
   children,
   onBack,
   skipEnterAnimation = false,
+  onBeforeBack,
+  onSwipeBackStart,
+  onSwipeBackEnd,
   isForwardPull = false,
   forwardShellRef,
   onForwardComplete,
@@ -53,8 +48,6 @@ export function NavigationStack({
   const [isMobile, setIsMobile] = useState(false);
   const [translateX, setTranslateX] = useState(0);
   const [swipeBackLocked, setSwipeBackLocked] = useState(false);
-  const [isGestureSettling, setIsGestureSettling] = useState(false);
-  const shellRef = useRef<HTMLDivElement | null>(null);
   const startXRef = useRef(0);
   const startYRef = useRef(0);
   const currentXRef = useRef(0);
@@ -68,8 +61,14 @@ export function NavigationStack({
   const translateXRef = useRef(0);
   const pendingTranslateFrameRef = useRef<number | null>(null);
   const onBackRef = useRef(onBack);
+  const onBeforeBackRef = useRef(onBeforeBack);
+  const onSwipeBackStartRef = useRef(onSwipeBackStart);
+  const onSwipeBackEndRef = useRef(onSwipeBackEnd);
   const onForwardCompleteRef = useRef(onForwardComplete);
   onBackRef.current = onBack;
+  onBeforeBackRef.current = onBeforeBack;
+  onSwipeBackStartRef.current = onSwipeBackStart;
+  onSwipeBackEndRef.current = onSwipeBackEnd;
   onForwardCompleteRef.current = onForwardComplete;
 
   useMobileViewportDriver(isMobile);
@@ -77,30 +76,17 @@ export function NavigationStack({
   const setSwipeBackLock = (locked: boolean) => {
     isDraggingRef.current = locked;
     setSwipeBackLocked(locked);
-    if (typeof document === 'undefined') return;
+    setNavSwipeBackLock(locked);
     if (locked) {
-      document.documentElement.dataset.swipeBackLock = '1';
-      document.body.style.overflowX = 'hidden';
-      document.body.style.overflowY = 'hidden';
+      onSwipeBackStartRef.current?.();
     } else {
-      delete document.documentElement.dataset.swipeBackLock;
-      document.body.style.overflowX = '';
-      document.body.style.overflowY = '';
+      onSwipeBackEndRef.current?.();
     }
   };
 
   useLayoutEffect(() => {
-    if (animationFrameRef.current) {
-      cancelAnimationFrame(animationFrameRef.current);
-      animationFrameRef.current = null;
-    }
-    if (pendingTranslateFrameRef.current !== null) {
-      cancelAnimationFrame(pendingTranslateFrameRef.current);
-      pendingTranslateFrameRef.current = null;
-    }
     translateXRef.current = 0;
     setTranslateX(0);
-    setIsGestureSettling(false);
   }, [isForwardPull]);
 
   useEffect(() => {
@@ -111,16 +97,13 @@ export function NavigationStack({
     window.addEventListener('resize', checkMobile);
     return () => {
       window.removeEventListener('resize', checkMobile);
-      delete document.documentElement.dataset.swipeBackLock;
-      document.body.style.overflowX = '';
-      document.body.style.overflowY = '';
+      clearNavSwipeLocks(forwardShellRef?.current ?? undefined);
       if (animationFrameRef.current) {
         cancelAnimationFrame(animationFrameRef.current);
       }
       if (pendingTranslateFrameRef.current !== null) {
         cancelAnimationFrame(pendingTranslateFrameRef.current);
       }
-      setIsGestureSettling(false);
     };
   }, []);
 
@@ -139,7 +122,6 @@ export function NavigationStack({
       animationFrameRef.current = null;
     }
 
-    setIsGestureSettling(true);
     const startTime = performance.now();
 
     const animate = (currentTime: number) => {
@@ -148,16 +130,13 @@ export function NavigationStack({
       const eased = 1 - Math.pow(1 - progress, 3);
       const currentValue = startValue + (targetValue - startValue) * eased;
 
-      translateXRef.current = currentValue;
       setTranslateX(currentValue);
 
       if (progress < 1) {
         animationFrameRef.current = requestAnimationFrame(animate);
       } else {
         animationFrameRef.current = null;
-        translateXRef.current = targetValue;
         setTranslateX(targetValue);
-        setIsGestureSettling(false);
         onDone?.();
       }
     };
@@ -171,7 +150,7 @@ export function NavigationStack({
     isVerticalScrollRef.current = false;
     isDraggingRef.current = false;
     setSwipeBackLock(false);
-    setForwardSwipeLock(false, forwardShellRef?.current);
+    setNavForwardSwipeLock(false, forwardShellRef?.current);
   };
 
   const handleTouchStart = (startX: number, startY: number) => {
@@ -185,10 +164,9 @@ export function NavigationStack({
     }
     touchStartedOnEdgeRef.current = false;
 
-    const width = getViewportWidth(shellRef.current);
-
-    if (isForwardPull && startX <= width * FORWARD_EDGE_RATIO) {
-      return;
+    if (isForwardPull) {
+      const width = getViewportWidth();
+      if (startX <= width * FORWARD_EDGE_RATIO) return;
     }
 
     touchStartedOnEdgeRef.current = true;
@@ -203,7 +181,7 @@ export function NavigationStack({
     isVerticalScrollRef.current = false;
     isDraggingRef.current = false;
     setSwipeBackLock(false);
-    setForwardSwipeLock(false, forwardShellRef?.current);
+    setNavForwardSwipeLock(false, forwardShellRef?.current);
   };
 
   const handleTouchMove = (currentX: number, currentY: number, preventDefault: () => void) => {
@@ -211,7 +189,7 @@ export function NavigationStack({
 
     const deltaX = currentX - startXRef.current;
     const deltaY = currentY - startYRef.current;
-    const width = getViewportWidth(shellRef.current);
+    const width = getViewportWidth();
 
     if (!directionLockedRef.current) {
       const absDeltaX = Math.abs(deltaX);
@@ -236,7 +214,7 @@ export function NavigationStack({
         isVerticalScrollRef.current = false;
         isDraggingRef.current = true;
         if (isForwardPull) {
-          setForwardSwipeLock(true, forwardShellRef?.current);
+          setNavForwardSwipeLock(true, forwardShellRef?.current);
         } else {
           setSwipeBackLock(true);
         }
@@ -275,7 +253,7 @@ export function NavigationStack({
       return;
     }
 
-    const width = getViewportWidth(shellRef.current);
+    const width = getViewportWidth();
     const timeDelta = performance.now() - lastTouchTimeRef.current;
     const velocity = timeDelta > 0 ? (currentXRef.current - lastTouchXRef.current) / timeDelta : 0;
     const distance = translateXRef.current;
@@ -287,27 +265,23 @@ export function NavigationStack({
 
     isDraggingRef.current = false;
     setSwipeBackLock(false);
-    setForwardSwipeLock(false, forwardShellRef?.current);
+    setNavForwardSwipeLock(false, forwardShellRef?.current);
 
     if (shouldComplete) {
-      translateXRef.current = 0;
-      setTranslateX(0);
+      setTranslateX(width);
       requestAnimationFrame(() => {
         if (isForwardPull) {
           onForwardCompleteRef.current?.();
         } else {
+          onBeforeBackRef.current?.();
           onBackRef.current();
         }
       });
     } else if (distance > 0) {
-      animateToRest(distance, 0, () => {
-        translateXRef.current = 0;
-      });
-    } else {
-      translateXRef.current = 0;
-      setTranslateX(0);
+      animateToRest(distance, 0);
     }
 
+    translateXRef.current = 0;
     resetTouchState();
   };
 
@@ -342,7 +316,7 @@ export function NavigationStack({
       shell.removeEventListener('touchmove', onTouchMove, { capture: true });
       shell.removeEventListener('touchend', onTouchEnd, { capture: true });
       shell.removeEventListener('touchcancel', onTouchEnd, { capture: true });
-      setForwardSwipeLock(false, shell);
+      setNavForwardSwipeLock(false, shell);
     };
   }, [forwardShellRef, isForwardPull, isMobile]);
 
@@ -363,18 +337,24 @@ export function NavigationStack({
     handleTouchEnd();
   };
 
-  const width = getViewportWidth(shellRef.current);
-  const motionX = isForwardPull ? width - translateX : translateX;
-  const isSwipeDragging = translateX > 0 || swipeBackLocked || isGestureSettling;
+  const width = getViewportWidth();
+  const isSwipeDragging = translateX > 0 || swipeBackLocked;
+  const isForwardHidden = isForwardPull && translateX < 1 && !isSwipeDragging;
+  const motionX = isForwardPull
+    ? isForwardHidden
+      ? '100%'
+      : width - translateX
+    : translateX;
 
   if (isMobile) {
     return (
       <motion.div
-        ref={shellRef}
         initial={
-          skipEnterAnimation || isForwardPull
+          skipEnterAnimation
             ? false
-            : { x: '100%' }
+            : isForwardPull
+              ? { x: '100%' }
+              : { x: '100%' }
         }
         animate={{ x: motionX }}
         exit={{ x: '100%' }}
@@ -384,13 +364,20 @@ export function NavigationStack({
             : { type: 'tween', duration: NAV_SWIPE_COMPLETE_S, ease: NAV_SWIPE_EASE }
         }
         onTouchStart={handleReactTouchStart}
+        onTouchStartCapture={handleReactTouchStart}
         onTouchMove={handleReactTouchMove}
+        onTouchMoveCapture={handleReactTouchMove}
         onTouchEnd={handleReactTouchEnd}
+        onTouchEndCapture={handleReactTouchEnd}
         onTouchCancel={handleReactTouchEnd}
+        onTouchCancelCapture={handleReactTouchEnd}
+        aria-hidden={isForwardHidden}
         style={{
           ...navigationStackShellStyle,
           zIndex: isForwardPull ? 5 : navigationStackShellStyle.zIndex,
-          willChange: 'transform',
+          boxShadow: isForwardHidden ? 'none' : navigationStackShellStyle.boxShadow,
+          visibility: isForwardHidden ? 'hidden' : 'visible',
+          willChange: isForwardHidden ? undefined : 'transform',
           touchAction: isForwardPull ? 'none' : swipeBackLocked ? 'none' : 'pan-y',
           pointerEvents: isForwardPull ? 'none' : 'auto',
         }}

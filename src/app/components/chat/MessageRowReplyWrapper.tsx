@@ -14,9 +14,9 @@ export function MessageRowReplyWrapper({ children, onReply }: MessageRowReplyWra
   const { offsetX, swipeProgress, swipeHandlers } = useSwipeToReply(onReply, !isMdUp);
 
   return (
-    <div className="relative w-full touch-pan-y">
+    <div className="relative min-w-0 max-w-full w-fit touch-pan-y">
       <div
-        className="relative z-[1] inline-flex max-w-full min-w-0"
+        className="relative z-[1] flex max-w-full min-w-0 w-fit flex-col"
         style={{
           transform: offsetX < 0 ? `translateX(${offsetX}px)` : undefined,
           transition: offsetX < 0 ? 'none' : 'transform 0.2s ease-out',

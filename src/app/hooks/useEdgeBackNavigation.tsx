@@ -15,13 +15,21 @@ interface UseEdgeBackNavigationProps {
   onForwardSwipe?: () => void;
 }
 
-const previewShellStyle = {
+const navViewportClipStyle = {
   position: 'fixed' as const,
   top: `var(${MOBILE_VV_CSS.offsetTop}, 0px)`,
   left: 0,
   right: 0,
   height: `var(${MOBILE_VV_CSS.height}, 100dvh)`,
   paddingBottom: `var(${MOBILE_VV_CSS.bottomInset}, 0px)`,
+  overflow: 'hidden' as const,
+  zIndex: 1,
+  pointerEvents: 'none' as const,
+};
+
+const previewShellStyle = {
+  position: 'absolute' as const,
+  inset: 0,
   zIndex: 0,
   overflowX: 'hidden' as const,
   overflowY: 'hidden' as const,
@@ -92,7 +100,7 @@ export function useEdgeBackNavigation({
     const isForwardPull = canForwardPull;
 
     return (
-      <>
+      <div style={navViewportClipStyle} data-nav-messages-viewport>
         <div
           ref={previewShellRef}
           data-messages-preview-shell
@@ -108,7 +116,7 @@ export function useEdgeBackNavigation({
 
         {overlayScreen ? (
           <NavigationStack
-            key={topStack ? `stack-${overlayScreen.id}` : `forward-${overlayScreen.id}`}
+            key={overlayScreen.id}
             isForwardPull={isForwardPull}
             forwardShellRef={previewShellRef}
             skipEnterAnimation={topStack?.skipEnterAnimation ?? true}
@@ -118,7 +126,7 @@ export function useEdgeBackNavigation({
             {overlayScreen.content}
           </NavigationStack>
         ) : null}
-      </>
+      </div>
     );
   }, [stack, baseContent, popScreen, handleForwardComplete]);
 
