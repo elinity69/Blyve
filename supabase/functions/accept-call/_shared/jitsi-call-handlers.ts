@@ -380,11 +380,19 @@ export async function handleAcceptCall(
   if (!session) return fail(404, "Call not found");
 
   const sessionStatus = String(session.status || "").toLowerCase();
+  const inviteStatus = String(myRow.invite_status || "").toLowerCase();
+
   if (["ended", "cancelled", "declined", "missed"].includes(sessionStatus)) {
+    if (action === "missed" && inviteStatus === "pending" && !myRow.left_at) {
+      const nowIso = new Date().toISOString();
+      await supabase
+        .from("call_participants")
+        .update({ invite_status: "missed", left_at: nowIso, updated_at: nowIso })
+        .eq("id", myRow.id);
+      return ok({ sessionId, callSessionId: sessionId, status: "missed", alreadyEnded: true });
+    }
     return fail(410, "Call already ended", { status: sessionStatus });
   }
-
-  const inviteStatus = String(myRow.invite_status || "").toLowerCase();
 
   if (action === "accept") {
     if (inviteStatus !== "pending") {
