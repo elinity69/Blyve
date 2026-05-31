@@ -9,6 +9,7 @@ import {
   NAV_SWIPE_DISTANCE_RATIO,
   NAV_SWIPE_EASE,
   NAV_SWIPE_MIN_DISTANCE_PX,
+  NAV_SWIPE_OFFSCREEN_EPSILON_PX,
   NAV_SWIPE_VELOCITY_THRESHOLD,
   navigationStackShellStyle,
   navigationStackShellStyleDesktop,
@@ -46,7 +47,10 @@ export function NavigationStack({
   onForwardComplete,
 }: NavigationStackProps) {
   const [isMobile, setIsMobile] = useState(false);
+  const [viewportWidth, setViewportWidth] = useState(() => getViewportWidth());
   const [translateX, setTranslateX] = useState(0);
+  const shellRef = useRef<HTMLDivElement | null>(null);
+  const viewportShellRef = useRef<HTMLDivElement | null>(null);
   const [swipeBackLocked, setSwipeBackLocked] = useState(false);
   const startXRef = useRef(0);
   const startYRef = useRef(0);
@@ -90,13 +94,16 @@ export function NavigationStack({
   }, [isForwardPull]);
 
   useEffect(() => {
-    const checkMobile = () => {
+    const syncViewport = () => {
+      setViewportWidth(getViewportWidth());
       setIsMobile(window.innerWidth < 768);
     };
-    checkMobile();
-    window.addEventListener('resize', checkMobile);
+    syncViewport();
+    window.addEventListener('resize', syncViewport);
+    window.visualViewport?.addEventListener('resize', syncViewport);
     return () => {
-      window.removeEventListener('resize', checkMobile);
+      window.removeEventListener('resize', syncViewport);
+      window.visualViewport?.removeEventListener('resize', syncViewport);
       clearNavSwipeLocks(forwardShellRef?.current ?? undefined);
       if (animationFrameRef.current) {
         cancelAnimationFrame(animationFrameRef.current);
@@ -108,7 +115,8 @@ export function NavigationStack({
   }, []);
 
   const applyTranslateX = (value: number) => {
-    translateXRef.current = value;
+    const clamped = Math.max(0, Math.min(value, viewportWidth));
+    translateXRef.current = clamped;
     if (pendingTranslateFrameRef.current !== null) return;
     pendingTranslateFrameRef.current = requestAnimationFrame(() => {
       setTranslateX(translateXRef.current);
@@ -116,7 +124,12 @@ export function NavigationStack({
     });
   };
 
-  const animateToRest = (startValue: number, targetValue: number, onDone?: () => void) => {
+  const animateToRest = (
+    startValue: number,
+    targetValue: number,
+    onDone?: () => void,
+    durationMs = NAV_SWIPE_CANCEL_MS
+  ) => {
     if (animationFrameRef.current) {
       cancelAnimationFrame(animationFrameRef.current);
       animationFrameRef.current = null;
@@ -126,17 +139,19 @@ export function NavigationStack({
 
     const animate = (currentTime: number) => {
       const elapsed = currentTime - startTime;
-      const progress = Math.min(elapsed / NAV_SWIPE_CANCEL_MS, 1);
+      const progress = Math.min(elapsed / durationMs, 1);
       const eased = 1 - Math.pow(1 - progress, 3);
       const currentValue = startValue + (targetValue - startValue) * eased;
 
       setTranslateX(currentValue);
+      translateXRef.current = currentValue;
 
       if (progress < 1) {
         animationFrameRef.current = requestAnimationFrame(animate);
       } else {
         animationFrameRef.current = null;
         setTranslateX(targetValue);
+        translateXRef.current = targetValue;
         onDone?.();
       }
     };
@@ -268,21 +283,28 @@ export function NavigationStack({
     setNavForwardSwipeLock(false, forwardShellRef?.current);
 
     if (shouldComplete) {
-      setTranslateX(width);
-      requestAnimationFrame(() => {
+      const start = translateXRef.current;
+      animateToRest(start, width, () => {
+        translateXRef.current = 0;
+        setTranslateX(0);
         if (isForwardPull) {
           onForwardCompleteRef.current?.();
         } else {
           onBeforeBackRef.current?.();
           onBackRef.current();
         }
-      });
-    } else if (distance > 0) {
-      animateToRest(distance, 0);
+        resetTouchState();
+      }, NAV_SWIPE_COMPLETE_S * 1000);
+      return;
     }
 
-    translateXRef.current = 0;
-    resetTouchState();
+    if (distance > NAV_SWIPE_OFFSCREEN_EPSILON_PX) {
+      animateToRest(distance, 0, resetTouchState);
+    } else {
+      translateXRef.current = 0;
+      setTranslateX(0);
+      resetTouchState();
+    }
   };
 
   useEffect(() => {
@@ -337,27 +359,34 @@ export function NavigationStack({
     handleTouchEnd();
   };
 
-  const width = getViewportWidth();
-  const isSwipeDragging = translateX > 0 || swipeBackLocked;
-  const isForwardHidden = isForwardPull && translateX < 1 && !isSwipeDragging;
-  const motionX = isForwardPull
-    ? isForwardHidden
-      ? '100%'
-      : width - translateX
-    : translateX;
+  const width = viewportWidth;
+  const offscreenX = width;
+  const isSwipeDragging = translateX > NAV_SWIPE_OFFSCREEN_EPSILON_PX || swipeBackLocked;
+  const isForwardHidden = isForwardPull && !isSwipeDragging;
+  const motionX = isForwardPull ? offscreenX - translateX : translateX;
+
+  useLayoutEffect(() => {
+    const node = viewportShellRef.current;
+    if (!node) return;
+
+    if (isForwardHidden && isForwardPull) {
+      node.setAttribute('inert', '');
+      const active = document.activeElement;
+      if (active instanceof HTMLElement && node.contains(active)) {
+        active.blur();
+      }
+    } else {
+      node.removeAttribute('inert');
+    }
+  }, [isForwardHidden, isForwardPull]);
 
   if (isMobile) {
     return (
       <motion.div
-        initial={
-          skipEnterAnimation
-            ? false
-            : isForwardPull
-              ? { x: '100%' }
-              : { x: '100%' }
-        }
+        ref={shellRef}
+        initial={skipEnterAnimation ? false : { x: offscreenX }}
         animate={{ x: motionX }}
-        exit={{ x: '100%' }}
+        exit={{ x: offscreenX }}
         transition={
           isSwipeDragging
             ? { duration: 0 }
@@ -371,20 +400,21 @@ export function NavigationStack({
         onTouchEndCapture={handleReactTouchEnd}
         onTouchCancel={handleReactTouchEnd}
         onTouchCancelCapture={handleReactTouchEnd}
-        aria-hidden={isForwardHidden}
         style={{
           ...navigationStackShellStyle,
           zIndex: isForwardPull ? 5 : navigationStackShellStyle.zIndex,
           boxShadow: isForwardHidden ? 'none' : navigationStackShellStyle.boxShadow,
-          visibility: isForwardHidden ? 'hidden' : 'visible',
-          willChange: isForwardHidden ? undefined : 'transform',
           touchAction: isForwardPull ? 'none' : swipeBackLocked ? 'none' : 'pan-y',
           pointerEvents: isForwardPull ? 'none' : 'auto',
+          willChange: 'transform',
         }}
       >
         <div
+          ref={viewportShellRef}
           data-visual-viewport-shell
           className="flex h-full min-h-0 w-full flex-col overflow-hidden"
+          style={{ boxSizing: 'border-box' }}
+          aria-hidden={isForwardHidden}
         >
           {children}
         </div>

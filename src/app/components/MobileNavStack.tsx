@@ -135,7 +135,9 @@ const viewportStyle: React.CSSProperties = {
 
   right: 0,
 
-  height: `var(${MOBILE_VV_CSS.height}, 100dvh)`,
+  boxSizing: 'border-box',
+
+  height: `calc(var(${MOBILE_VV_CSS.height}, 100dvh) + var(${MOBILE_VV_CSS.bottomInset}, 0px))`,
 
   paddingBottom: `var(${MOBILE_VV_CSS.bottomInset}, 0px)`,
 

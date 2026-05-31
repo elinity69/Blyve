@@ -739,7 +739,7 @@ function AppContent({ onUserIdChange }: AppContentProps = {}) {
                           </div>
                         }
                       >
-                        <MessagesScreen />
+                        <MessagesScreen isTabActive={activeTab === 'messages'} />
                       </ErrorBoundary>
                     )}
                     

@@ -18,6 +18,29 @@ export const MOBILE_VV_CSS = {
   bottomInset: '--blyve-vv-bottom-inset',
 } as const;
 
+/** Inner padding for the composer row — safe area / keyboard are owned by the nav shell. */
+export const COMPOSER_INNER_PADDING_PX = 8;
+
+/**
+ * Bottom padding for the chat message composer.
+ * Inside `data-visual-viewport-shell`, the stack already applies `--blyve-vv-bottom-inset`
+ * (home indicator + keyboard). Extra env(safe-area) on the composer would double-count.
+ */
+export function resolveComposerPaddingBottom(options: {
+  isMobile: boolean;
+  inVisualViewportShell: boolean;
+  frame: MobileViewportFrame;
+}): string {
+  const min = `${COMPOSER_INNER_PADDING_PX}px`;
+  if (!options.isMobile) {
+    return `max(${min}, env(safe-area-inset-bottom, 0px))`;
+  }
+  if (options.inVisualViewportShell) {
+    return min;
+  }
+  return `max(${min}, ${options.frame.bottomInset}px)`;
+}
+
 let latestFrame: MobileViewportFrame = DEFAULT_MOBILE_VIEWPORT_FRAME;
 let rafPending = false;
 let listenerCount = 0;

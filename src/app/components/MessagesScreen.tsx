@@ -190,7 +190,12 @@ interface GroupChannelRow {
 
 const EMPTY_GROUP_CHANNELS: GroupChannelRow[] = [];
 
-export function MessagesScreen() {
+interface MessagesScreenProps {
+  /** False when another app tab (e.g. profile) is visible — disables forward-swipe reopen. */
+  isTabActive?: boolean;
+}
+
+export function MessagesScreen({ isTabActive = true }: MessagesScreenProps) {
   const { t, i18n } = useTranslation();
   const { unreadByConversation } = useUnread();
   const dmUnreadTotal = React.useMemo(
@@ -1410,11 +1415,10 @@ export function MessagesScreen() {
 
     setSelectedChannelId((prev) => {
       if (prev && groupChannels.some((channel) => channel.id === prev)) return prev;
-      if (!isDesktop) return null;
       const firstText = groupChannels.find((channel) => (channel.type ?? 'text') === 'text');
       return firstText?.id ?? null;
     });
-  }, [selectedGroupId, groupChannels, isDesktop]);
+  }, [selectedGroupId, groupChannels]);
 
   const selectedTextChannelIdsKey = useMemo(() => {
     if (!selectedGroupId) return '';
@@ -2070,8 +2074,14 @@ export function MessagesScreen() {
   const { pushScreen, popScreen, clearStack, renderLayers } = useEdgeBackNavigation({
     baseContent: MessagesContent,
     onStackChange: handleNavigationStackChange,
-    onForwardSwipe: reopenLastConversation,
+    onForwardSwipe: isTabActive ? reopenLastConversation : undefined,
+    forwardSwipeEnabled: isTabActive,
   });
+
+  useEffect(() => {
+    if (isTabActive) return;
+    clearStack();
+  }, [isTabActive, clearStack]);
 
   useEffect(() => {
     pushScreenRef.current = pushScreen;

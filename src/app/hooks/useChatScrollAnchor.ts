@@ -112,6 +112,11 @@ export function useChatScrollAnchor(
     });
     resizeObserver.observe(containerEl);
 
+    const composerEl = containerEl.parentElement?.querySelector('[data-chat-composer]');
+    if (composerEl instanceof HTMLElement) {
+      resizeObserver.observe(composerEl);
+    }
+
     const unsubscribeViewport = subscribeMobileViewportFrame(() => {
       scheduleResizeSync();
     });

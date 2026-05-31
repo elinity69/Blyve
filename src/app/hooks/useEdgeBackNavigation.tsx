@@ -13,6 +13,8 @@ interface UseEdgeBackNavigationProps {
   onStackChange?: (stackDepth: number) => void;
   /** Swipe right on the preview layer to reopen the last chat (Discord-style). */
   onForwardSwipe?: () => void;
+  /** When false, hides the forward-pull cache (e.g. messages tab not active). */
+  forwardSwipeEnabled?: boolean;
 }
 
 const navViewportClipStyle = {
@@ -20,9 +22,12 @@ const navViewportClipStyle = {
   top: `var(${MOBILE_VV_CSS.offsetTop}, 0px)`,
   left: 0,
   right: 0,
-  height: `var(${MOBILE_VV_CSS.height}, 100dvh)`,
+  boxSizing: 'border-box' as const,
+  height: `calc(var(${MOBILE_VV_CSS.height}, 100dvh) + var(${MOBILE_VV_CSS.bottomInset}, 0px))`,
   paddingBottom: `var(${MOBILE_VV_CSS.bottomInset}, 0px)`,
   overflow: 'hidden' as const,
+  isolation: 'isolate' as const,
+  contain: 'layout paint' as const,
   zIndex: 1,
   pointerEvents: 'none' as const,
 };
@@ -39,6 +44,7 @@ export function useEdgeBackNavigation({
   baseContent,
   onStackChange,
   onForwardSwipe,
+  forwardSwipeEnabled = true,
 }: UseEdgeBackNavigationProps) {
   const [stack, setStack] = useState<StackScreen[]>([]);
   const stackIdCounter = useRef(0);
@@ -48,9 +54,16 @@ export function useEdgeBackNavigation({
   const previewShellRef = useRef<HTMLDivElement | null>(null);
   const stackRef = useRef<StackScreen[]>([]);
   const lastReportedStackDepthRef = useRef<number | null>(null);
+  const forwardSwipeEnabledRef = useRef(forwardSwipeEnabled);
   onStackChangeRef.current = onStackChange;
   onForwardSwipeRef.current = onForwardSwipe;
+  forwardSwipeEnabledRef.current = forwardSwipeEnabled;
   stackRef.current = stack;
+
+  useEffect(() => {
+    if (forwardSwipeEnabled) return;
+    lastScreenCacheRef.current = null;
+  }, [forwardSwipeEnabled]);
 
   useEffect(() => {
     const stackDepth = stack.length;
@@ -66,6 +79,15 @@ export function useEdgeBackNavigation({
 
     if (stackDepth > 0) {
       window.dispatchEvent(new CustomEvent('mobile-chat-stack-open'));
+      const preview = previewShellRef.current;
+      const active = document.activeElement;
+      if (
+        preview &&
+        active instanceof HTMLElement &&
+        preview.contains(active)
+      ) {
+        active.blur();
+      }
     } else {
       window.dispatchEvent(new CustomEvent('mobile-chat-stack-close'));
     }
@@ -95,7 +117,10 @@ export function useEdgeBackNavigation({
     const topStack = stack[stack.length - 1];
     const cachedScreen = lastScreenCacheRef.current;
     const canForwardPull =
-      !topStack && cachedScreen != null && onForwardSwipeRef.current != null;
+      forwardSwipeEnabledRef.current &&
+      !topStack &&
+      cachedScreen != null &&
+      onForwardSwipeRef.current != null;
     const overlayScreen = topStack ?? (canForwardPull ? cachedScreen : null);
     const isForwardPull = canForwardPull;
 
@@ -128,7 +153,7 @@ export function useEdgeBackNavigation({
         ) : null}
       </div>
     );
-  }, [stack, baseContent, popScreen, handleForwardComplete]);
+  }, [stack, baseContent, popScreen, handleForwardComplete, forwardSwipeEnabled]);
 
   return {
     pushScreen,

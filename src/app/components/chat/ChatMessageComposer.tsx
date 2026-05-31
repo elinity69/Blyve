@@ -11,8 +11,8 @@ import { Film, ImagePlus, Loader2, Mic, Send, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { FavoriteEmbedsPicker } from './FavoriteEmbedsPicker';
 import { useFavoriteEmbeds } from '../../hooks/useFavoriteEmbeds';
-import { MOBILE_VV_CSS } from '../../lib/mobileViewport';
-import { useMobileViewportDriver } from '../../hooks/useMobileViewportInsets';
+import { resolveComposerPaddingBottom } from '../../lib/mobileViewport';
+import { useMobileViewportInsets } from '../../hooks/useMobileViewportInsets';
 import { useIsMobile } from '../ui/use-mobile';
 import { CHAT_MEDIA_ACCEPT } from '../../lib/mediaUpload';
 import { validateChatMediaFile } from '../../lib/mediaTypes';
@@ -61,7 +61,7 @@ export function ChatMessageComposer({
   const voiceStreamRef = useRef<MediaStream | null>(null);
   const voiceChunksRef = useRef<Blob[]>([]);
   const isMobile = useIsMobile();
-  useMobileViewportDriver(isMobile);
+  const viewportFrame = useMobileViewportInsets(isMobile);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [recording, setRecording] = useState(false);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
@@ -97,11 +97,11 @@ export function ChatMessageComposer({
     };
   }, [stagedPreviews]);
 
-  const composerPaddingBottom = isMobile
-    ? inVisualViewportShell
-      ? 'max(0.5rem, env(safe-area-inset-bottom, 0px))'
-      : `max(0.5rem, var(${MOBILE_VV_CSS.bottomInset}, env(safe-area-inset-bottom, 0px)))`
-    : 'max(0.5rem, env(safe-area-inset-bottom, 0px))';
+  const composerPaddingBottom = resolveComposerPaddingBottom({
+    isMobile,
+    inVisualViewportShell,
+    frame: viewportFrame,
+  });
 
   const clearStaged = useCallback(() => {
     stagedPreviews.forEach((url) => URL.revokeObjectURL(url));
@@ -282,6 +282,7 @@ export function ChatMessageComposer({
   return (
     <div
       ref={assignRootRef}
+      data-chat-composer
       className={`relative z-20 mt-auto shrink-0 border-t border-gray-200 blyve-border-subtle blyve-screen-bg px-4 pt-2 ${
         dropActive ? 'ring-2 ring-inset ring-orange-400/60' : ''
       }`}

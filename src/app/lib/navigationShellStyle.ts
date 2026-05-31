@@ -6,6 +6,8 @@ export const NAV_SWIPE_CANCEL_MS = 200;
 export const NAV_SWIPE_VELOCITY_THRESHOLD = 0.35;
 export const NAV_SWIPE_DISTANCE_RATIO = 0.33;
 export const NAV_SWIPE_MIN_DISTANCE_PX = 56;
+/** Snap / hide threshold so the panel never rests slightly on-screen. */
+export const NAV_SWIPE_OFFSCREEN_EPSILON_PX = 0.5;
 /** Right-edge inset for forward (re-open) swipe — left 50% of screen is list-only. */
 export const FORWARD_EDGE_RATIO = 0.5;
 export const FORWARD_EDGE_INSET_RATIO = FORWARD_EDGE_RATIO;
@@ -48,7 +50,8 @@ export const navigationStackShellStyle = {
   top: `var(${MOBILE_VV_CSS.offsetTop}, 0px)`,
   left: 0,
   right: 0,
-  height: `var(${MOBILE_VV_CSS.height}, 100dvh)`,
+  boxSizing: 'border-box' as const,
+  height: `calc(var(${MOBILE_VV_CSS.height}, 100dvh) + var(${MOBILE_VV_CSS.bottomInset}, 0px))`,
   paddingBottom: `var(${MOBILE_VV_CSS.bottomInset}, 0px)`,
   bottom: 'auto' as const,
   zIndex: 10,
