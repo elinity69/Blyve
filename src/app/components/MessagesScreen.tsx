@@ -500,6 +500,11 @@ export function MessagesScreen({ isTabActive = true }: MessagesScreenProps) {
   const lastPushedVoiceKeyRef = useRef<string | null>(null);
   const pendingConversationIdRef = useRef<string | null>(null);
   const lastOpenedConversationIdRef = useRef<string | null>(null);
+  /** First text channel for mobile forward-swipe (prefetch + reopen), without auto-opening. */
+  const lastForwardGroupChannelRef = useRef<{ groupId: string; channelId: string } | null>(null);
+  const groupForwardCacheSeededRef = useRef<string | null>(null);
+  /** Push key while seeding forward-pull cache (push now, pop once stack depth is 1). */
+  const groupForwardSeedPendingRef = useRef<string | null>(null);
   const pushScreenRef = useRef<(content: React.ReactNode, id?: string) => void>(() => {});
   const popScreenRef = useRef<() => void>(() => {});
   const clearStackRef = useRef<() => void>(() => {});
@@ -514,6 +519,9 @@ export function MessagesScreen({ isTabActive = true }: MessagesScreenProps) {
         setSelectedGroup(null);
         setSelectedChannelId(null);
         lastPushedGroupIdRef.current = null;
+        groupForwardCacheSeededRef.current = null;
+        groupForwardSeedPendingRef.current = null;
+        lastForwardGroupChannelRef.current = null;
         setSelectedConversationId(conv.id);
         setSelectedOtherUser({
           id: otherUser.id,
@@ -1414,17 +1422,27 @@ export function MessagesScreen({ isTabActive = true }: MessagesScreenProps) {
   useEffect(() => {
     if (!selectedGroupId) {
       setSelectedChannelId(null);
+      lastForwardGroupChannelRef.current = null;
       return;
     }
 
     if (groupChannels.length === 0) return;
 
+    const firstText = groupChannels.find((channel) => (channel.type ?? 'text') === 'text');
+    if (!isDesktop && firstText) {
+      lastForwardGroupChannelRef.current = {
+        groupId: selectedGroupId,
+        channelId: firstText.id,
+      };
+    }
+
+    if (!isDesktop) return;
+
     setSelectedChannelId((prev) => {
       if (prev && groupChannels.some((channel) => channel.id === prev)) return prev;
-      const firstText = groupChannels.find((channel) => (channel.type ?? 'text') === 'text');
       return firstText?.id ?? null;
     });
-  }, [selectedGroupId, groupChannels]);
+  }, [selectedGroupId, groupChannels, isDesktop]);
 
   const selectedTextChannelIdsKey = useMemo(() => {
     if (!selectedGroupId) return '';
@@ -1573,27 +1591,38 @@ export function MessagesScreen({ isTabActive = true }: MessagesScreenProps) {
       loadProfile();
   }, [profilePreviewUserId]);
 
-  const reopenLastConversation = React.useCallback(() => {
+  const reopenFromForwardSwipe = React.useCallback(() => {
     const conversationId = lastOpenedConversationIdRef.current;
-    if (!conversationId || !currentUserId) return;
-    lastPushedChatIdRef.current = conversationId;
-    openConversationById(conversationId);
-  }, [currentUserId, openConversationById]);
+    if (conversationId && currentUserId && !selectedGroup) {
+      lastPushedChatIdRef.current = conversationId;
+      openConversationById(conversationId);
+      return;
+    }
+    const fwd = lastForwardGroupChannelRef.current;
+    if (fwd && selectedGroup?.id === fwd.groupId && currentUserId) {
+      const pushKey = `group-${fwd.groupId}-${fwd.channelId}`;
+      lastPushedGroupIdRef.current = pushKey;
+      setSelectedChannelId(fwd.channelId);
+    }
+  }, [currentUserId, openConversationById, selectedGroup]);
 
   const mobileStackDepthRef = useRef(0);
 
   const handleNavigationStackChange = React.useCallback((stackDepth: number) => {
     mobileStackDepthRef.current = stackDepth;
+
+    if (stackDepth === 1 && groupForwardSeedPendingRef.current) {
+      const pushKey = groupForwardSeedPendingRef.current;
+      groupForwardSeedPendingRef.current = null;
+      groupForwardCacheSeededRef.current = pushKey;
+      popScreenRef.current();
+      return;
+    }
+
     if (stackDepth !== 0) return;
 
-    const wasGroupOpen = lastPushedGroupIdRef.current !== null;
-
     lastPushedChatIdRef.current = null;
-    if (wasGroupOpen) {
-      setSelectedChannelId(null);
-      lastPushedGroupIdRef.current = null;
-    }
-    // Keep DM selection when popping to forward-pull cache (onBack uses clearSelection: false).
+    // Keep DM / group channel selection when popping to forward-pull cache.
   }, []);
 
   const selectDmHome = React.useCallback(() => {
@@ -1601,6 +1630,9 @@ export function MessagesScreen({ isTabActive = true }: MessagesScreenProps) {
       clearStackRef.current();
     }
     lastPushedGroupIdRef.current = null;
+    groupForwardCacheSeededRef.current = null;
+    groupForwardSeedPendingRef.current = null;
+    lastForwardGroupChannelRef.current = null;
     setSelectedGroup(null);
     setSelectedChannelId(null);
   }, [isDesktop]);
@@ -1613,6 +1645,9 @@ export function MessagesScreen({ isTabActive = true }: MessagesScreenProps) {
       if (!isDesktop) {
         clearStackRef.current();
         setSelectedChannelId(null);
+        groupForwardCacheSeededRef.current = null;
+        groupForwardSeedPendingRef.current = null;
+        lastForwardGroupChannelRef.current = null;
       }
       setSelectedGroup({ id: g.id, name: g.name, icon_url: g.icon_url ?? null });
     },
@@ -2079,7 +2114,7 @@ export function MessagesScreen({ isTabActive = true }: MessagesScreenProps) {
   const { pushScreen, popScreen, clearStack, renderLayers } = useEdgeBackNavigation({
     baseContent: MessagesContent,
     onStackChange: handleNavigationStackChange,
-    onForwardSwipe: isTabActive ? reopenLastConversation : undefined,
+    onForwardSwipe: isTabActive ? reopenFromForwardSwipe : undefined,
     forwardSwipeEnabled: isTabActive,
   });
 
@@ -2093,6 +2128,51 @@ export function MessagesScreen({ isTabActive = true }: MessagesScreenProps) {
     popScreenRef.current = popScreen;
     clearStackRef.current = clearStack;
   }, [pushScreen, popScreen, clearStack]);
+
+  useEffect(() => {
+    if (isDesktop || !selectedGroup || !currentUserId || channelsLoading) return;
+    const firstText = textChannels[0];
+    if (!firstText) return;
+
+    const pushKey = `group-${selectedGroup.id}-${firstText.id}`;
+    if (groupForwardCacheSeededRef.current === pushKey) return;
+    if (groupForwardSeedPendingRef.current === pushKey) return;
+    if (mobileStackDepthRef.current > 0) return;
+
+    groupForwardSeedPendingRef.current = pushKey;
+    pushScreenRef.current(
+      <GroupThreadScreen
+        groupId={selectedGroup.id}
+        groupName={selectedGroup.name}
+        channelId={firstText.id}
+        channelName={firstText.name}
+        channelIconUrl={firstText.icon_url ?? null}
+        currentUserId={currentUserId}
+        onBack={() => {
+          setSelectedChannelId(null);
+          lastPushedGroupIdRef.current = null;
+          popScreenRef.current();
+        }}
+        onLeave={loadGroupsData}
+        onOpened={refreshGroupUnreadCounts}
+      />,
+      pushKey
+    );
+
+    return () => {
+      if (groupForwardSeedPendingRef.current === pushKey) {
+        groupForwardSeedPendingRef.current = null;
+      }
+    };
+  }, [
+    isDesktop,
+    selectedGroup,
+    currentUserId,
+    channelsLoading,
+    textChannels,
+    loadGroupsData,
+    refreshGroupUnreadCounts,
+  ]);
 
   useEffect(() => {
     const storedConversationId = localStorage.getItem('openConversation');
@@ -2176,7 +2256,12 @@ export function MessagesScreen({ isTabActive = true }: MessagesScreenProps) {
       return;
     }
     const pushKey = `group-${selectedGroup.id}-${selectedChannelId}`;
-    if (lastPushedGroupIdRef.current === pushKey) return;
+    if (
+      lastPushedGroupIdRef.current === pushKey &&
+      mobileStackDepthRef.current > 0
+    ) {
+      return;
+    }
     lastPushedGroupIdRef.current = pushKey;
     pushScreenRef.current(
       <GroupThreadScreen
