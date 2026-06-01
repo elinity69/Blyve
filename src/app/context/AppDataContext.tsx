@@ -13,7 +13,6 @@ import { supabase } from '../lib/supabase';
 import { api } from '../lib/api';
 import { getCachedUser, initAuthSession, resolveAuthUser, subscribeAuth } from '../lib/authSession';
 import { invalidateConversationMembershipCache } from '../lib/conversationMembership';
-import { Conversation } from '../hooks/useChat';
 
 /**
  * Timeout Promise Helper - "The Watchdog"
@@ -57,10 +56,6 @@ if (isDevMode) {
 }
 
 interface AppDataContextType {
-  conversations: Conversation[];
-  refreshConversations: (knownUser?: User | null) => Promise<void>;
-  updateConversationOptimistically: (conversationId: string, lastMessage: string, lastMessageAt: string) => void;
-  isLoadingConversations: boolean;
   currentUserProfile: any | null;
   refreshCurrentUserProfile: (knownUser?: User | null) => Promise<void>;
   isLoadingProfile: boolean;
@@ -68,10 +63,6 @@ interface AppDataContextType {
 
 const noop = async () => {};
 const defaultAppDataContext: AppDataContextType = {
-  conversations: [],
-  refreshConversations: noop,
-  updateConversationOptimistically: () => {},
-  isLoadingConversations: false,
   currentUserProfile: null,
   refreshCurrentUserProfile: noop,
   isLoadingProfile: false,
@@ -80,8 +71,6 @@ const defaultAppDataContext: AppDataContextType = {
 const AppDataContext = createContext<AppDataContextType>(defaultAppDataContext);
 
 export function AppDataProvider({ children }: { children: ReactNode }) {
-  const [conversations, setConversations] = useState<Conversation[]>([]);
-  const [isLoadingConversations, setIsLoadingConversations] = useState(false);
   const [currentUserProfile, setCurrentUserProfile] = useState<any | null>(null);
   const [isLoadingProfile, setIsLoadingProfile] = useState(true);
 
@@ -181,194 +170,6 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  // Load Conversations
-  const refreshConversations = useCallback(async (knownUser?: User | null) => {
-    try {
-      setIsLoadingConversations(true);
-      console.log('🔄 AppDataContext: Loading conversations...');
-      console.log('🔄 Debug: [refreshConversations] Resolving user...');
-
-      const user = await resolveAuthUser(knownUser ?? undefined);
-      console.log('✅ Debug: [refreshConversations] User retrieved:', user?.id || 'null');
-      
-      if (!user) {
-        console.log('⚠️ AppDataContext: No user found for conversations');
-        setConversations([]);
-        return;
-      }
-
-      // Get all conversations where user is user1 or user2
-      console.log('🔄 Debug: [refreshConversations] Fetching conversations from DB...');
-      const convsPromise = Promise.resolve(
-        supabase
-          .from('conversations')
-          .select('id,user1_id,user2_id,created_at,updated_at,last_message,last_message_at')
-          .or(`user1_id.eq.${user.id},user2_id.eq.${user.id}`)
-          .order('updated_at', { ascending: false, nullsFirst: false })
-          .limit(200)
-      );
-      
-      const convsResult = await timeoutPromise(
-        convsPromise,
-        10000, // 10 Sekunden für Conversations Query
-        'Timeout: Failed to load conversations'
-      );
-      const { data: convsData, error: convsError } = convsResult;
-      console.log('✅ Debug: [refreshConversations] Conversations fetched:', convsData?.length || 0, 'conversations');
-
-      if (convsError) throw convsError;
-
-      // Fetch blocked users (two simple filters — avoids PostgREST 400 on some .or() shapes)
-      console.log('🔄 Debug: [refreshConversations] Fetching blocked users...');
-      const blockedPromise = (async () => {
-        const [asBlocker, asBlocked] = await Promise.all([
-          supabase
-            .from('blocked_users')
-            .select('blocker_id, blocked_user_id')
-            .eq('blocker_id', user.id),
-          supabase
-            .from('blocked_users')
-            .select('blocker_id, blocked_user_id')
-            .eq('blocked_user_id', user.id),
-        ]);
-        const err = asBlocker.error || asBlocked.error;
-        if (err) {
-          console.warn('⚠️ [refreshConversations] blocked_users:', err.message);
-          return [];
-        }
-        const map = new Map<string, { blocker_id: string; blocked_user_id: string }>();
-        for (const row of [...(asBlocker.data || []), ...(asBlocked.data || [])]) {
-          const key = `${row.blocker_id}:${row.blocked_user_id}`;
-          map.set(key, row);
-        }
-        return [...map.values()];
-      })();
-
-      const blockedResult = await timeoutPromise(
-        blockedPromise,
-        5000, // 5 Sekunden für Blocked Users Query
-        'Timeout: Failed to load blocked users'
-      );
-      const blockedData = blockedResult;
-      console.log('✅ Debug: [refreshConversations] Blocked users fetched:', blockedData?.length || 0, 'blocks');
-
-      const blockedByMe = new Set(
-        (blockedData || [])
-          .filter((b: { blocker_id: string }) => b.blocker_id === user.id)
-          .map((b: { blocked_user_id: string }) => b.blocked_user_id)
-      );
-
-      const blockedMe = new Set(
-        (blockedData || [])
-          .filter((b: { blocked_user_id: string }) => b.blocked_user_id === user.id)
-          .map((b: { blocker_id: string }) => b.blocker_id)
-      );
-
-      const blockedIds = new Set([...blockedByMe, ...blockedMe]);
-
-      const visibleConvs = (convsData || []).filter((conv) => {
-        const otherUserId = conv.user1_id === user.id ? conv.user2_id : conv.user1_id;
-        return !blockedIds.has(otherUserId);
-      });
-
-      const otherUserIds = [
-        ...new Set(
-          visibleConvs.map((conv) =>
-            conv.user1_id === user.id ? conv.user2_id : conv.user1_id
-          )
-        ),
-      ];
-
-      const profileMap = new Map<string, {
-        id: string;
-        name: string | null;
-        display_name: string | null;
-        username: string | null;
-        images: string[] | null;
-        avatar_url: string | null;
-        ghost_mode: boolean | null;
-      }>();
-
-      if (otherUserIds.length > 0) {
-        const profilesPromise = Promise.resolve(
-          supabase
-            .from('profiles')
-            .select('id, name, display_name, username, images, avatar_url, ghost_mode')
-            .in('id', otherUserIds)
-        );
-        const profilesResult = await timeoutPromise(
-          profilesPromise,
-          10000,
-          'Timeout: Failed to load conversation profiles'
-        );
-        for (const profile of profilesResult.data || []) {
-          profileMap.set(profile.id, profile);
-        }
-      }
-
-      const enrichedConversations: Conversation[] = visibleConvs.map((conv) => {
-        const otherUserId = conv.user1_id === user.id ? conv.user2_id : conv.user1_id;
-        const profile = profileMap.get(otherUserId);
-        const displayLabel = profile?.display_name || profile?.name || 'Unknown';
-        return {
-          ...conv,
-          other_user: {
-            id: otherUserId,
-            name: displayLabel,
-            display_name: profile?.display_name || profile?.name || undefined,
-            username: profile?.username || undefined,
-            imageUrl: profile?.images?.[0] || profile?.avatar_url || undefined,
-            is_online: false,
-            ghost_mode: profile?.ghost_mode || false,
-          },
-          has_messages: !!conv.last_message,
-        };
-      });
-
-      const filteredConversations = enrichedConversations.filter(Boolean) as Conversation[];
-      const sortedChats = filteredConversations.sort((a, b) => {
-        const aTime = a.last_message_at ? new Date(a.last_message_at).getTime() : (a.updated_at ? new Date(a.updated_at).getTime() : 0);
-        const bTime = b.last_message_at ? new Date(b.last_message_at).getTime() : (b.updated_at ? new Date(b.updated_at).getTime() : 0);
-        return bTime - aTime;
-      });
-
-      console.log('✅ Debug: [refreshConversations] Setting conversations...');
-      setConversations(sortedChats);
-      console.log('✅ Debug: [refreshConversations] Completed successfully');
-    } catch (err: any) {
-      console.error('❌ Debug: [refreshConversations] Error loading conversations:', err);
-      setConversations([]);
-    } finally {
-      // KRITISCH: Loading-State IMMER zurücksetzen, egal was passiert
-      console.log('✅ Debug: [refreshConversations] Finally block - setting loading to false');
-      setIsLoadingConversations(false);
-    }
-  }, []);
-
-  // Optimistically update conversation after sending message
-  const updateConversationOptimistically = useCallback((conversationId: string, lastMessage: string, lastMessageAt: string) => {
-    setConversations((prev) => {
-      const updated = prev.map((conv) => {
-        if (conv.id === conversationId) {
-          return {
-            ...conv,
-            last_message: lastMessage,
-            last_message_at: lastMessageAt,
-            updated_at: lastMessageAt,
-          };
-        }
-        return conv;
-      });
-      
-      // Sort by last_message_at (most recent first)
-      return updated.sort((a, b) => {
-        const aTime = a.last_message_at ? new Date(a.last_message_at).getTime() : (a.updated_at ? new Date(a.updated_at).getTime() : 0);
-        const bTime = b.last_message_at ? new Date(b.last_message_at).getTime() : (b.updated_at ? new Date(b.updated_at).getTime() : 0);
-        return bTime - aTime;
-      });
-    });
-  }, []);
-
   // Ref to prevent multiple simultaneous loads
   const isLoadingRef = useRef(false);
   const lastLoadUserIdRef = useRef<string | null>(null);
@@ -399,7 +200,6 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
         currentUserId: currentUserId
       });
       // CRITICAL: Even if skipping, ensure loading states are reset (in case of previous error)
-      setIsLoadingConversations(false);
       setIsLoadingProfile(false);
       return;
     }
@@ -415,7 +215,6 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       if (isLoadingRef.current) {
         console.error(`⏱️ AppDataContext: Load timeout after ${INIT_TIMEOUT_MS}ms - forcing completion`);
         isLoadingRef.current = false;
-        setIsLoadingConversations(false);
         setIsLoadingProfile(false);
       }
     }, INIT_TIMEOUT_MS);
@@ -465,9 +264,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
         console.log('✅ AppDataContext: All data load attempts completed');
       } else {
         console.log('⚠️ AppDataContext: No user found, clearing data...');
-        setConversations([]);
         setCurrentUserProfile(null);
-        setIsLoadingConversations(false);
         setIsLoadingProfile(false);
       }
     } catch (error: any) {
@@ -493,13 +290,8 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
         }
       }
       
-      // KRITISCH: Auch bei Fehler Loading-State zurücksetzen
-      setIsLoadingConversations(false);
       setIsLoadingProfile(false);
     } finally {
-      // CRITICAL: Always reset loading states in finally block (safety net)
-      // This ensures states are reset even if an error occurs or function returns early
-      setIsLoadingConversations(false);
       setIsLoadingProfile(false);
       
       if (timeoutId) {
@@ -513,7 +305,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
         }
       }, 1000);
     }
-  }, [refreshCurrentUserProfile, refreshConversations]);
+  }, [refreshCurrentUserProfile]);
 
   // Initial load + shared auth listener (token sync in authSession)
   useEffect(() => {
@@ -522,7 +314,6 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
 
     const finishLoading = () => {
       if (!mounted) return;
-      setIsLoadingConversations(false);
       setIsLoadingProfile(false);
     };
 
@@ -578,7 +369,6 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
 
       if (event === 'SIGNED_OUT') {
         api.setAccessToken(null);
-        setConversations([]);
         setCurrentUserProfile(null);
         finishLoading();
         isLoadingRef.current = false;
@@ -600,33 +390,21 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     const handleReload = () => {
       const user = getCachedUser();
       if (user) {
-        void loadUserData(user);
+        void refreshCurrentUserProfile(user);
       }
       window.dispatchEvent(new CustomEvent('conversation-list-reload-requested'));
     };
     window.addEventListener('app-data-reload', handleReload);
     return () => window.removeEventListener('app-data-reload', handleReload);
-  }, [loadUserData]);
+  }, [refreshCurrentUserProfile]);
 
   const value = useMemo<AppDataContextType>(
     () => ({
-      conversations,
-      refreshConversations,
-      updateConversationOptimistically,
-      isLoadingConversations,
       currentUserProfile,
       refreshCurrentUserProfile,
       isLoadingProfile,
     }),
-    [
-      conversations,
-      refreshConversations,
-      updateConversationOptimistically,
-      isLoadingConversations,
-      currentUserProfile,
-      refreshCurrentUserProfile,
-      isLoadingProfile,
-    ]
+    [currentUserProfile, refreshCurrentUserProfile, isLoadingProfile]
   );
 
   return <AppDataContext.Provider value={value}>{children}</AppDataContext.Provider>;

@@ -2,7 +2,7 @@ import React, { useContext, useEffect, useLayoutEffect, useRef, useState, useCal
 import { ArrowLeft, Loader2 } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useTranslation } from 'react-i18next';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api';
 import { supabase } from '../lib/supabase';
 import { toast } from '../lib/toast';
@@ -100,6 +100,7 @@ export function GroupThreadScreen({
   onOpened,
 }: GroupThreadScreenProps) {
   const { t, i18n } = useTranslation();
+  const queryClient = useQueryClient();
   const { currentUserProfile } = useAppData();
   const { activeCall, state: callState } = useCall();
   const isMdUp = useIsMdUp();
@@ -133,6 +134,12 @@ export function GroupThreadScreen({
     queryKey: groupMessagesQueryKey(groupId, channelId ?? ''),
     enabled: !!channelId,
     queryFn: () => fetchGroupChannelMessages(groupId, channelId!) as Promise<GroupMessageRow[]>,
+    initialData: () => {
+      if (!channelId) return undefined;
+      return queryClient.getQueryData<GroupMessageRow[]>(
+        groupMessagesQueryKey(groupId, channelId)
+      );
+    },
     staleTime: 60_000,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
