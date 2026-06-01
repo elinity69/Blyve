@@ -1,6 +1,6 @@
 import React from 'react';
 import { Phone, PhoneOff } from 'lucide-react';
-import { useCall } from '../context/CallContext';
+import { useCall } from '../context/CallStateContext';
 import { useTranslation } from 'react-i18next';
 
 export function IncomingCallPopup() {
@@ -12,7 +12,7 @@ export function IncomingCallPopup() {
   return (
     <div className="fixed inset-x-0 top-0 z-[140] flex justify-center p-4 pointer-events-none">
       <div className="mt-10 w-full max-w-md rounded-2xl border border-red-500/35 bg-[#18191c] shadow-2xl pointer-events-auto overflow-hidden">
-        <div className="px-4 py-3 bg-gradient-to-r from-red-600/80 via-pink-600/80 to-orange-500/80">
+        <div className="px-4 py-3 bg-gradient-to-r from-blyve/90 via-blyve to-blyve-hover/90">
           <p className="text-xs tracking-wide uppercase text-white/90 font-semibold">{t('call.incoming')}</p>
         </div>
         <div className="p-5 flex items-center gap-4">

@@ -42,7 +42,7 @@ function avatarSrc(participant: CallStageParticipant): string {
   if (participant.avatarUrl) {
     return getOptimizedImageUrl(participant.avatarUrl, 240);
   }
-  return `https://ui-avatars.com/api/?name=${encodeURIComponent(participant.name)}&background=5865f2&color=fff&size=200`;
+  return `https://ui-avatars.com/api/?name=${encodeURIComponent(participant.name)}&background=3FAF95&color=fff&size=200`;
 }
 
 function ParticipantAvatar({

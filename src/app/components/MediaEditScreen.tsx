@@ -213,7 +213,7 @@ export function MediaEditScreen({ profile, onBack, previousScreen }: MediaEditSc
                 onClick={() => setShowPreview(false)}
                 className={`px-3 py-1 rounded-full text-xs font-bold transition-colors border ${
                   !showPreview 
-                    ? 'bg-orange-600 text-white shadow-lg border-transparent' 
+                    ? 'bg-blyve text-white shadow-lg border-transparent' 
                     : 'bg-gray-100 text-gray-700 border-gray-200 dark:bg-slate-800 dark:border-slate-700 dark:text-gray-100 hover:bg-gray-200 dark:hover:bg-slate-700 media-edit-toggle-btn'
                 }`}
               >
@@ -223,7 +223,7 @@ export function MediaEditScreen({ profile, onBack, previousScreen }: MediaEditSc
                 onClick={() => setShowPreview(true)}
                 className={`px-3 py-1 rounded-full text-xs font-bold transition-colors border ${
                   showPreview 
-                    ? 'bg-orange-600 text-white border-transparent' 
+                    ? 'bg-blyve text-white border-transparent' 
                     : 'bg-gray-100 text-gray-700 border-gray-200 dark:bg-slate-800 dark:border-slate-700 dark:text-gray-100 hover:bg-gray-200 dark:hover:bg-slate-700 media-edit-toggle-btn'
                 }`}
               >
@@ -256,7 +256,7 @@ export function MediaEditScreen({ profile, onBack, previousScreen }: MediaEditSc
                 disabled={uploading}
                 className="w-full h-full flex flex-col items-center justify-center gap-2 hover:bg-gray-100 dark:hover:bg-white/5 transition-colors"
               >
-                <div className="w-12 h-12 rounded-full bg-orange-600 flex items-center justify-center">
+                <div className="w-12 h-12 rounded-full bg-blyve flex items-center justify-center">
                   <Camera className="w-6 h-6 text-white" />
                 </div>
               </button>
@@ -273,11 +273,11 @@ export function MediaEditScreen({ profile, onBack, previousScreen }: MediaEditSc
                     e.stopPropagation();
                     handleRemoveImage(0);
                   }}
-                  className="absolute top-2 right-2 w-6 h-6 bg-orange-600 rounded-full flex items-center justify-center text-white shadow-lg hover:bg-orange-700 transition-colors"
+                  className="absolute top-2 right-2 w-6 h-6 bg-blyve rounded-full flex items-center justify-center text-white shadow-lg hover:bg-blyve-hover transition-colors"
                 >
                   <X className="w-4 h-4" />
                 </button>
-                <div className="absolute bottom-2 left-2 bg-gradient-to-r from-orange-500 to-pink-500 text-white text-xs font-bold px-2 py-1 rounded-full">
+                <div className="absolute bottom-2 left-2 bg-blyve text-white text-xs font-bold px-2 py-1 rounded-full">
                   {t('profile.main')}
                 </div>
               </>
@@ -287,7 +287,7 @@ export function MediaEditScreen({ profile, onBack, previousScreen }: MediaEditSc
 
         {/* Instruction Text */}
         <div 
-          className="mt-6 p-4 rounded-xl border border-orange-200"
+          className="mt-6 p-4 rounded-xl border border-blyve/25"
           data-dark-border="rgba(203, 208, 231, 0.1)"
         >
           <p className="text-sm text-gray-700 dark:text-white text-center font-semibold">
@@ -299,7 +299,7 @@ export function MediaEditScreen({ profile, onBack, previousScreen }: MediaEditSc
         <Button
           onClick={triggerFileInput}
           disabled={uploading}
-          className="w-full mt-4 bg-gradient-to-r from-orange-500 via-pink-500 to-red-500 hover:from-orange-600 hover:via-pink-600 hover:to-red-600 text-white font-bold py-4 rounded-xl"
+          className="w-full mt-4 bg-blyve hover:bg-blyve-hover text-white font-bold py-4 rounded-xl"
         >
           <Upload className="w-5 h-5 mr-2" />
           {uploading ? t('profile.loading') : images[0] ? t('profile.edit') : t('profile.addMedia')}
@@ -341,7 +341,7 @@ export function MediaEditScreen({ profile, onBack, previousScreen }: MediaEditSc
                 onClick={() => {
                   setSelectedImage(null);
                 }}
-                className="absolute top-4 right-4 w-10 h-10 bg-orange-600/90 hover:bg-orange-700 rounded-full flex items-center justify-center text-white transition-colors"
+                className="absolute top-4 right-4 w-10 h-10 bg-blyve/90 hover:bg-blyve-hover rounded-full flex items-center justify-center text-white transition-colors"
               >
                 <X className="w-6 h-6" />
               </button>

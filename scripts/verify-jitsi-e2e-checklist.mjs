@@ -15,7 +15,7 @@ const scenarios = [
     steps: [
       ['createCallSession (no roomName in response)', 'supabase/functions/_shared/jitsi-call-handlers.ts', 'mediaProvider: "jitsi"'],
       ['acceptCall → joining', 'supabase/functions/_shared/jitsi-call-handlers.ts', 'action === "accept"'],
-      ['connectToJitsi sets jitsiJoinRequest only', 'src/app/context/CallContext.tsx', 'setJitsiJoinRequest'],
+      ['connectToJitsi sets jitsiJoinRequest only', 'src/app/context/CallStateContext.tsx', 'setJitsiJoinRequest'],
       ['JitsiCallView → fetchJitsiJoinCredentials → api.joinCall', 'src/app/components/JitsiCallView.tsx', 'fetchJitsiJoinCredentials'],
       ['IFrame mount from server credentials', 'src/app/components/JitsiCallView.tsx', 'mountJitsiMeetingFromServerJoin'],
       ['joinCall always returns server-minted JWT', 'supabase/functions/_shared/jitsi-call-handlers.ts', 'await mintJitsiJwt'],

@@ -1,6 +1,6 @@
 ﻿import React, {
-  Suspense,
   createContext,
+  Suspense,
   lazy,
   useCallback,
   useContext,
@@ -2381,7 +2381,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   );
 }
 
-export function useCall() {
+export function useCall(): CallContextValue {
   const context = useContext(CallContext);
   if (!context) {
     throw new Error('useCall must be used within CallProvider');

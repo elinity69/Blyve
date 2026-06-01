@@ -69,10 +69,10 @@ function LinkPreviewCard({
       }`}
       onClick={(event) => openExternalLink(event, preview.url)}
     >
-      {!inBubble ? <div className="w-1 shrink-0 bg-orange-500" aria-hidden /> : null}
+      {!inBubble ? <div className="w-1 shrink-0 bg-blyve" aria-hidden /> : null}
       <div className="flex min-w-0 flex-1 gap-3 p-3">
         <div className="min-w-0 flex-1">
-          <p className="truncate text-[11px] font-semibold uppercase tracking-wide text-orange-600 dark:text-orange-400">
+          <p className="truncate text-[11px] font-semibold uppercase tracking-wide text-blyve">
             {preview.siteName || hostname}
           </p>
           {preview.title ? (
@@ -145,7 +145,7 @@ function LinkPreviewEmbed({ url, inBubble = false }: { url: string; inBubble?: b
       }`}
       onClick={(event) => openExternalLink(event, url)}
     >
-      {!inBubble ? <div className="w-1 shrink-0 rounded-full bg-orange-500" aria-hidden /> : null}
+      {!inBubble ? <div className="w-1 shrink-0 rounded-full bg-blyve" aria-hidden /> : null}
       <div className="min-w-0 pl-3">
         <p className="truncate text-sm font-semibold text-gray-900 dark:text-white">{hostname}</p>
         <p className="mt-0.5 flex items-center gap-1 truncate text-xs text-gray-500 dark:text-gray-400">

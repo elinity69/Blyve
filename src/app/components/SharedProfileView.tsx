@@ -235,7 +235,7 @@ export function SharedProfileView({
                   style={{ pointerEvents: 'none', userSelect: 'none' }}
                 />
               ) : (
-                <div className="w-full h-full bg-gradient-to-br from-orange-400 via-pink-400 to-red-400 flex items-center justify-center">
+                <div className="w-full h-full bg-blyve flex items-center justify-center">
                   <div className="text-8xl text-white/80 font-bold">{user.name?.charAt(0) || '?'}</div>
                 </div>
               )}

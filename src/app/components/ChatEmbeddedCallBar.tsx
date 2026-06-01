@@ -1,5 +1,5 @@
 import React from 'react';
-import { useCall } from '../context/CallContext';
+import { useCall } from '../context/CallStateContext';
 import { ChatCallPanel } from './ChatCallPanel';
 import { GroupVoiceCallPanel } from './GroupVoiceCallPanel';
 import { PinnedCallPanel } from './PinnedCallPanel';

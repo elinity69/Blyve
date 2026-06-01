@@ -21,7 +21,7 @@ import { useMessageRealtime } from './hooks/useMessageRealtime';
 import { useTypingRealtime } from './hooks/useTypingRealtime';
 import { NotificationPrompt } from './components/NotificationPrompt';
 import { UnreadProvider } from './context/UnreadContext';
-import { CallProvider, useCall } from './context/CallContext';
+import { CallProvider, useCall } from './context/CallStateContext';
 import { CallJoinScreen } from './components/CallJoinScreen';
 import { parseCallJoinParams } from './lib/callJoinRoute';
 import i18n from '../lib/i18n';
@@ -131,11 +131,6 @@ function AppContent({ onUserIdChange }: AppContentProps = {}) {
         }
       } catch (error) {
         console.warn('Session check failed:', error);
-        // Fallback: try to restore from localStorage even if session check fails
-        const storedToken = localStorage.getItem('accessToken');
-        if (storedToken) {
-          api.setAccessToken(storedToken);
-        }
         applyBootTheme();
       }
 
@@ -145,6 +140,7 @@ function AppContent({ onUserIdChange }: AppContentProps = {}) {
       try {
         const user = sessionUser ?? getCachedUser() ?? (await resolveAuthUser());
         if (!user) {
+          api.setAccessToken(null);
           throw new Error('No user found');
         }
         
@@ -242,11 +238,13 @@ function AppContent({ onUserIdChange }: AppContentProps = {}) {
             setNeedsOnboarding(false);
             setNeedsProfilePicture(false);
           }
-        } catch (error: any) {
-          // Token expired or invalid
-          console.error('❌ Token validation failed:', error.message);
-          api.signout();
+        } catch (error: unknown) {
+          const message = error instanceof Error ? error.message : String(error);
+          console.warn('Session expired or invalid — signing out:', message);
+          await api.signout();
           setIsAuthenticated(false);
+          setCurrentUserId(null);
+          onUserIdChange?.(null);
         } finally {
           setLoading(false);
         }
@@ -588,7 +586,7 @@ function AppContent({ onUserIdChange }: AppContentProps = {}) {
 
   if (loading) {
     return (
-      <div className="h-screen bg-gradient-to-br from-orange-500 to-pink-600 flex items-center justify-center">
+      <div className="h-screen bg-gradient-to-br from-blyve to-blyve-hover flex items-center justify-center">
         <div className="text-white text-xl">Loading...</div>
       </div>
     );
@@ -644,7 +642,7 @@ function AppContent({ onUserIdChange }: AppContentProps = {}) {
           }}
         >
           {callJoinParams ? (
-            <div className="fixed top-0 inset-x-0 z-[160] bg-orange-600/95 px-4 py-2 text-center text-sm text-white">
+            <div className="fixed top-0 inset-x-0 z-[160] bg-blyve/95 px-4 py-2 text-center text-sm text-white">
               {i18n.t('call.joinViaInviteLoginRequired')}
             </div>
           ) : null}
@@ -718,7 +716,7 @@ function AppContent({ onUserIdChange }: AppContentProps = {}) {
                               </p>
                               <button
                                 onClick={() => window.location.reload()}
-                                className="px-4 py-2 bg-orange-500 text-white rounded-lg"
+                                className="px-4 py-2 bg-blyve text-white rounded-lg"
                               >
                                 {i18n.t('errors.reloadPage')}
                               </button>
@@ -744,7 +742,7 @@ function AppContent({ onUserIdChange }: AppContentProps = {}) {
                               </p>
                               <button
                                 onClick={() => window.location.reload()}
-                                className="px-4 py-2 bg-orange-500 text-white rounded-lg"
+                                className="px-4 py-2 bg-blyve text-white rounded-lg"
                               >
                                 {i18n.t('errors.reloadPage')}
                               </button>
@@ -824,11 +822,11 @@ export default function App() {
     <QueryClientProvider client={queryClient}>
       <ToastProvider>
         <AppDataProvider>
-          <AppProviders>
+          <CallProvider>
             <UnreadProviderWrapper>
               <AppContent />
             </UnreadProviderWrapper>
-          </AppProviders>
+          </CallProvider>
         </AppDataProvider>
       </ToastProvider>
     </QueryClientProvider>
@@ -857,8 +855,4 @@ function UnreadProviderWrapper({ children }: { children: ReactNode }) {
       {children}
     </UnreadProvider>
   );
-}
-
-function AppProviders({ children }: { children: ReactNode }) {
-  return <CallProvider>{children}</CallProvider>;
 }

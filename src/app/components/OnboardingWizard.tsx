@@ -242,7 +242,7 @@ export function OnboardingWizard({ userName, onComplete }: OnboardingWizardProps
           </div>
           <div className="w-full bg-gray-200 dark:bg-[#0A0A0A] rounded-full h-1 overflow-hidden">
             <motion.div
-              className="h-full bg-gradient-to-r from-orange-500 to-orange-600 rounded-full"
+              className="h-full bg-blyve rounded-full"
               initial={{ width: 0 }}
               animate={{ width: `${((currentStep + 1) / totalSteps) * 100}%` }}
               transition={{ duration: 0.3 }}
@@ -262,8 +262,8 @@ export function OnboardingWizard({ userName, onComplete }: OnboardingWizardProps
               className="flex flex-col pt-[max(1.25rem,env(safe-area-inset-top,0px))] sm:pt-4"
             >
               <div className="flex justify-center mb-4 sm:mb-5">
-                <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-full bg-orange-100 dark:bg-orange-500/15 flex items-center justify-center">
-                  <Globe className="w-6 h-6 sm:w-7 sm:h-7 text-orange-600" />
+                <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-full bg-blyve/15 dark:bg-blyve/15 flex items-center justify-center">
+                  <Globe className="w-6 h-6 sm:w-7 sm:h-7 text-blyve" />
                 </div>
               </div>
               <h2 className="text-2xl sm:text-[28px] font-bold text-gray-900 dark:text-white text-center mb-2">
@@ -282,8 +282,8 @@ export function OnboardingWizard({ userName, onComplete }: OnboardingWizardProps
                       onClick={() => handleLanguageSelect(language.code)}
                       className={`w-full flex items-center justify-between gap-3 px-4 sm:px-5 h-[50px] sm:h-[56px] rounded-2xl border text-left transition-colors ${
                         isActive
-                          ? 'border-orange-500 bg-orange-50 dark:bg-orange-500/10'
-                          : 'border-gray-200 dark:border-white/10 bg-white dark:bg-[#0A0A0A] hover:border-orange-300 dark:hover:border-orange-500/40'
+                          ? 'border-blyve bg-blyve/10 dark:bg-blyve/10'
+                          : 'border-gray-200 dark:border-white/10 bg-white dark:bg-[#0A0A0A] hover:border-blyve/60 dark:hover:border-blyve/40'
                       }`}
                     >
                       <span className="flex items-center gap-3 min-w-0">
@@ -295,7 +295,7 @@ export function OnboardingWizard({ userName, onComplete }: OnboardingWizardProps
                         </span>
                       </span>
                       {isActive ? (
-                        <span className="w-7 h-7 rounded-full bg-orange-600 flex items-center justify-center shrink-0">
+                        <span className="w-7 h-7 rounded-full bg-blyve flex items-center justify-center shrink-0">
                           <Check className="w-4 h-4 text-white stroke-[3]" />
                         </span>
                       ) : null}
@@ -325,7 +325,7 @@ export function OnboardingWizard({ userName, onComplete }: OnboardingWizardProps
                 value={formData.displayName}
                 onChange={(e) => updateForm({ displayName: e.target.value })}
                 placeholder={t('onboarding.displayNamePlaceholder')}
-                className="w-full h-[48px] sm:h-[50px] px-5 sm:px-6 text-[15px] border border-gray-300 dark:border-white/5 dark:bg-[#0A0A0A] dark:text-white rounded-full focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-500/20"
+                className="w-full h-[48px] sm:h-[50px] px-5 sm:px-6 text-[15px] border border-gray-300 dark:border-white/5 dark:bg-[#0A0A0A] dark:text-white rounded-full focus:border-blyve focus:outline-none focus:ring-2 focus:ring-blyve/20"
               />
             </motion.div>
           )}
@@ -353,11 +353,11 @@ export function OnboardingWizard({ userName, onComplete }: OnboardingWizardProps
                   placeholder={t('onboarding.usernamePlaceholder')}
                   autoCapitalize="off"
                   autoCorrect="off"
-                  className="w-full h-[48px] sm:h-[50px] pl-9 pr-12 text-[15px] border border-gray-300 dark:border-white/5 dark:bg-[#0A0A0A] dark:text-white rounded-full focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-500/20"
+                  className="w-full h-[48px] sm:h-[50px] pl-9 pr-12 text-[15px] border border-gray-300 dark:border-white/5 dark:bg-[#0A0A0A] dark:text-white rounded-full focus:border-blyve focus:outline-none focus:ring-2 focus:ring-blyve/20"
                 />
                 <div className="absolute right-4 top-1/2 -translate-y-1/2">
                   {usernameStatus === 'checking' && (
-                    <div className="w-4 h-4 border-2 border-orange-600 border-t-transparent rounded-full animate-spin" />
+                    <div className="w-4 h-4 border-2 border-blyve border-t-transparent rounded-full animate-spin" />
                   )}
                   {usernameStatus === 'available' && <span className="text-green-500 text-lg">✓</span>}
                   {(usernameStatus === 'taken' || usernameStatus === 'invalid') && formData.username.length >= 3 && (
@@ -376,7 +376,7 @@ export function OnboardingWizard({ userName, onComplete }: OnboardingWizardProps
                       <button
                         type="button"
                         onClick={applyUsernameSuggestion}
-                        className="underline text-orange-600"
+                        className="underline text-blyve"
                       >
                         {t('onboarding.usernameSuggest', { name: usernameSuggestion })}
                       </button>
@@ -402,18 +402,18 @@ export function OnboardingWizard({ userName, onComplete }: OnboardingWizardProps
               <p className="text-sm sm:text-[15px] text-gray-500 dark:text-gray-400 mb-4 sm:mb-6">{t('onboarding.avatarBioSubtitle')}</p>
 
               <p className="text-[14px] font-semibold text-gray-700 dark:text-gray-300 mb-2">{t('onboarding.photoTitle')}</p>
-              <div className="w-28 h-28 sm:w-32 sm:h-32 rounded-full border-2 border-dashed border-orange-400 flex items-center justify-center mb-3 sm:mb-4 overflow-hidden">
+              <div className="w-28 h-28 sm:w-32 sm:h-32 rounded-full border-2 border-dashed border-blyve flex items-center justify-center mb-3 sm:mb-4 overflow-hidden">
                 {profileImagePreview ? (
                   <img src={profileImagePreview} alt="" className="w-full h-full object-cover" />
                 ) : (
-                  <Camera className="w-9 h-9 sm:w-10 sm:h-10 text-orange-500" />
+                  <Camera className="w-9 h-9 sm:w-10 sm:h-10 text-blyve" />
                 )}
               </div>
               <input ref={fileInputRef} type="file" accept="image/*" onChange={handleImageSelect} className="hidden" />
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
-                className="mb-2 h-10 px-4 bg-orange-600 text-white rounded-full text-sm font-semibold"
+                className="mb-2 h-10 px-4 bg-blyve text-white rounded-full text-sm font-semibold"
               >
                 {t('onboarding.uploadPhoto')}
               </button>
@@ -424,7 +424,7 @@ export function OnboardingWizard({ userName, onComplete }: OnboardingWizardProps
                 value={formData.bio}
                 onChange={(e) => updateForm({ bio: e.target.value })}
                 placeholder={t('onboarding.bioPlaceholder')}
-                className="w-full px-5 sm:px-6 py-3 sm:py-4 border border-gray-300 dark:border-white/5 dark:bg-[#0A0A0A] dark:text-white rounded-2xl focus:border-orange-500 focus:outline-none text-[15px] min-h-[96px] sm:min-h-[112px]"
+                className="w-full px-5 sm:px-6 py-3 sm:py-4 border border-gray-300 dark:border-white/5 dark:bg-[#0A0A0A] dark:text-white rounded-2xl focus:border-blyve focus:outline-none text-[15px] min-h-[96px] sm:min-h-[112px]"
                 rows={3}
               />
             </motion.div>
@@ -448,15 +448,15 @@ export function OnboardingWizard({ userName, onComplete }: OnboardingWizardProps
                     onChange={(e) => updateForm({ legalAccepted: e.target.checked })}
                     className="sr-only peer"
                   />
-                  <div className="w-6 h-6 border-2 border-gray-300 dark:border-white/5 rounded-md peer-checked:bg-orange-600 peer-checked:border-transparent transition-all duration-200 flex items-center justify-center">
+                  <div className="w-6 h-6 border-2 border-gray-300 dark:border-white/5 rounded-md peer-checked:bg-blyve peer-checked:border-transparent transition-all duration-200 flex items-center justify-center">
                     {formData.legalAccepted && <Check className="w-4 h-4 text-white stroke-[3]" />}
                   </div>
                 </div>
                 <span className="flex-1 leading-relaxed">
                   {t('onboarding.legalAcceptPrefix')}{' '}
-                  <a href="#" className="text-orange-600 underline">{t('onboarding.legalTos')}</a>
+                  <a href="#" className="text-blyve underline">{t('onboarding.legalTos')}</a>
                   {' '}{t('onboarding.legalAnd')}{' '}
-                  <a href="#" className="text-orange-600 underline">{t('onboarding.legalPrivacy')}</a>
+                  <a href="#" className="text-blyve underline">{t('onboarding.legalPrivacy')}</a>
                   {t('onboarding.legalAcceptSuffix')}
                 </span>
               </label>
@@ -474,7 +474,7 @@ export function OnboardingWizard({ userName, onComplete }: OnboardingWizardProps
             whileTap={{ scale: 0.98 }}
             type="button"
             onClick={handleNext}
-            className="w-full h-[48px] bg-orange-600 text-white rounded-full font-semibold text-base shadow-md"
+            className="w-full h-[48px] bg-blyve text-white rounded-full font-semibold text-base shadow-md"
           >
             {t('onboarding.continue')}
           </motion.button>
@@ -502,7 +502,7 @@ export function OnboardingWizard({ userName, onComplete }: OnboardingWizardProps
                       !formData.username ||
                       normalizeUsernameInput(formData.username).length < 3))
                 }
-                className="flex-1 h-[48px] bg-orange-600 text-white rounded-full font-semibold text-base shadow-md disabled:opacity-50 disabled:cursor-not-allowed"
+                className="flex-1 h-[48px] bg-blyve text-white rounded-full font-semibold text-base shadow-md disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {t('onboarding.continue')}
               </motion.button>
@@ -513,7 +513,7 @@ export function OnboardingWizard({ userName, onComplete }: OnboardingWizardProps
                 type="button"
                 onClick={handleFinish}
                 disabled={loading || !formData.legalAccepted}
-                className="flex-1 h-[48px] bg-orange-600 text-white rounded-full font-semibold text-base shadow-md disabled:opacity-50 disabled:cursor-not-allowed"
+                className="flex-1 h-[48px] bg-blyve text-white rounded-full font-semibold text-base shadow-md disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {loading ? t('onboarding.saving') : t('onboarding.finish')}
               </motion.button>

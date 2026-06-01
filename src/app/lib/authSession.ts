@@ -32,6 +32,28 @@ function emit(event: AuthChangeEvent, session: Session | null) {
   });
 }
 
+function isInvalidRefreshTokenError(error: unknown): boolean {
+  const message = String((error as { message?: string })?.message ?? error ?? '').toLowerCase();
+  return (
+    message.includes('invalid refresh token') ||
+    message.includes('refresh token not found') ||
+    message.includes('refresh_token_not_found')
+  );
+}
+
+/** Clear stale Supabase/local auth after expired or revoked refresh tokens. */
+export async function clearInvalidAuthSession(): Promise<void> {
+  cachedSession = null;
+  cachedUser = null;
+  sessionHydrated = true;
+  api.setAccessToken(null);
+  try {
+    await supabase.auth.signOut({ scope: 'local' });
+  } catch {
+    // ignore — local storage is already cleared via signOut scope local when possible
+  }
+}
+
 /** Register a single Supabase auth listener for the whole app. */
 export function ensureAuthListener() {
   if (listenerRegistered) return;
@@ -49,13 +71,33 @@ export function ensureAuthListener() {
 export function initAuthSession(): Promise<Session | null> {
   if (!initPromise) {
     ensureAuthListener();
-    initPromise = supabase.auth.getSession().then(({ data: { session } }) => {
-      cachedSession = session;
-      cachedUser = session?.user ?? null;
-      sessionHydrated = true;
-      syncAccessToken(session);
-      return session;
-    });
+    initPromise = supabase.auth
+      .getSession()
+      .then(async ({ data: { session }, error }) => {
+        if (error) {
+          if (isInvalidRefreshTokenError(error)) {
+            await clearInvalidAuthSession();
+            return null;
+          }
+          throw error;
+        }
+        cachedSession = session;
+        cachedUser = session?.user ?? null;
+        sessionHydrated = true;
+        syncAccessToken(session);
+        return session;
+      })
+      .catch(async (error) => {
+        if (isInvalidRefreshTokenError(error)) {
+          await clearInvalidAuthSession();
+          return null;
+        }
+        sessionHydrated = true;
+        cachedSession = null;
+        cachedUser = null;
+        api.setAccessToken(null);
+        throw error;
+      });
   }
   return initPromise;
 }

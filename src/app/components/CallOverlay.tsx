@@ -1,6 +1,6 @@
 import React from 'react';
 import { Mic, MicOff, MonitorUp, PhoneOff, Video, VideoOff } from 'lucide-react';
-import { useCall } from '../context/CallContext';
+import { useCall } from '../context/CallStateContext';
 import { useTranslation } from 'react-i18next';
 
 interface CallOverlayProps {
@@ -94,7 +94,7 @@ export function CallOverlay({ conversationId }: CallOverlayProps) {
               onClick={() => void toggleCamera()}
               disabled={!live}
               className={`h-9 w-9 rounded-full flex items-center justify-center transition-colors ${
-                isCameraEnabled ? 'bg-indigo-500 text-white' : 'bg-[#2f3136] text-white'
+                isCameraEnabled ? 'bg-blyve text-white' : 'bg-[#2f3136] text-white'
               } disabled:opacity-60`}
             >
               {isCameraEnabled ? <Video className="w-4 h-4" /> : <VideoOff className="w-4 h-4" />}

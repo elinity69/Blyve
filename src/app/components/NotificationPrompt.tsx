@@ -71,7 +71,7 @@ export const NotificationPrompt = ({ userId }: NotificationPromptProps) => {
           >
             <div className="flex items-start gap-4">
               {/* Icon */}
-              <div className="flex-shrink-0 w-12 h-12 rounded-full bg-gradient-to-br from-orange-500 to-pink-500 flex items-center justify-center">
+              <div className="flex-shrink-0 w-12 h-12 rounded-full bg-blyve flex items-center justify-center">
                 <Bell className="w-6 h-6 text-white" />
               </div>
 
@@ -88,7 +88,7 @@ export const NotificationPrompt = ({ userId }: NotificationPromptProps) => {
                 <div className="flex gap-2">
                   <button
                     onClick={handleEnable}
-                    className="flex-1 bg-gradient-to-r from-orange-500 to-pink-500 text-white font-semibold py-2.5 px-4 rounded-xl hover:brightness-110 transition-all active:scale-95"
+                    className="flex-1 bg-blyve text-white font-semibold py-2.5 px-4 rounded-xl hover:brightness-110 transition-all active:scale-95"
                   >
                     {t('notifications.enable')}
                   </button>

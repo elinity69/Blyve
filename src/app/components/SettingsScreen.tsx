@@ -36,6 +36,23 @@ interface SettingsScreenProps {
   previousScreen?: React.ReactNode; // Optional: Previous screen for parallax effect
 }
 
+/** Spotify-style surfaces: #121212 base, #282828 chips, #b3b3b3 muted label */
+function settingsChoiceChipClass(selected: boolean): string {
+  return [
+    'px-4 py-2 rounded-full text-sm font-semibold transition-colors',
+    selected
+      ? 'bg-blyve text-white'
+      : 'bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-[#282828] dark:text-[#b3b3b3] dark:hover:bg-[#3e3e3e] oled:bg-[#282828] oled:text-[#b3b3b3]',
+  ].join(' ');
+}
+
+function settingsToggleTrackClass(enabled: boolean): string {
+  return [
+    'relative w-14 h-7 rounded-full transition-colors flex-shrink-0',
+    enabled ? 'bg-blyve' : 'bg-gray-300 dark:bg-[#535353] oled:bg-[#535353]',
+  ].join(' ');
+}
+
 export function SettingsScreen({ onSignOut, onBack, previousScreen }: SettingsScreenProps) {
   const { t, i18n } = useTranslation();
   const [profile, setProfile] = useState<any>(null);
@@ -222,7 +239,7 @@ export function SettingsScreen({ onSignOut, onBack, previousScreen }: SettingsSc
                   <ChevronLeft className="w-6 h-6 text-gray-700 dark:text-white" />
                 </button>
               )}
-              <Settings className="w-6 h-6 text-orange-600" />
+              <Settings className="w-6 h-6 text-blyve" />
               <h1 className="text-2xl font-bold text-gray-900 dark:text-white">{t('settings.title')}</h1>
             </div>
             <div className="flex items-center gap-2 ml-auto">
@@ -244,7 +261,7 @@ export function SettingsScreen({ onSignOut, onBack, previousScreen }: SettingsSc
           {profile && (
             <div>
               <h2 className="font-bold mb-4">{t('settings.profile')}</h2>
-              <div className="blyve-settings-card border border-orange-200 dark:border-white/5 rounded-2xl p-4">
+              <div className="blyve-settings-card border border-blyve/25 dark:border-white/5 rounded-2xl p-4">
                 <div className="flex items-start gap-4 mb-4">
                   {/* Profile Picture - Read-only */}
                   <div className="relative flex-shrink-0">
@@ -255,7 +272,7 @@ export function SettingsScreen({ onSignOut, onBack, previousScreen }: SettingsSc
                         className="w-20 h-20 rounded-full object-cover border-3 border-white shadow-lg"
                       />
                     ) : (
-                      <div className="w-20 h-20 rounded-full bg-orange-500 flex items-center justify-center text-white text-2xl font-bold">
+                      <div className="w-20 h-20 rounded-full bg-blyve flex items-center justify-center text-white text-2xl font-bold">
                         {profile.name?.charAt(0).toUpperCase()}
                       </div>
                     )}
@@ -288,13 +305,13 @@ export function SettingsScreen({ onSignOut, onBack, previousScreen }: SettingsSc
           <div>
             <div className="flex items-center gap-2 mb-4">
               {themeMode === 'light' ? (
-                <Sun className="w-5 h-5 text-orange-600" />
+                <Sun className="w-5 h-5 text-blyve" />
               ) : (
-                <Moon className="w-5 h-5 text-orange-600" />
+                <Moon className="w-5 h-5 text-blyve" />
               )}
               <h2 className="font-bold text-gray-900 dark:text-white">{t('settings.appearance')}</h2>
             </div>
-            <div className="blyve-settings-card border border-orange-200 dark:border-white/5 rounded-2xl p-4">
+            <div className="blyve-settings-card border border-blyve/25 dark:border-white/5 rounded-2xl p-4">
               <div>
                 <h3 className="font-semibold mb-1 text-gray-900 dark:text-white">{t('settings.appearance')}</h3>
                 <p className="text-xs text-gray-600 dark:text-gray-300 mb-4">
@@ -343,8 +360,8 @@ export function SettingsScreen({ onSignOut, onBack, previousScreen }: SettingsSc
                         }}
                         className={`rounded-xl border px-2 py-2.5 text-xs font-semibold transition-colors ${
                           selected
-                            ? 'border-orange-500 bg-orange-100 text-orange-900 dark:border-orange-500 dark:bg-orange-500/20 dark:text-orange-200'
-                            : 'border-gray-300 bg-gray-100 text-gray-800 hover:border-orange-400 dark:border-white/20 dark:bg-[#121212] dark:text-gray-100 dark:hover:border-white/35 oled:bg-[#121212] oled:text-gray-100'
+                            ? 'border-blyve bg-blyve/15 text-blyve dark:border-blyve dark:bg-blyve/20 dark:text-blyve'
+                            : 'border-gray-300 bg-gray-100 text-gray-800 hover:border-blyve/50 dark:border-white/20 dark:bg-[#121212] dark:text-gray-100 dark:hover:border-blyve/40 oled:bg-[#121212] oled:text-gray-100'
                         }`}
                       >
                         {t(labelKey)}
@@ -360,12 +377,12 @@ export function SettingsScreen({ onSignOut, onBack, previousScreen }: SettingsSc
           {showSystemPushSetting && (
             <div>
               <div className="flex items-center gap-2 mb-4">
-                <Bell className="w-5 h-5 text-orange-600" />
+                <Bell className="w-5 h-5 text-blyve" />
                 <h2 className="font-bold text-gray-900 dark:text-white">
                   {t('settings.systemPushSection')}
                 </h2>
               </div>
-              <div className="blyve-settings-card border border-orange-200 dark:border-white/5 rounded-2xl p-4">
+              <div className="blyve-settings-card border border-blyve/25 dark:border-white/5 rounded-2xl p-4">
                 <div className="flex items-center justify-between">
                   <div>
                     <h3 className="font-semibold mb-1 text-gray-900 dark:text-white">
@@ -379,9 +396,7 @@ export function SettingsScreen({ onSignOut, onBack, previousScreen }: SettingsSc
                     type="button"
                     onClick={handleToggleSystemPush}
                     disabled={updatingSystemPush}
-                    className={`relative w-14 h-7 rounded-full transition-colors flex-shrink-0 ${
-                      systemPushEnabled ? 'bg-orange-600' : 'bg-gray-300'
-                    }`}
+                    className={settingsToggleTrackClass(systemPushEnabled)}
                     aria-label={t('settings.systemPushTitle')}
                   >
                     <div
@@ -398,10 +413,10 @@ export function SettingsScreen({ onSignOut, onBack, previousScreen }: SettingsSc
           {/* Ghost mode (reduced visibility / privacy) */}
           <div>
             <div className="flex items-center gap-2 mb-4">
-              <Eye className="w-5 h-5 text-orange-600" />
+              <Eye className="w-5 h-5 text-blyve" />
               <h2 className="font-bold text-gray-900 dark:text-white">{t('settings.ghostMode')}</h2>
             </div>
-            <div className="blyve-settings-card border border-orange-200 dark:border-white/5 rounded-2xl p-4">
+            <div className="blyve-settings-card border border-blyve/25 dark:border-white/5 rounded-2xl p-4">
               <div className="flex items-center justify-between">
                 <div>
                   <h3 className="font-semibold mb-1 text-gray-900 dark:text-white">{t('profile.ghostMode')}</h3>
@@ -411,9 +426,7 @@ export function SettingsScreen({ onSignOut, onBack, previousScreen }: SettingsSc
                   type="button"
                   onClick={handleToggleGhostMode}
                   disabled={updatingGhostMode}
-                  className={`relative w-14 h-7 rounded-full transition-colors flex-shrink-0 ${
-                    ghostMode ? 'bg-orange-600' : 'bg-gray-300'
-                  }`}
+                  className={settingsToggleTrackClass(ghostMode)}
                 >
                   <div
                     className={`absolute top-1 left-1 w-5 h-5 bg-white rounded-full transition-transform ${
@@ -428,11 +441,11 @@ export function SettingsScreen({ onSignOut, onBack, previousScreen }: SettingsSc
           {/* Language Selection - EXACT COPY OF GENDER PREFERENCE STYLE */}
           <div>
             <div className="flex items-center gap-2 mb-4">
-              <Globe className="w-5 h-5 text-orange-600" />
+              <Globe className="w-5 h-5 text-blyve" />
               <h2 className="font-bold text-gray-900 dark:text-white">{t('settings.language')}</h2>
             </div>
             {/* Language Selection */}
-            <div className="blyve-settings-card border border-orange-200 dark:border-white/5 rounded-2xl p-4">
+            <div className="blyve-settings-card border border-blyve/25 dark:border-white/5 rounded-2xl p-4">
               <div className="mb-3">
                 <h3 className="font-semibold mb-1 text-gray-900 dark:text-white">{t('settings.language')}</h3>
                 <p className="text-xs text-gray-600 dark:text-gray-300">
@@ -440,69 +453,22 @@ export function SettingsScreen({ onSignOut, onBack, previousScreen }: SettingsSc
                 </p>
               </div>
               <div className="flex flex-wrap gap-2">
-                <button
-                  onClick={() => i18n.changeLanguage('de')}
-                  className="px-4 py-2 rounded-full text-sm font-semibold transition-colors"
-                  style={(() => {
-                    const isDark = document.documentElement.classList.contains('dark');
-                    if (i18n.language === 'de' || i18n.language === 'de-DE') {
-                      return { color: '#ffffff', backgroundColor: '#ea580c' };
-                    }
-                    if (isDark) {
-                      return { 
-                        color: '#ffffff', 
-                        backgroundColor: '#1e293b',
-                        WebkitTextFillColor: '#ffffff',
-                        WebkitTextStrokeColor: '#ffffff'
-                      };
-                    }
-                    return { color: '#374151', backgroundColor: 'rgba(255, 255, 255, 0.8)' };
-                  })()}
-                >
-                  🇩🇪 Deutsch
-                </button>
-                <button
-                  onClick={() => i18n.changeLanguage('en')}
-                  className="px-4 py-2 rounded-full text-sm font-semibold transition-colors"
-                  style={(() => {
-                    const isDark = document.documentElement.classList.contains('dark');
-                    if (i18n.language === 'en' || i18n.language === 'en-US') {
-                      return { color: '#ffffff', backgroundColor: '#ea580c' };
-                    }
-                    if (isDark) {
-                      return { 
-                        color: '#ffffff', 
-                        backgroundColor: '#1e293b',
-                        WebkitTextFillColor: '#ffffff',
-                        WebkitTextStrokeColor: '#ffffff'
-                      };
-                    }
-                    return { color: '#374151', backgroundColor: 'rgba(255, 255, 255, 0.8)' };
-                  })()}
-                >
-                  🇺🇸 English
-                </button>
-                <button
-                  onClick={() => i18n.changeLanguage('es')}
-                  className="px-4 py-2 rounded-full text-sm font-semibold transition-colors"
-                  style={(() => {
-                    const isDark = document.documentElement.classList.contains('dark');
-                    if (i18n.language === 'es' || i18n.language === 'es-ES') {
-                      return { color: '#ffffff', backgroundColor: '#ea580c' };
-                    }
-                    if (isDark) {
-                      return { 
-                        color: '#ffffff', 
-                        backgroundColor: '#1e293b',
-                        WebkitTextFillColor: '#ffffff',
-                        WebkitTextStrokeColor: '#ffffff'
-                      };
-                    }
-                    return { color: '#374151', backgroundColor: 'rgba(255, 255, 255, 0.8)' };
-                  })()}
-                >
-                  🇪🇸 Español
-                </button>
+                {(
+                  [
+                    { code: 'de', label: '🇩🇪 Deutsch', active: i18n.language === 'de' || i18n.language === 'de-DE' },
+                    { code: 'en', label: '🇺🇸 English', active: i18n.language === 'en' || i18n.language === 'en-US' },
+                    { code: 'es', label: '🇪🇸 Español', active: i18n.language === 'es' || i18n.language === 'es-ES' },
+                  ] as const
+                ).map(({ code, label, active }) => (
+                  <button
+                    key={code}
+                    type="button"
+                    onClick={() => i18n.changeLanguage(code)}
+                    className={settingsChoiceChipClass(active)}
+                  >
+                    {label}
+                  </button>
+                ))}
               </div>
             </div>
           </div>

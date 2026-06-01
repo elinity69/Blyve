@@ -436,7 +436,7 @@ export function EditProfileScreen({ onBack, onSave, previousScreen }: EditProfil
               <ChevronLeft className="w-6 h-6 text-gray-700 dark:text-gray-300" />
             </button>
             <div className="flex items-center gap-2">
-              <User className="w-6 h-6 bg-gradient-to-br from-orange-500 via-red-500 to-pink-500 bg-clip-text text-transparent dark:from-orange-400 dark:via-red-400 dark:to-pink-400" />
+              <User className="w-6 h-6 text-blyve" />
               <h1 className="text-2xl font-bold text-gray-900 dark:text-white">{t('profile.editProfile')}</h1>
             </div>
           </div>
@@ -448,7 +448,7 @@ export function EditProfileScreen({ onBack, onSave, previousScreen }: EditProfil
               !normalizeUsernameInput(username) ||
               usernameStatus !== 'available'
             }
-            className="bg-gradient-to-br from-orange-500 via-red-500 to-pink-500 hover:from-orange-600 hover:via-red-600 hover:to-pink-600 text-white shadow-lg"
+            className="bg-blyve hover:bg-blyve-hover text-white shadow-lg"
           >
             <Save className="w-4 h-4 mr-2" />
             {saving ? t('profile.loading') : t('profile.save')}
@@ -457,7 +457,7 @@ export function EditProfileScreen({ onBack, onSave, previousScreen }: EditProfil
       </div>
 
       {/* Header Background with Gradient */}
-      <div className="bg-gradient-to-b from-orange-50 to-white dark:from-[#0A0A0A] dark:to-black dark:border dark:border-white/5 pb-8 rounded-b-3xl">
+      <div className="bg-gradient-to-b from-blyve/10 to-white dark:from-[#0A0A0A] dark:to-black dark:border dark:border-white/5 pb-8 rounded-b-3xl">
         <div className="flex flex-col items-center pt-6 pb-4">
           {/* Profile Picture - Read-only Preview */}
           <div className="relative mb-4">
@@ -472,7 +472,7 @@ export function EditProfileScreen({ onBack, onSave, previousScreen }: EditProfil
                 }}
               />
             ) : (
-              <div className="w-32 h-32 rounded-full bg-gradient-to-br from-orange-400 via-pink-400 to-red-400 flex items-center justify-center text-white text-4xl font-bold shadow-xl border-4 border-white">
+              <div className="w-32 h-32 rounded-full bg-blyve flex items-center justify-center text-white text-4xl font-bold shadow-xl border-4 border-white">
                 {name?.charAt(0).toUpperCase() || '?'}
               </div>
             )}
@@ -504,7 +504,7 @@ export function EditProfileScreen({ onBack, onSave, previousScreen }: EditProfil
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="Max Mustermann"
-                className="w-full pl-10 pr-4 py-3 bg-white dark:bg-[#0A0A0A] border border-gray-200 dark:border-white/5 dark:text-white rounded-xl focus:border-orange-500 dark:focus:border-orange-400 focus:outline-none focus:ring-2 focus:ring-orange-500/20 transition-colors shadow-sm"
+                className="w-full pl-10 pr-4 py-3 bg-white dark:bg-[#0A0A0A] border border-gray-200 dark:border-white/5 dark:text-white rounded-xl focus:border-blyve dark:focus:border-blyve focus:outline-none focus:ring-2 focus:ring-blyve/20 transition-colors shadow-sm"
                 required
               />
             </div>
@@ -523,10 +523,10 @@ export function EditProfileScreen({ onBack, onSave, previousScreen }: EditProfil
                 onChange={(e) => setUsername(normalizeUsernameInput(e.target.value))}
                 placeholder="maxmustermann"
                 autoCapitalize="off"
-                className="w-full pl-8 pr-10 py-3 bg-white dark:bg-[#0A0A0A] border border-gray-200 dark:border-white/5 dark:text-white rounded-xl focus:border-orange-500 dark:focus:border-orange-400 focus:outline-none focus:ring-2 focus:ring-orange-500/20 transition-colors shadow-sm"
+                className="w-full pl-8 pr-10 py-3 bg-white dark:bg-[#0A0A0A] border border-gray-200 dark:border-white/5 dark:text-white rounded-xl focus:border-blyve dark:focus:border-blyve focus:outline-none focus:ring-2 focus:ring-blyve/20 transition-colors shadow-sm"
               />
               <div className="absolute right-3 top-1/2 -translate-y-1/2 text-lg">
-                {usernameStatus === 'checking' && <span className="inline-block w-4 h-4 border-2 border-orange-500 border-t-transparent rounded-full animate-spin" />}
+                {usernameStatus === 'checking' && <span className="inline-block w-4 h-4 border-2 border-blyve border-t-transparent rounded-full animate-spin" />}
                 {usernameStatus === 'available' && <span className="text-green-500">✓</span>}
                 {(usernameStatus === 'taken' || usernameStatus === 'invalid') && username.length >= 3 && (
                   <span className="text-red-500">✕</span>
@@ -546,7 +546,7 @@ export function EditProfileScreen({ onBack, onSave, previousScreen }: EditProfil
             <select
               value={pronouns}
               onChange={(e) => setPronouns(e.target.value)}
-              className="w-full px-4 py-3 bg-white dark:bg-[#0A0A0A] border border-gray-200 dark:border-white/5 dark:text-white rounded-xl focus:border-orange-500 dark:focus:border-orange-400 focus:outline-none focus:ring-2 focus:ring-orange-500/20 transition-colors shadow-sm"
+              className="w-full px-4 py-3 bg-white dark:bg-[#0A0A0A] border border-gray-200 dark:border-white/5 dark:text-white rounded-xl focus:border-blyve dark:focus:border-blyve focus:outline-none focus:ring-2 focus:ring-blyve/20 transition-colors shadow-sm"
             >
               <option value="">Select pronouns (optional)</option>
               <option value="He/Him">He/Him</option>
@@ -567,7 +567,7 @@ export function EditProfileScreen({ onBack, onSave, previousScreen }: EditProfil
             <select
               value={gender}
               onChange={(e) => setGender(e.target.value)}
-              className="w-full px-4 py-3 bg-white dark:bg-[#0A0A0A] border border-gray-200 dark:border-white/5 dark:text-white rounded-xl focus:border-orange-500 dark:focus:border-orange-400 focus:outline-none focus:ring-2 focus:ring-orange-500/20 transition-colors shadow-sm"
+              className="w-full px-4 py-3 bg-white dark:bg-[#0A0A0A] border border-gray-200 dark:border-white/5 dark:text-white rounded-xl focus:border-blyve dark:focus:border-blyve focus:outline-none focus:ring-2 focus:ring-blyve/20 transition-colors shadow-sm"
             >
               <option value="">{t('profile.selectOptional')}</option>
               <option value="male">{t('profile.male')}</option>
@@ -587,7 +587,7 @@ export function EditProfileScreen({ onBack, onSave, previousScreen }: EditProfil
               placeholder="Tell others about yourself — hobbies, topics you enjoy chatting about, a fun fact…"
               rows={4}
               maxLength={300}
-              className="w-full px-4 py-3 bg-white dark:bg-[#0A0A0A] border border-gray-200 dark:border-white/5 dark:text-white rounded-xl focus:border-orange-500 dark:focus:border-orange-400 focus:outline-none focus:ring-2 focus:ring-orange-500/20 transition-colors resize-none shadow-sm"
+              className="w-full px-4 py-3 bg-white dark:bg-[#0A0A0A] border border-gray-200 dark:border-white/5 dark:text-white rounded-xl focus:border-blyve dark:focus:border-blyve focus:outline-none focus:ring-2 focus:ring-blyve/20 transition-colors resize-none shadow-sm"
             />
             <p className="text-xs text-gray-500 mt-1">
               {bio.length}/300 characters
@@ -614,7 +614,7 @@ export function EditProfileScreen({ onBack, onSave, previousScreen }: EditProfil
                   value={favoriteFood}
                   onChange={(e) => setFavoriteFood(e.target.value)}
                   placeholder="e.g. Pizza, Sushi, Tacos"
-                  className="w-full pl-10 pr-4 py-3 bg-white dark:bg-[#0A0A0A] border border-gray-200 dark:border-white/5 dark:text-white rounded-xl focus:border-orange-500 dark:focus:border-orange-400 focus:outline-none focus:ring-2 focus:ring-orange-500/20 transition-colors shadow-sm"
+                  className="w-full pl-10 pr-4 py-3 bg-white dark:bg-[#0A0A0A] border border-gray-200 dark:border-white/5 dark:text-white rounded-xl focus:border-blyve dark:focus:border-blyve focus:outline-none focus:ring-2 focus:ring-blyve/20 transition-colors shadow-sm"
                 />
               </div>
             </div>

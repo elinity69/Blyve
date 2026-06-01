@@ -24,7 +24,7 @@ export function MessageTextContent({
   const parts = splitTextByUrls(content);
   const linkClass = isMe
     ? 'underline decoration-white/40 underline-offset-2 hover:decoration-white/70'
-    : 'text-orange-600 underline decoration-orange-400/50 underline-offset-2 hover:decoration-orange-500 dark:text-orange-400';
+    : 'text-blyve underline decoration-blyve/50 underline-offset-2 hover:decoration-blyve dark:text-blyve';
 
   const nodes: React.ReactNode[] = [];
 

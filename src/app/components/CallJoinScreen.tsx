@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Phone, Loader2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { useCall } from '../context/CallContext';
+import { useCall } from '../context/CallStateContext';
 import { type CallJoinParams, clearCallJoinUrl } from '../lib/callJoinRoute';
 import { toJitsiCallError } from '../lib/jitsiCall';
 
@@ -52,9 +52,9 @@ export function CallJoinScreen({ params, onDone }: CallJoinScreenProps) {
       (connectionState === 'connecting' || connectionState === 'disconnected'));
 
   return (
-    <div className="fixed inset-0 z-[150] flex items-center justify-center bg-gradient-to-br from-orange-500 to-pink-600 p-4">
+    <div className="fixed inset-0 z-[150] flex items-center justify-center bg-gradient-to-br from-blyve to-blyve-hover p-4">
       <div className="w-full max-w-md rounded-2xl border border-white/20 bg-[#18191c] shadow-2xl overflow-hidden">
-        <div className="px-5 py-4 bg-gradient-to-r from-red-600/80 via-pink-600/80 to-orange-500/80">
+        <div className="px-5 py-4 bg-gradient-to-r from-blyve/90 via-blyve to-blyve-hover/90">
           <p className="text-white font-semibold">{t('call.joinViaInviteTitle')}</p>
         </div>
         <div className="p-6 space-y-4">

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Pause, Play, Volume2, VolumeX } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { resolveAudioDuration } from '../../lib/audioDuration';
 
 function formatAudioTime(seconds: number): string {
   if (!Number.isFinite(seconds) || seconds < 0) return '0:00';
@@ -44,7 +45,7 @@ function VoiceMessageVolumeHover({
   const muted = volume <= 0;
   const iconClass = isMe
     ? 'text-white/80 hover:text-white'
-    : 'text-[#5865f2] hover:text-[#4752c4] dark:text-[#aeb4ff] dark:hover:text-white';
+    : 'text-blyve hover:text-blyve-hover dark:text-blyve dark:hover:text-white';
 
   return (
     <div
@@ -55,7 +56,7 @@ function VoiceMessageVolumeHover({
         type="button"
         onClick={onToggleMute}
         className={`flex h-8 w-8 items-center justify-center rounded-full transition-colors ${
-          isMe ? 'hover:bg-white/15' : 'hover:bg-[#5865f2]/10 dark:hover:bg-white/10'
+          isMe ? 'hover:bg-white/15' : 'hover:bg-blyve/10 dark:hover:bg-white/10'
         } ${iconClass}`}
         aria-label={muted ? t('chat.embedMediaUnmute') : t('chat.embedMediaMute')}
       >
@@ -127,49 +128,21 @@ export function VoiceMessagePlayer({ src, isMe = false }: VoiceMessagePlayerProp
   }, [volume]);
 
   useEffect(() => {
+    let cancelled = false;
+    setDuration(0);
+    void resolveAudioDuration(src).then((resolved) => {
+      if (!cancelled && resolved > 0) setDuration(resolved);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [src]);
+
+  useEffect(() => {
     const audio = audioRef.current;
     if (!audio) return undefined;
 
-    let cancelled = false;
-    let seekProbeActive = false;
-
-    const applyDuration = (value: number) => {
-      if (cancelled || value <= 0) return;
-      setDuration(value);
-    };
-
-    const probeWebmDuration = () => {
-      if (seekProbeActive || readAudioDuration(audio) > 0) return;
-      seekProbeActive = true;
-
-      const onSeeked = () => {
-        audio.removeEventListener('seeked', onSeeked);
-        seekProbeActive = false;
-        const resolved = readAudioDuration(audio);
-        if (resolved > 0) applyDuration(resolved);
-        if (!audio.paused) return;
-        try {
-          audio.currentTime = 0;
-        } catch {
-          // ignore reset failures
-        }
-        syncTimes();
-      };
-
-      audio.addEventListener('seeked', onSeeked);
-      try {
-        audio.currentTime = Number.MAX_SAFE_INTEGER;
-      } catch {
-        audio.removeEventListener('seeked', onSeeked);
-        seekProbeActive = false;
-      }
-    };
-
-    const onMetadata = () => {
-      syncTimes();
-      if (readAudioDuration(audio) <= 0) probeWebmDuration();
-    };
-
+    const onMetadata = () => syncTimes();
     const onPlay = () => setPlaying(true);
     const onPause = () => setPlaying(false);
     const onEnded = () => {
@@ -177,7 +150,6 @@ export function VoiceMessagePlayer({ src, isMe = false }: VoiceMessagePlayerProp
       setCurrentTime(0);
     };
 
-    setDuration(0);
     setCurrentTime(0);
     setPlaying(false);
 
@@ -194,7 +166,6 @@ export function VoiceMessagePlayer({ src, isMe = false }: VoiceMessagePlayerProp
     if (audio.readyState >= HTMLMediaElement.HAVE_METADATA) onMetadata();
 
     return () => {
-      cancelled = true;
       audio.removeEventListener('loadedmetadata', onMetadata);
       audio.removeEventListener('durationchange', syncTimes);
       audio.removeEventListener('loadeddata', onMetadata);
@@ -233,8 +204,8 @@ export function VoiceMessagePlayer({ src, isMe = false }: VoiceMessagePlayerProp
     applyVolume(0);
   };
 
-  const accent = isMe ? 'bg-white/90' : 'bg-[#5865f2]';
-  const accentSoft = isMe ? 'bg-white/35' : 'bg-[#5865f2]/35';
+  const accent = isMe ? 'bg-white/90' : 'bg-blyve';
+  const accentSoft = isMe ? 'bg-white/35' : 'bg-blyve/35';
   const textClass = isMe ? 'text-white/85' : 'text-gray-600 dark:text-gray-300';
 
   return (
@@ -242,12 +213,12 @@ export function VoiceMessagePlayer({ src, isMe = false }: VoiceMessagePlayerProp
       className="flex min-w-[11.5rem] max-w-[min(100%,17rem)] items-center gap-1.5 py-0.5"
       onPointerDown={(event) => event.stopPropagation()}
     >
-      <audio ref={audioRef} src={src} preload="metadata" className="hidden" />
+      <audio ref={audioRef} src={src} preload="auto" className="hidden" />
       <button
         type="button"
         onClick={togglePlayback}
         className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${
-          isMe ? 'bg-white/20 text-white' : 'bg-[#5865f2]/15 text-[#5865f2] dark:bg-[#5865f2]/25 dark:text-[#aeb4ff]'
+          isMe ? 'bg-white/20 text-white' : 'bg-blyve/15 text-blyve dark:bg-blyve/25 dark:text-blyve'
         }`}
         aria-label={playing ? 'Pause' : 'Play'}
       >

@@ -55,9 +55,9 @@ export function scrollToMessage(messageId: string): void {
   const el = document.querySelector(`[data-message-id="${messageId}"]`);
   if (el instanceof HTMLElement) {
     el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    el.classList.add('ring-2', 'ring-orange-500/60', 'rounded-xl');
+    el.classList.add('ring-2', 'ring-blyve/60', 'rounded-xl');
     window.setTimeout(() => {
-      el.classList.remove('ring-2', 'ring-orange-500/60', 'rounded-xl');
+      el.classList.remove('ring-2', 'ring-blyve/60', 'rounded-xl');
     }, 1200);
   }
 }

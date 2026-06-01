@@ -12,7 +12,7 @@ import {
 } from '../lib/chatMessages';
 import { GroupChannelNavContext } from '../context/GroupChannelNavContext';
 import { useAppData } from '../context/AppDataContext';
-import { useCall } from '../context/CallContext';
+import { useCall } from '../context/CallStateContext';
 import { useIsMdUp, useIsMobile } from './ui/use-mobile';
 import { useChatScrollAnchor } from '../hooks/useChatScrollAnchor';
 import { getOptimizedImageUrl } from '../lib/images';
@@ -530,7 +530,7 @@ export function GroupThreadScreen({
       <div
         data-chat-messages-scroll
         ref={assignScrollContainer}
-        className={`${CHAT_MESSAGE_LIST_CLASS} ${dropActive ? 'ring-2 ring-inset ring-orange-400/40' : ''}`}
+        className={`${CHAT_MESSAGE_LIST_CLASS} ${dropActive ? 'ring-2 ring-inset ring-blyve/40' : ''}`}
         onDragOver={(e) => {
           e.preventDefault();
           setDropActive(true);
@@ -669,7 +669,7 @@ export function GroupThreadScreen({
               >
                 <TypingBubble inline />
                 {typingLabel ? (
-                  <p className="max-w-[min(100vw-2rem,320px)] truncate px-1 text-xs italic text-[#5865f2]">
+                  <p className="max-w-[min(100vw-2rem,320px)] truncate px-1 text-xs italic text-blyve">
                     {typingLabel}
                   </p>
                 ) : null}

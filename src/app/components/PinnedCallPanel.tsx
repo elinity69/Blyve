@@ -2,7 +2,7 @@ import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 're
 import { Mic, PhoneOff } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useAppData } from '../context/AppDataContext';
-import { useCall } from '../context/CallContext';
+import { useCall } from '../context/CallStateContext';
 import { isJitsiCallProvider } from '../lib/callProvider';
 import { getOptimizedImageUrl } from '../lib/images';
 import { shouldSkipJitsiPrejoin } from '../lib/jitsiMicStorage';
@@ -179,8 +179,8 @@ export function PinnedCallPanel(_props: PinnedCallPanelProps) {
       ) : (
         <div className="flex h-[min(32vh,300px)] min-h-[200px] w-full items-center justify-center border-t border-white/10 bg-[#0b0b0b] px-4">
           <div className="text-center">
-            <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-full bg-[#5865f2]/20">
-              <PhoneOff className="h-6 w-6 text-[#5865f2]" />
+            <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-full bg-blyve/20">
+              <PhoneOff className="h-6 w-6 text-blyve" />
             </div>
             <p className="text-sm font-semibold text-white">{callTitle}</p>
             <p className="mt-1 text-xs text-white/70">{subtitle}</p>
@@ -241,15 +241,15 @@ export function PinnedCallPanel(_props: PinnedCallPanelProps) {
       {showMicPrompt ? (
         <div className="absolute inset-0 z-40 flex items-center justify-center bg-black/70 px-4">
           <div className="max-w-sm rounded-2xl border border-white/10 bg-[#1e1f22]/95 p-4 text-center shadow-2xl">
-            <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-[#5865f2]/20">
-              <Mic className="h-6 w-6 text-[#5865f2]" />
+            <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-blyve/20">
+              <Mic className="h-6 w-6 text-blyve" />
             </div>
             <p className="text-sm font-semibold text-white">{t('call.enableMicrophone')}</p>
             <p className="mt-2 text-xs leading-relaxed text-white/70">{t('call.microphoneIframeHint')}</p>
             <button
               type="button"
               onClick={() => void toggleMute()}
-              className="mt-4 w-full rounded-xl bg-[#5865f2] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#4752c4]"
+              className="mt-4 w-full rounded-xl bg-blyve px-4 py-2.5 text-sm font-semibold text-white hover:bg-blyve-hover"
             >
               {t('call.enableMicrophone')}
             </button>

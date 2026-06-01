@@ -67,13 +67,13 @@ export function ProfilePictureUpload({ onComplete, onSkip }: ProfilePictureUploa
   };
 
   return (
-    <div className="h-screen bg-gradient-to-br from-orange-500 via-pink-500 to-purple-600 flex items-center justify-center p-4">
+    <div className="h-screen bg-gradient-to-br from-blyve via-blyve to-blyve-hover flex items-center justify-center p-4">
       <div className="bg-white rounded-3xl p-8 max-w-md w-full shadow-2xl">
         {/* Header */}
         <div className="text-center mb-6">
           <div className="flex items-center justify-center gap-2 mb-4">
-            <Flame className="w-8 h-8 bg-gradient-to-br from-orange-500 via-red-500 to-pink-500 bg-clip-text text-transparent" />
-            <h1 className="text-2xl font-bold bg-gradient-to-r from-orange-600 to-pink-600 bg-clip-text text-transparent">
+            <Flame className="w-8 h-8 text-blyve" />
+            <h1 className="text-2xl font-bold text-blyve">
               Add Your Photo
             </h1>
           </div>
@@ -83,8 +83,8 @@ export function ProfilePictureUpload({ onComplete, onSkip }: ProfilePictureUploa
         </div>
 
         {/* Bonus Points Badge */}
-        <div className="bg-gradient-to-br from-amber-50 via-yellow-50 to-orange-50 border-2 border-amber-200 rounded-2xl p-3 mb-6">
-          <div className="flex items-center justify-center gap-2 bg-gradient-to-br from-yellow-300 via-amber-400 to-orange-500 bg-clip-text text-transparent">
+        <div className="bg-blyve/10 border-2 border-blyve/25 rounded-2xl p-3 mb-6">
+          <div className="flex items-center justify-center gap-2 text-blyve font-medium">
             <Award className="w-5 h-5" />
             <span className="font-semibold text-sm">Earn 50 Points for adding your photo!</span>
           </div>
@@ -103,9 +103,9 @@ export function ProfilePictureUpload({ onComplete, onSkip }: ProfilePictureUploa
           {!previewUrl ? (
             <button
               onClick={triggerFileInput}
-              className="w-full aspect-square border-3 border-dashed border-gray-300 rounded-3xl hover:border-orange-500 transition-colors flex flex-col items-center justify-center gap-4 bg-gray-50 hover:bg-gradient-to-br hover:from-orange-50 hover:via-pink-50 hover:to-red-50"
+              className="w-full aspect-square border-3 border-dashed border-gray-300 rounded-3xl hover:border-blyve transition-colors flex flex-col items-center justify-center gap-4 bg-gray-50 hover:bg-gradient-to-br hover:from-blyve/10 hover:via-blyve/5 hover:to-blyve/10"
             >
-              <div className="w-20 h-20 bg-gradient-to-br from-orange-500 to-pink-500 rounded-full flex items-center justify-center">
+              <div className="w-20 h-20 bg-blyve rounded-full flex items-center justify-center">
                 <Camera className="w-10 h-10 text-white" />
               </div>
               <div className="text-center px-4">
@@ -131,7 +131,7 @@ export function ProfilePictureUpload({ onComplete, onSkip }: ProfilePictureUploa
         </div>
 
         {error && (
-          <div className="bg-gradient-to-br from-purple-50 via-pink-50 to-rose-50 border border-purple-200 bg-gradient-to-br from-purple-600 via-pink-600 to-rose-600 bg-clip-text text-transparent px-4 py-3 rounded-lg text-sm mb-4">
+          <div className="border border-blyve/25 bg-blyve/10 text-gray-700 dark:text-gray-200 px-4 py-3 rounded-lg text-sm mb-4">
             {error}
           </div>
         )}
@@ -142,7 +142,7 @@ export function ProfilePictureUpload({ onComplete, onSkip }: ProfilePictureUploa
             <Button
               onClick={handleUpload}
               disabled={uploading}
-              className="w-full bg-gradient-to-r from-orange-600 to-pink-600 hover:from-orange-700 hover:to-pink-700 h-12 text-lg"
+              className="w-full bg-blyve hover:bg-blyve-hover h-12 text-lg"
             >
               {uploading ? 'Uploading...' : 'Continue'}
             </Button>

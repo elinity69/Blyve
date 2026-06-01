@@ -162,17 +162,12 @@ button.bg-gradient-to-r {
   color: #111827 !important;
 }
 
-.dark button.text-orange-600 {
-  color: #ea580c !important;
+.dark button.text-blyve {
+  color: var(--blyve-highlight) !important;
 }
 
 .dark button.text-green-600 {
   color: #16a34a !important;
-}
-
-.dark button.text-blue-600,
-.dark button.text-indigo-600 {
-  color: #2563eb !important;
 }
 
 .dark button.text-purple-600 {
@@ -228,8 +223,8 @@ button.bg-gradient-to-r {
 .call-volume-slider {
   background: linear-gradient(
     to right,
-    #5865f2 0%,
-    #5865f2 var(--volume-percent, 100%),
+    var(--blyve-highlight) 0%,
+    var(--blyve-highlight) var(--volume-percent, 100%),
     rgba(255, 255, 255, 0.35) var(--volume-percent, 100%),
     rgba(255, 255, 255, 0.35) 100%
   );
@@ -249,7 +244,7 @@ button.bg-gradient-to-r {
   margin-top: -5px;
   border-radius: 9999px;
   border: 2px solid #ffffff;
-  background: #5865f2;
+  background: var(--blyve-highlight);
   box-shadow: 0 1px 6px rgba(0, 0, 0, 0.35);
   cursor: pointer;
 }
@@ -263,7 +258,7 @@ button.bg-gradient-to-r {
 .call-volume-slider::-moz-range-progress {
   height: 8px;
   border-radius: 9999px;
-  background: #5865f2;
+  background: var(--blyve-highlight);
 }
 
 .call-volume-slider::-moz-range-thumb {
@@ -271,7 +266,7 @@ button.bg-gradient-to-r {
   height: 18px;
   border-radius: 9999px;
   border: 2px solid #ffffff;
-  background: #5865f2;
+  background: var(--blyve-highlight);
   box-shadow: 0 1px 6px rgba(0, 0, 0, 0.35);
   cursor: pointer;
 }
@@ -344,10 +339,28 @@ button.bg-gradient-to-r {
 }
 
 @utility blyve-settings-card {
-  background-color: #fff7ed;
+  background-color: #f0faf7;
 
   .dark & {
     background-color: var(--blyve-panel-bg, #0a0a0a);
+  }
+}
+
+/* Primary brand button + nav active accent */
+@utility blyve-btn {
+  background-color: var(--blyve-highlight);
+  color: var(--blyve-highlight-foreground);
+
+  &:hover:not(:disabled) {
+    background-color: var(--blyve-highlight-hover);
+  }
+}
+
+@utility blyve-btn-ghost {
+  color: var(--blyve-highlight);
+
+  &:hover:not(:disabled) {
+    background-color: var(--blyve-highlight-muted);
   }
 }
 

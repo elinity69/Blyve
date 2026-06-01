@@ -2,6 +2,11 @@
 @custom-variant oled (&:is(.oled *));
 
 :root {
+  --blyve-highlight: #3faf95;
+  --blyve-highlight-hover: #359a84;
+  --blyve-highlight-foreground: #ffffff;
+  --blyve-highlight-muted: rgba(63, 175, 149, 0.14);
+  --blyve-highlight-border: rgba(63, 175, 149, 0.35);
   --font-size: 16px;
   --background: #ffffff;
   --foreground: oklch(0.145 0 0);
@@ -164,6 +169,9 @@ html.dark.oled {
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
   --color-amber-600: #d97706;
+  --color-blyve: var(--blyve-highlight);
+  --color-blyve-hover: var(--blyve-highlight-hover);
+  --color-blyve-foreground: var(--blyve-highlight-foreground);
 }
 
 @layer base {

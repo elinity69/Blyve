@@ -41,7 +41,7 @@ export function MessageBubbleActionRow({
           className="pointer-events-none absolute inset-y-0 right-2 z-0 flex items-center"
           style={{ opacity: Math.min(swipeProgress * 1.4, 1) }}
         >
-          <div className="flex h-7 w-7 items-center justify-center rounded-full bg-orange-500/15 text-orange-500 dark:bg-orange-500/20">
+          <div className="flex h-7 w-7 items-center justify-center rounded-full bg-blyve/15 text-blyve dark:bg-blyve/20">
             <Reply className="h-3.5 w-3.5" aria-hidden />
           </div>
         </div>

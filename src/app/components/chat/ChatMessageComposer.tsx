@@ -289,7 +289,7 @@ export function ChatMessageComposer({
       data-chat-composer
       className={`relative mt-auto shrink-0 border-t border-gray-200 blyve-border-subtle blyve-screen-bg px-4 pt-2 ${
         isMobile && inVisualViewportShell ? 'z-30' : 'z-20'
-      } ${dropActive ? 'ring-2 ring-inset ring-orange-400/60' : ''}`}
+      } ${dropActive ? 'ring-2 ring-inset ring-blyve/50' : ''}`}
       style={{ paddingBottom: composerPaddingBottom }}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
@@ -297,10 +297,10 @@ export function ChatMessageComposer({
     >
       {dropActive ? (
         <div
-          className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center bg-orange-500/10 backdrop-blur-[1px]"
+          className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center bg-blyve/10 backdrop-blur-[1px]"
           aria-hidden
         >
-          <p className="rounded-full bg-white/90 px-4 py-2 text-sm font-medium text-orange-600 shadow dark:bg-black/80 dark:text-orange-400">
+          <p className="rounded-full bg-white/90 px-4 py-2 text-sm font-medium text-blyve shadow dark:bg-black/80 dark:text-blyve">
             {t('chat.dropToSend')}
           </p>
         </div>
@@ -392,7 +392,7 @@ export function ChatMessageComposer({
           title={t('chat.gifButton')}
           className={`relative shrink-0 rounded-full px-2.5 py-2.5 text-xs font-bold tracking-wide transition-colors ${
             pickerOpen
-              ? 'bg-orange-100 text-orange-600 dark:bg-orange-500/20 dark:text-orange-400'
+              ? 'bg-blyve/15 text-blyve dark:bg-blyve/20 dark:text-blyve'
               : 'text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-white/10'
           }`}
           onClick={() => setPickerOpen((open) => !open)}
@@ -403,7 +403,7 @@ export function ChatMessageComposer({
             GIF
           </span>
           {showSyncDot ? (
-            <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-orange-500 ring-2 ring-white dark:ring-[#0d0d0d]" />
+            <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-blyve ring-2 ring-white dark:ring-[#0d0d0d]" />
           ) : null}
         </button>
 
@@ -451,7 +451,7 @@ export function ChatMessageComposer({
             className="flex shrink-0 flex-col items-center justify-center rounded-full p-2"
             title={mediaUploadLabel || undefined}
           >
-            <Loader2 className="h-6 w-6 animate-spin text-orange-500" />
+            <Loader2 className="h-6 w-6 animate-spin text-blyve" />
           </div>
         ) : showSendButton || recording ? (
           <button
@@ -459,7 +459,7 @@ export function ChatMessageComposer({
             onMouseDown={(event) => event.preventDefault()}
             onClick={() => void handlePrimarySend()}
             disabled={busy}
-            className="flex shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-orange-500 via-red-500 to-pink-500 p-3 disabled:opacity-50"
+            className="flex shrink-0 items-center justify-center rounded-full bg-blyve p-3 disabled:opacity-50"
             style={{
               touchAction: 'manipulation',
               WebkitTapHighlightColor: 'transparent',
@@ -477,7 +477,7 @@ export function ChatMessageComposer({
             type="button"
             onClick={() => void startRecording()}
             disabled={busy}
-            className="flex shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-orange-500 via-red-500 to-pink-500 p-3 disabled:opacity-50"
+            className="flex shrink-0 items-center justify-center rounded-full bg-blyve p-3 disabled:opacity-50"
             aria-label={t('chat.voiceMemoStart')}
             style={{
               touchAction: 'manipulation',
@@ -492,7 +492,7 @@ export function ChatMessageComposer({
             onMouseDown={(event) => event.preventDefault()}
             onClick={() => void handlePrimarySend()}
             disabled={busy}
-            className="flex shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-orange-500 via-red-500 to-pink-500 p-3 disabled:opacity-50"
+            className="flex shrink-0 items-center justify-center rounded-full bg-blyve p-3 disabled:opacity-50"
             aria-label={t('chat.sendMessage')}
           >
             <Send className="h-5 w-5 text-white" />

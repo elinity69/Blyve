@@ -80,7 +80,7 @@ export function AuthScreen({ onAuthSuccess }: AuthScreenProps) {
   };
 
   return (
-    <div className="h-screen bg-gradient-to-br from-orange-500 via-pink-500 to-purple-600 dark:from-black dark:via-black dark:to-black flex items-center justify-center p-4">
+    <div className="h-screen bg-gradient-to-br from-blyve via-blyve to-blyve-hover dark:from-black dark:via-black dark:to-black flex items-center justify-center p-4">
       <div className="bg-white dark:bg-[#0A0A0A] dark:border dark:border-white/5 rounded-3xl p-8 max-w-md w-full shadow-2xl">
         <div className="flex items-center justify-center mb-6">
           <h1 className="text-4xl font-bold tracking-tight text-gray-900 dark:text-white">
@@ -122,14 +122,14 @@ export function AuthScreen({ onAuthSuccess }: AuthScreenProps) {
           </div>
 
           {error && (
-            <div className="bg-gradient-to-br from-purple-50 via-pink-50 to-rose-50 border border-purple-200 bg-gradient-to-br from-purple-600 via-pink-600 to-rose-600 bg-clip-text text-transparent px-4 py-3 rounded-lg text-sm">
+            <div className="border border-blyve/25 bg-blyve/10 text-gray-700 dark:text-gray-200 px-4 py-3 rounded-lg text-sm">
               {error}
             </div>
           )}
 
           <Button
             type="submit"
-            className="w-full bg-gradient-to-r from-orange-600 to-pink-600 hover:from-orange-700 hover:to-pink-700 h-12 text-lg"
+            className="w-full bg-blyve hover:bg-blyve-hover h-12 text-lg"
             disabled={loading}
           >
             {loading ? 'Loading...' : isSignup ? 'Create Account' : 'Sign In'}

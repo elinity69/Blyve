@@ -55,7 +55,7 @@ export function BottomNavigation({ activeTab, onTabChange }: BottomNavigationPro
             onClick={() => onTabChange(id)}
             className={`flex flex-col items-center justify-center flex-1 h-full transition-colors bg-transparent dark:bg-transparent relative ${
               activeTab === id
-                ? 'text-orange-600 dark:text-orange-400'
+                ? 'text-blyve'
                 : 'text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300'
             }`}
             style={{ backgroundColor: 'transparent' }}

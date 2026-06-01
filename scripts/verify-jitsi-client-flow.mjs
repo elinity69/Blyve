@@ -75,7 +75,7 @@ for (const file of files) {
 const chainChecks = [
   ['src/app/lib/callJoinRoute.ts', '/call/join'],
   ['src/app/components/CallJoinScreen.tsx', 'joinCallViaInvite'],
-  ['src/app/context/CallContext.tsx', 'JitsiCallView'],
+  ['src/app/context/CallStateContext.tsx', 'JitsiCallView'],
   ['src/app/lib/jitsiCall.ts', 'api.joinCall'],
 ];
 

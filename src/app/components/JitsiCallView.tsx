@@ -134,7 +134,7 @@ export function CallControlBar({
         className={`flex items-center justify-center rounded-full transition-colors ${
           compact ? 'h-7 w-7' : 'h-9 w-9'
         } ${
-          isCameraEnabled ? 'bg-[#5865f2] text-white' : 'bg-[#2f3136] text-white hover:bg-[#3a3d44]'
+          isCameraEnabled ? 'bg-blyve text-white' : 'bg-[#2f3136] text-white hover:bg-[#3a3d44]'
         } disabled:opacity-60`}
         aria-label={t('call.title')}
       >
@@ -520,7 +520,7 @@ export function JitsiCallView({
                 onMinimizeToPip ? 'left-14' : 'left-3'
               } ${
                 callPinned
-                  ? 'border-[#5865f2]/60 bg-[#5865f2]/90 text-white'
+                  ? 'border-blyve/60 bg-blyve/90 text-white'
                   : 'border-white/10 bg-[#1e1f22]/95 text-white'
               }`}
               aria-label={callPinned ? t('call.unpinCall') : t('call.pinCall')}

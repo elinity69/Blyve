@@ -13,7 +13,7 @@ import { useAppData } from '../context/AppDataContext';
 import { TypingBubble } from './TypingBubble';
 import { useIsMdUp, useIsMobile } from './ui/use-mobile';
 import { useChatScrollAnchor } from '../hooks/useChatScrollAnchor';
-import { useCall } from '../context/CallContext';
+import { useCall } from '../context/CallStateContext';
 import { ChatEmbeddedCallBar } from './ChatEmbeddedCallBar';
 import { NotificationManager } from '../lib/notifications';
 import { getCachedUser, resolveAuthUser } from '../lib/authSession';
@@ -627,7 +627,7 @@ export function ChatScreen({
       {/* Messages */}
       <div
         data-chat-messages-scroll
-        className={`${CHAT_MESSAGE_LIST_CLASS} ${dropActive ? 'ring-2 ring-inset ring-orange-400/40' : ''}`}
+        className={`${CHAT_MESSAGE_LIST_CLASS} ${dropActive ? 'ring-2 ring-inset ring-blyve/40' : ''}`}
         ref={assignMessagesContainer}
         onScroll={handleMessagesScroll}
         onDragOver={(e) => {
@@ -848,7 +848,7 @@ export function ChatScreen({
                   onClick={() => setSelectedReportReason(reason.key)}
                   className={`w-full text-left px-4 py-2 rounded-lg border transition-colors ${
                     selectedReportReason === reason.key
-                      ? 'border-orange-500 bg-gradient-to-br from-orange-50 via-pink-50 to-red-50 dark:bg-[#0A0A0A] dark:border dark:border-white/5 bg-gradient-to-br from-orange-500 via-red-500 to-pink-500 bg-clip-text text-transparent'
+                      ? 'border-blyve bg-blyve/10 text-blyve font-medium dark:bg-blyve/15 dark:text-blyve'
                       : 'border-gray-200 dark:border-white/5 text-gray-700 dark:text-gray-200'
                   }`}
                 >
@@ -870,7 +870,7 @@ export function ChatScreen({
               <button
                 onClick={submitReport}
                 disabled={!selectedReportReason}
-                className="flex-1 py-2 rounded-lg bg-gradient-to-br from-purple-500 via-pink-500 to-rose-500 hover:from-purple-600 hover:via-pink-600 hover:to-rose-600 text-white disabled:opacity-50 shadow-lg"
+                className="flex-1 py-2 rounded-lg bg-blyve hover:bg-blyve-hover text-white disabled:opacity-50 shadow-lg"
               >
                 {t('chat.reportSubmit')}
               </button>

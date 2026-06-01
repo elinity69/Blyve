@@ -1,7 +1,7 @@
 import React from 'react';
 import { ArrowLeft, PictureInPicture2, Volume2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { useCall } from '../context/CallContext';
+import { useCall } from '../context/CallStateContext';
 import { getOptimizedImageUrl } from '../lib/images';
 import { ChatEmbeddedCallBar } from './ChatEmbeddedCallBar';
 

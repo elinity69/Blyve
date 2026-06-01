@@ -2,8 +2,6 @@ import { motion } from 'framer-motion';
 import { CheckCircle, XCircle, Info, AlertTriangle, X, MessageCircle } from 'lucide-react';
 import { useEffect, useState, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useIsMdUp } from './ui/use-mobile';
-
 interface ToastProps {
   id: string;
   type: 'success' | 'error' | 'info' | 'warning';
@@ -53,7 +51,6 @@ export const Toast = ({
   onClick,
 }: ToastProps) => {
   const { t } = useTranslation();
-  const isDesktop = useIsMdUp();
   const Icon = ICONS[type];
   const isMessage = variant === 'message' || !!conversationId;
   const toastDuration = duration || (isMessage ? 6000 : DURATIONS[type]);
@@ -96,15 +93,10 @@ export const Toast = ({
   }, [id, remainingTime, isPaused, onClose]);
 
   const stackOffset = index * 92;
-  const positionStyle: React.CSSProperties = isDesktop
-    ? {
-        bottom: `calc(16px + env(safe-area-inset-bottom, 0px) + ${stackOffset}px)`,
-        top: 'auto',
-      }
-    : {
-        top: `calc(12px + env(safe-area-inset-top, 0px) + ${stackOffset}px)`,
-        bottom: 'auto',
-      };
+  const positionStyle: React.CSSProperties = {
+    top: `calc(12px + env(safe-area-inset-top, 0px) + ${stackOffset}px)`,
+    bottom: 'auto',
+  };
   const isInteractive = Boolean(conversationId || onClick);
 
   const glassStyle: React.CSSProperties = isDark
@@ -128,7 +120,7 @@ export const Toast = ({
   return (
     <motion.div
       initial={{
-        y: isDesktop ? 24 : -24,
+        y: -24,
         opacity: 0,
         scale: 0.96,
         filter: 'blur(8px)',
@@ -137,7 +129,7 @@ export const Toast = ({
       exit={{
         opacity: 0,
         scale: 0.98,
-        y: isDesktop ? 8 : -8,
+        y: -8,
         filter: 'blur(4px)',
       }}
       transition={{ type: 'spring', stiffness: 420, damping: 32, mass: 0.75 }}
@@ -145,23 +137,20 @@ export const Toast = ({
       onHoverStart={() => setIsPaused(true)}
       onHoverEnd={() => setIsPaused(false)}
       drag="y"
-      dragConstraints={isDesktop ? { top: 0, bottom: 140 } : { top: -140, bottom: 0 }}
+      dragConstraints={{ top: -140, bottom: 0 }}
       dragElastic={0.08}
       onDragStart={() => setIsPaused(true)}
       onDragEnd={(_, info) => {
-        const dismissThreshold = isDesktop ? 100 : -100;
-        if (isDesktop ? info.offset.y >= dismissThreshold : info.offset.y <= dismissThreshold) {
+        if (info.offset.y <= -100) {
           onClose(id);
           return;
         }
         setIsPaused(false);
       }}
-      className="fixed z-[10050] w-[calc(100%-24px)] max-w-[420px] left-1/2 -translate-x-1/2 md:left-auto md:right-4 md:translate-x-0 pointer-events-auto"
+      className="fixed z-[10050] w-[calc(100%-24px)] max-w-[420px] left-1/2 -translate-x-1/2 pointer-events-auto"
       style={{
         ...positionStyle,
-        transition: isDesktop
-          ? 'bottom 0.3s cubic-bezier(0.4, 0, 0.2, 1)'
-          : 'top 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+        transition: 'top 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
       }}
     >
       <div
@@ -184,7 +173,7 @@ export const Toast = ({
       >
         {isMessage ? (
           <div
-            className="absolute inset-y-3 left-0 w-[3px] rounded-full bg-gradient-to-b from-orange-400 via-red-500 to-pink-500"
+            className="absolute inset-y-3 left-0 w-[3px] rounded-full bg-blyve"
             aria-hidden
           />
         ) : null}
@@ -192,7 +181,7 @@ export const Toast = ({
         {imageUrl ? (
           <div
             className={`relative flex-shrink-0 rounded-full overflow-hidden ring-2 ${
-              isMessage ? 'w-11 h-11 ring-orange-400/40' : 'w-10 h-10 ring-white/20'
+              isMessage ? 'w-11 h-11 ring-blyve/40' : 'w-10 h-10 ring-white/20'
             }`}
           >
             <img src={imageUrl} alt={title} className="w-full h-full object-cover" />
@@ -208,7 +197,7 @@ export const Toast = ({
         <div className="flex-1 min-w-0 pl-0.5">
           <p
             className={`text-[11px] font-semibold uppercase tracking-wide mb-0.5 ${
-              isDark ? 'text-orange-300/90' : 'text-orange-600'
+              isDark ? 'text-blyve' : 'text-blyve'
             } ${isMessage ? 'block' : 'hidden'}`}
           >
             {t('chat.newMessageToast')}
@@ -244,7 +233,7 @@ export const Toast = ({
         </button>
 
         <motion.div
-          className="absolute bottom-0 left-0 right-0 h-[2px] origin-left bg-gradient-to-r from-orange-500 via-red-500 to-pink-500 opacity-80"
+          className="absolute bottom-0 left-0 right-0 h-[2px] origin-left bg-blyve opacity-80"
           initial={{ scaleX: 1 }}
           animate={{ scaleX: isPaused ? remainingTime / toastDuration : 0 }}
           transition={{

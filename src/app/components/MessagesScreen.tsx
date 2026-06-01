@@ -36,7 +36,7 @@ import {
   type ConversationPreviewIcon,
 } from '../lib/conversationListPreview';
 import { GroupChannelNavContext } from '../context/GroupChannelNavContext';
-import { useCall } from '../context/CallContext';
+import { useCall } from '../context/CallStateContext';
 import {
   formatGroupTypingLabel,
   subscribeGroupTypingBroadcast,
@@ -1319,7 +1319,7 @@ export function MessagesScreen({ isTabActive = true }: MessagesScreenProps) {
               {ch.name}
             </span>
             {typingPreview ? (
-              <span className="shrink-0 max-w-[45%] truncate text-[11px] italic text-[#5865f2]">
+              <span className="shrink-0 max-w-[45%] truncate text-[11px] italic text-blyve">
                 {typingPreview}
               </span>
             ) : unread > 0 ? (
@@ -1776,7 +1776,7 @@ export function MessagesScreen({ isTabActive = true }: MessagesScreenProps) {
       return (
         <div className="h-full flex items-center justify-center blyve-app-bg">
           <div className="text-center">
-            <div className="w-16 h-16 border-4 border-transparent border-t-orange-600 border-r-red-600 border-b-pink-600 border-l-orange-600 dark:border-t-orange-400 dark:border-r-red-400 dark:border-b-pink-400 dark:border-l-orange-400 rounded-full animate-spin mx-auto mb-4"></div>
+            <div className="w-16 h-16 border-4 border-transparent border-t-blyve border-r-blyve/70 border-b-blyve/50 border-l-blyve dark:border-t-blyve dark:border-r-blyve/70 dark:border-b-blyve/50 dark:border-l-blyve rounded-full animate-spin mx-auto mb-4"></div>
             <p className="text-gray-600 dark:text-gray-300">{t('chat.loadingConversations')}</p>
           </div>
         </div>
@@ -1788,7 +1788,7 @@ export function MessagesScreen({ isTabActive = true }: MessagesScreenProps) {
         <div className="h-full flex items-center justify-center blyve-app-bg">
           <div className="text-center p-4">
             <p className="text-red-600 dark:text-red-400 mb-4">{error}</p>
-            <button onClick={() => reload()} className="px-4 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition-colors" style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent', cursor: 'pointer' }}>{t('chat.retry')}</button>
+            <button onClick={() => reload()} className="px-4 py-2 bg-blyve text-white rounded-lg hover:bg-blyve transition-colors" style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent', cursor: 'pointer' }}>{t('chat.retry')}</button>
           </div>
         </div>
       );
@@ -1822,8 +1822,8 @@ export function MessagesScreen({ isTabActive = true }: MessagesScreenProps) {
               title={t('groups.railDmTooltip')}
               className={`w-12 h-12 flex items-center justify-center text-white transition-transform ${
                 !selectedGroup
-                  ? 'bg-[#5865f2] rounded-2xl'
-                  : 'bg-[#313338] rounded-full hover:rounded-2xl hover:bg-[#5865f2]'
+                  ? 'bg-blyve rounded-2xl'
+                  : 'bg-[#313338] rounded-full hover:rounded-2xl hover:bg-blyve'
               }`}
               style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent', cursor: 'pointer' }}
             >
@@ -1835,7 +1835,7 @@ export function MessagesScreen({ isTabActive = true }: MessagesScreenProps) {
           <div className="w-8 h-px bg-white/10 shrink-0 my-0.5" />
 
           {groupsLoading ? (
-            <div className="w-8 h-8 border-2 border-[#5865f2] border-t-transparent rounded-full animate-spin" />
+            <div className="w-8 h-8 border-2 border-blyve border-t-transparent rounded-full animate-spin" />
           ) : (
             myGroupRows
               .filter((r) => r.group)
@@ -1911,14 +1911,14 @@ export function MessagesScreen({ isTabActive = true }: MessagesScreenProps) {
                   {!selectedGroup ? (
                     <button
                       onClick={() => setShowFriendsPanel((prev) => !prev)}
-                      className="relative px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700 transition-colors shrink-0"
+                      className="relative px-3 py-1.5 rounded-lg bg-blyve text-white text-sm font-medium hover:bg-blyve-hover transition-colors shrink-0"
                       style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent', cursor: 'pointer' }}
                     >
                       {t('chat.addFriend')}
                       {!showFriendsPanel && incomingRequestCount > 0 ? (
                         <NotificationBadge
                           count={incomingRequestCount}
-                          borderClassName="border-indigo-600"
+                          borderClassName="border-blyve"
                           className="-top-2 -right-2"
                         />
                       ) : null}
@@ -1938,12 +1938,12 @@ export function MessagesScreen({ isTabActive = true }: MessagesScreenProps) {
                       }
                     }}
                     placeholder={t('chat.friendUsernamePlaceholder')}
-                    className="flex-1 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-black px-3 py-2 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    className="flex-1 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-black px-3 py-2 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blyve"
                   />
                   <button
                     onClick={handleSendFriendRequest}
                     disabled={sendingRequest}
-                    className="px-3 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium disabled:opacity-60"
+                    className="px-3 py-2 rounded-lg bg-blyve text-white text-sm font-medium disabled:opacity-60"
                     style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent', cursor: 'pointer' }}
                   >
                     {sendingRequest ? t('chat.sending') : t('chat.send')}
@@ -2043,7 +2043,7 @@ export function MessagesScreen({ isTabActive = true }: MessagesScreenProps) {
             )
           ) : channelsLoading ? (
             <div className="flex justify-center py-12">
-              <div className="w-8 h-8 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
+              <div className="w-8 h-8 border-2 border-blyve border-t-transparent rounded-full animate-spin" />
             </div>
           ) : groupChannels.length === 0 ? (
             <div className="p-4 text-center text-sm text-gray-500 dark:text-gray-400">{t('groups.noChannels')}</div>
@@ -2124,7 +2124,7 @@ export function MessagesScreen({ isTabActive = true }: MessagesScreenProps) {
             />
           ) : selectedGroup && currentUserId && channelsLoading ? (
             <div className="flex flex-1 flex-col items-center justify-center">
-              <div className="w-10 h-10 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
+              <div className="w-10 h-10 border-2 border-blyve border-t-transparent rounded-full animate-spin" />
             </div>
           ) : selectedGroup && currentUserId && !channelsLoading && groupChannels.length === 0 ? (
             <div className="flex flex-1 flex-col items-center justify-center text-center px-6 text-gray-500 dark:text-gray-400">
@@ -2464,7 +2464,7 @@ export function MessagesScreen({ isTabActive = true }: MessagesScreenProps) {
                 onClick={() => setGroupActionTab('create')}
                 className={`flex-1 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
                   groupActionTab === 'create'
-                    ? 'bg-indigo-600 text-white shadow-sm'
+                    ? 'bg-blyve text-white shadow-sm'
                     : 'text-gray-600 dark:text-gray-300 hover:bg-white/60 dark:hover:bg-white/5'
                 }`}
               >
@@ -2475,7 +2475,7 @@ export function MessagesScreen({ isTabActive = true }: MessagesScreenProps) {
                 onClick={() => setGroupActionTab('join')}
                 className={`flex-1 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
                   groupActionTab === 'join'
-                    ? 'bg-indigo-600 text-white shadow-sm'
+                    ? 'bg-blyve text-white shadow-sm'
                     : 'text-gray-600 dark:text-gray-300 hover:bg-white/60 dark:hover:bg-white/5'
                 }`}
               >
@@ -2494,7 +2494,7 @@ export function MessagesScreen({ isTabActive = true }: MessagesScreenProps) {
                     value={createGroupName}
                     onChange={(e) => setCreateGroupName(e.target.value)}
                     placeholder={t('groups.namePlaceholder')}
-                    className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-black px-3 py-2 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-black px-3 py-2 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blyve"
                   />
                 </div>
                 <div className="space-y-2">
@@ -2544,7 +2544,7 @@ export function MessagesScreen({ isTabActive = true }: MessagesScreenProps) {
                     onChange={(e) => setCreateGroupDescription(e.target.value)}
                     placeholder={t('groups.descriptionPlaceholder')}
                     rows={3}
-                    className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-black px-3 py-2 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
+                    className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-black px-3 py-2 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blyve resize-none"
                   />
                 </div>
                 <label className="flex items-center gap-2 cursor-pointer text-sm text-gray-900 dark:text-white">
@@ -2560,7 +2560,7 @@ export function MessagesScreen({ isTabActive = true }: MessagesScreenProps) {
                   type="button"
                   onClick={handleCreateGroup}
                   disabled={creatingGroup}
-                  className="w-full py-2.5 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700 disabled:opacity-60"
+                  className="w-full py-2.5 rounded-lg bg-blyve text-white text-sm font-medium hover:bg-blyve-hover disabled:opacity-60"
                   style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent', cursor: 'pointer' }}
                 >
                   {creatingGroup ? t('groups.creating') : t('groups.createSubmit')}
@@ -2583,14 +2583,14 @@ export function MessagesScreen({ isTabActive = true }: MessagesScreenProps) {
                       }
                     }}
                     placeholder={t('groups.inviteCodePlaceholder')}
-                    className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-black px-3 py-2 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-black px-3 py-2 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blyve"
                   />
                 </div>
                 <button
                   type="button"
                   disabled={joiningViaInvite || !joinInviteInput.trim()}
                   onClick={() => void handleJoinViaInvite()}
-                  className="w-full rounded-lg bg-indigo-600 text-white py-2.5 text-sm font-medium disabled:opacity-60"
+                  className="w-full rounded-lg bg-blyve text-white py-2.5 text-sm font-medium disabled:opacity-60"
                   style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent', cursor: 'pointer' }}
                 >
                   {joiningViaInvite ? t('groups.joining') : t('groups.join')}
@@ -2649,10 +2649,10 @@ export function MessagesScreen({ isTabActive = true }: MessagesScreenProps) {
               </div>
             </div>
             <div className="flex gap-2">
-              <button type="button" onClick={() => setNewChannelType('text')} className={`flex-1 rounded-lg px-3 py-2 text-sm ${newChannelType === 'text' ? 'bg-indigo-600 text-white' : 'bg-gray-100 dark:bg-white/10'}`}>{t('groups.channelTypeText')}</button>
+              <button type="button" onClick={() => setNewChannelType('text')} className={`flex-1 rounded-lg px-3 py-2 text-sm ${newChannelType === 'text' ? 'bg-blyve text-white' : 'bg-gray-100 dark:bg-white/10'}`}>{t('groups.channelTypeText')}</button>
               <button type="button" onClick={() => setNewChannelType('voice')} className={`flex-1 rounded-lg px-3 py-2 text-sm ${newChannelType === 'voice' ? 'bg-[#23a559] text-white' : 'bg-gray-100 dark:bg-white/10'}`}>{t('groups.channelTypeVoice')}</button>
             </div>
-            <button type="button" disabled={creatingChannel} onClick={() => void handleCreateChannel()} className="w-full rounded-lg bg-indigo-600 text-white py-2 text-sm font-medium disabled:opacity-60">{creatingChannel ? t('groups.creating') : t('groups.createSubmit')}</button>
+            <button type="button" disabled={creatingChannel} onClick={() => void handleCreateChannel()} className="w-full rounded-lg bg-blyve text-white py-2 text-sm font-medium disabled:opacity-60">{creatingChannel ? t('groups.creating') : t('groups.createSubmit')}</button>
           </div>
         </div>
       )}
@@ -2710,7 +2710,7 @@ export function MessagesScreen({ isTabActive = true }: MessagesScreenProps) {
               type="button"
               disabled={updatingChannel}
               onClick={() => void handleUpdateChannel()}
-              className="w-full rounded-lg bg-indigo-600 text-white py-2 text-sm font-medium disabled:opacity-60"
+              className="w-full rounded-lg bg-blyve text-white py-2 text-sm font-medium disabled:opacity-60"
             >
               {updatingChannel ? t('groups.saving') : t('groups.saveChannel')}
             </button>
@@ -2761,7 +2761,7 @@ export function MessagesScreen({ isTabActive = true }: MessagesScreenProps) {
                 value={editGroupName}
                 onChange={(e) => setEditGroupName(e.target.value)}
                 placeholder={t('groups.namePlaceholder')}
-                className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-black px-3 py-2 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-black px-3 py-2 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blyve"
               />
             </div>
             <div className="space-y-2">
@@ -2811,7 +2811,7 @@ export function MessagesScreen({ isTabActive = true }: MessagesScreenProps) {
                 onChange={(e) => setEditGroupDescription(e.target.value)}
                 placeholder={t('groups.descriptionPlaceholder')}
                 rows={3}
-                className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-black px-3 py-2 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
+                className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-black px-3 py-2 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blyve resize-none"
               />
             </div>
             <label className="flex items-center gap-2 cursor-pointer text-sm text-gray-900 dark:text-white">
@@ -2827,7 +2827,7 @@ export function MessagesScreen({ isTabActive = true }: MessagesScreenProps) {
               type="button"
               disabled={updatingGroup}
               onClick={() => void handleUpdateGroup()}
-              className="w-full rounded-lg bg-indigo-600 text-white py-2 text-sm font-medium disabled:opacity-60"
+              className="w-full rounded-lg bg-blyve text-white py-2 text-sm font-medium disabled:opacity-60"
             >
               {updatingGroup ? t('groups.saving') : t('groups.saveServer')}
             </button>
@@ -2842,7 +2842,7 @@ export function MessagesScreen({ isTabActive = true }: MessagesScreenProps) {
             <p className="text-sm text-gray-500 dark:text-gray-400">{t('groups.invitePermanentHint')}</p>
             {inviteLoading ? (
               <div className="flex justify-center py-6">
-                <div className="w-8 h-8 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
+                <div className="w-8 h-8 border-2 border-blyve border-t-transparent rounded-full animate-spin" />
               </div>
             ) : groupInvite ? (
               <div className="space-y-2">
@@ -3110,7 +3110,7 @@ function ConversationListRow({
           {imageUrl ? (
             <img src={imageUrl} alt={otherUser.name} className="w-14 h-14 rounded-full object-cover" />
           ) : (
-            <div className="w-14 h-14 rounded-full bg-gradient-to-br from-orange-400 via-pink-400 to-red-400 flex items-center justify-center text-white text-lg font-bold">
+            <div className="w-14 h-14 rounded-full bg-blyve flex items-center justify-center text-white text-lg font-bold">
               {otherUser.name?.charAt(0).toUpperCase() || '?'}
             </div>
           )}
@@ -3136,7 +3136,7 @@ function ConversationListRow({
           <p
             className={`flex min-w-0 items-center gap-1.5 truncate text-sm ${
               isTyping
-                ? 'italic text-[#5865f2]'
+                ? 'italic text-blyve'
                 : unreadCount > 0
                   ? 'font-medium text-gray-900 dark:text-white'
                   : 'text-gray-500 dark:text-gray-400'

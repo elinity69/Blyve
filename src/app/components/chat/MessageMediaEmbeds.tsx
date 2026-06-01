@@ -99,7 +99,7 @@ export function MessageFileEmbed({
       onClick={(e) => openExternalLink(e, url)}
       onPointerDown={(e) => e.stopPropagation()}
     >
-      <FileText className="h-8 w-8 shrink-0 text-orange-500" aria-hidden />
+      <FileText className="h-8 w-8 shrink-0 text-blyve" aria-hidden />
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm font-medium text-gray-900 dark:text-white">{label}</p>
         <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">{url}</p>
