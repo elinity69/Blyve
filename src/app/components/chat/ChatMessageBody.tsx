@@ -21,6 +21,7 @@ interface ChatMessageBodyProps {
   bubblePosition: MessageGroupPosition;
   messageTime?: string;
   isRead?: boolean;
+  readLabel?: string;
 }
 
 export function ChatMessageBody({
@@ -31,6 +32,7 @@ export function ChatMessageBody({
   bubblePosition,
   messageTime,
   isRead,
+  readLabel,
 }: ChatMessageBodyProps) {
   const { embeds, suppressUrls, showText } = useMessageContentParts(content);
   const textClassName = isBundled
@@ -48,7 +50,7 @@ export function ChatMessageBody({
             <MessageReplyQuote quote={replyQuote} isMe={isMe} />
           </div>
         ) : null}
-        <MessageBubble position={bubblePosition} isMe={isMe}>
+        <MessageBubble position={bubblePosition} isMe={isMe} readLabel={readLabel}>
           <MessageEmbedList embeds={embeds} inBubble isMe={isMe} />
         </MessageBubble>
         <MessageEmbedTimeFooter time={messageTime} isMe={isMe} isRead={isRead} />
@@ -67,13 +69,24 @@ export function ChatMessageBody({
         <div className={`w-max min-w-0 ${CHAT_MESSAGE_BUBBLE_MAX_WIDTH_CLASS}`}>
           <MessageEmbedList embeds={embeds} isMe={isMe} />
         </div>
-        <MessageEmbedTimeFooter time={messageTime} isMe={isMe} isRead={isRead} />
+        <MessageEmbedTimeFooter
+          time={messageTime}
+          isMe={isMe}
+          isRead={isRead}
+          readLabel={readLabel}
+        />
       </div>
     );
   }
 
   return (
-    <MessageBubble position={bubblePosition} isMe={isMe} time={messageTime} isRead={isRead}>
+    <MessageBubble
+      position={bubblePosition}
+      isMe={isMe}
+      time={messageTime}
+      isRead={isRead}
+      readLabel={readLabel}
+    >
       {replyQuote ? <MessageReplyQuote quote={replyQuote} isMe={isMe} /> : null}
       {showText ? (
         <MessageTextContent

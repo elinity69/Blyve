@@ -4,26 +4,37 @@ interface MessageEmbedTimeFooterProps {
   time?: string;
   isMe?: boolean;
   isRead?: boolean;
+  readLabel?: string;
 }
 
 /** Timestamp for borderless embed-only messages (no chat bubble). */
-export function MessageEmbedTimeFooter({ time, isMe = false, isRead = false }: MessageEmbedTimeFooterProps) {
-  if (!time) return null;
+export function MessageEmbedTimeFooter({
+  time,
+  isMe = false,
+  isRead = false,
+  readLabel,
+}: MessageEmbedTimeFooterProps) {
+  if (!time && !readLabel) return null;
 
   return (
     <span
-      className={`mt-1 inline-flex items-center gap-0.5 px-0.5 text-[10px] leading-none tabular-nums ${
+      className={`mt-1 inline-flex flex-col items-end gap-0.5 px-0.5 text-[10px] leading-none tabular-nums ${
         isMe ? 'text-gray-500 dark:text-[#6b7d8f]' : 'text-gray-500 dark:text-[#6b7d8f]'
       }`}
     >
-      {time}
-      {isMe ? (
-        <CheckCheck
-          className={`h-3.5 w-3.5 shrink-0 ${isRead ? 'text-[#34b7f1]' : 'text-gray-400 dark:text-[#6b7d8f]'}`}
-          strokeWidth={isRead ? 2.5 : 2}
-          aria-hidden
-        />
+      {time ? (
+        <span className="inline-flex items-center gap-0.5">
+          {time}
+          {isMe ? (
+            <CheckCheck
+              className={`h-3.5 w-3.5 shrink-0 ${isRead ? 'text-[#34b7f1]' : 'text-gray-400 dark:text-[#6b7d8f]'}`}
+              strokeWidth={isRead ? 2.5 : 2}
+              aria-hidden
+            />
+          ) : null}
+        </span>
       ) : null}
+      {readLabel ? <span>{readLabel}</span> : null}
     </span>
   );
 }

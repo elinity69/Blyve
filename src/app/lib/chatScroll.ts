@@ -9,13 +9,24 @@ interface ScrollTargetMessage {
 export function scrollContainerToBottomStable(
   container: HTMLElement,
   maxFrames = 12,
+  opts?: { smooth?: boolean }
 ): void {
+  const smooth = opts?.smooth ?? false;
   let frames = 0;
   let lastHeight = -1;
 
+  const scrollToMax = () => {
+    const maxScroll = Math.max(0, container.scrollHeight - container.clientHeight);
+    if (smooth && typeof container.scrollTo === 'function') {
+      container.scrollTo({ top: maxScroll, behavior: 'smooth' });
+    } else {
+      container.scrollTop = maxScroll;
+    }
+  };
+
   const tick = () => {
     const height = container.scrollHeight;
-    container.scrollTop = height;
+    scrollToMax();
 
     if (height !== lastHeight && frames < maxFrames) {
       lastHeight = height;
@@ -26,7 +37,7 @@ export function scrollContainerToBottomStable(
 
     const endMarker = container.querySelector('[data-chat-scroll-end]');
     if (endMarker instanceof HTMLElement) {
-      endMarker.scrollIntoView({ block: 'end', behavior: 'auto' });
+      endMarker.scrollIntoView({ block: 'end', behavior: smooth ? 'smooth' : 'auto' });
     }
   };
 

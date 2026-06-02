@@ -512,7 +512,7 @@ function AppContent({ onUserIdChange }: AppContentProps = {}) {
 
     window.addEventListener('pointerdown', unlockAudio);
     window.addEventListener('keydown', unlockAudio);
-    window.addEventListener('touchstart', unlockAudio);
+    window.addEventListener('touchstart', unlockAudio, { passive: true });
 
     return () => {
       window.removeEventListener('pointerdown', unlockAudio);

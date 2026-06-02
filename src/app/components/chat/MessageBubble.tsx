@@ -13,6 +13,7 @@ interface MessageBubbleProps {
   isMe: boolean;
   time?: string;
   isRead?: boolean;
+  readLabel?: string;
   children: React.ReactNode;
 }
 
@@ -21,6 +22,7 @@ export function MessageBubble({
   isMe,
   time,
   isRead,
+  readLabel,
   children,
 }: MessageBubbleProps) {
   const tailClass = getMessageBubbleTailClass(position, isMe);
@@ -48,6 +50,15 @@ export function MessageBubble({
                   aria-hidden
                 />
               ) : null}
+            </span>
+          ) : null}
+          {readLabel ? (
+            <span
+              className={`self-end whitespace-nowrap text-[10px] leading-none tabular-nums ${
+                isMe ? 'text-white/65 dark:text-[#8fa4b8]/90' : 'text-gray-500 dark:text-[#6b7d8f]'
+              }`}
+            >
+              {readLabel}
             </span>
           ) : null}
         </div>

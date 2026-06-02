@@ -178,7 +178,7 @@ export function NavigationStack({
   const setSwipeBackLock = (locked: boolean) => {
     isDraggingRef.current = locked;
     setSwipeBackLocked(locked);
-    setNavSwipeBackLock(locked);
+    setNavSwipeBackLock(locked, shellRef.current);
     if (locked) {
       onSwipeBackStartRef.current?.();
     } else {
@@ -670,7 +670,7 @@ export function NavigationStack({
     });
   };
 
-  const handleTouchMove = (currentX: number, currentY: number, preventDefault: () => void) => {
+  const handleTouchMove = (currentX: number, currentY: number) => {
     if (!touchStartedOnEdgeRef.current) return;
     if (!isForwardPull && enterTouchShieldRef.current) return;
     if (!isForwardPull && !isTouchInteractionReady()) return;
@@ -720,7 +720,6 @@ export function NavigationStack({
       : Math.min(Math.max(0, deltaX), width);
 
     if (pullDistance > 0) {
-      preventDefault();
       currentXRef.current = currentX;
       lastTouchXRef.current = currentX;
       const now = performance.now();
@@ -817,20 +816,21 @@ export function NavigationStack({
   };
 
   useEffect(() => {
-    if (!isForwardPull || !isMobile) return;
-    const shell = forwardShellRef?.current;
+    if (!isMobile) return;
+
+    const shell = isForwardPull ? forwardShellRef?.current : shellRef.current;
     if (!shell) return;
 
     const onTouchStart = (event: TouchEvent) => {
       const touch = event.touches[0];
+      if (!touch) return;
       handleTouchStart(touch.clientX, touch.clientY);
     };
 
     const onTouchMove = (event: TouchEvent) => {
       const touch = event.touches[0];
-      handleTouchMove(touch.clientX, touch.clientY, () => {
-        if (event.cancelable) event.preventDefault();
-      });
+      if (!touch) return;
+      handleTouchMove(touch.clientX, touch.clientY);
     };
 
     const onTouchEnd = () => {
@@ -838,7 +838,7 @@ export function NavigationStack({
     };
 
     shell.addEventListener('touchstart', onTouchStart, { capture: true, passive: true });
-    shell.addEventListener('touchmove', onTouchMove, { capture: true, passive: false });
+    shell.addEventListener('touchmove', onTouchMove, { capture: true, passive: true });
     shell.addEventListener('touchend', onTouchEnd, { capture: true, passive: true });
     shell.addEventListener('touchcancel', onTouchEnd, { capture: true, passive: true });
 
@@ -847,26 +847,13 @@ export function NavigationStack({
       shell.removeEventListener('touchmove', onTouchMove, { capture: true });
       shell.removeEventListener('touchend', onTouchEnd, { capture: true });
       shell.removeEventListener('touchcancel', onTouchEnd, { capture: true });
-      setNavForwardSwipeLock(false, shell);
+      if (isForwardPull) {
+        setNavForwardSwipeLock(false, shell);
+      } else {
+        setNavSwipeBackLock(false, shell);
+      }
     };
   }, [forwardShellRef, isForwardPull, isMobile]);
-
-  const handleReactTouchStart = (e: React.TouchEvent) => {
-    if (isForwardPull) return;
-    handleTouchStart(e.touches[0].clientX, e.touches[0].clientY);
-  };
-
-  const handleReactTouchMove = (e: React.TouchEvent) => {
-    if (isForwardPull) return;
-    handleTouchMove(e.touches[0].clientX, e.touches[0].clientY, () => {
-      if (e.cancelable) e.preventDefault();
-    });
-  };
-
-  const handleReactTouchEnd = () => {
-    if (isForwardPull) return;
-    handleTouchEnd();
-  };
 
   const width = viewportWidth || getViewportWidth();
   const offscreenX = width;
@@ -915,13 +902,6 @@ export function NavigationStack({
       backfaceVisibility: 'hidden',
       WebkitBackfaceVisibility: 'hidden',
     };
-    const touchCaptureHandlers = {
-      onTouchStartCapture: handleReactTouchStart,
-      onTouchMoveCapture: handleReactTouchMove,
-      onTouchEndCapture: handleReactTouchEnd,
-      onTouchCancelCapture: handleReactTouchEnd,
-    };
-
     return (
       <motion.div
         ref={shellRef}
@@ -929,7 +909,6 @@ export function NavigationStack({
         style={{ x: panelX, ...mobileShellStyle }}
         exit={{ x: offscreenX }}
         transition={{ duration: 0 }}
-        {...touchCaptureHandlers}
       >
         <div
           ref={viewportShellRef}

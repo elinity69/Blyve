@@ -58,16 +58,18 @@ export function clearNavSwipeLocks(shell?: HTMLDivElement | null) {
   if (shell) shell.style.touchAction = '';
 }
 
-export function setNavSwipeBackLock(locked: boolean) {
+export function setNavSwipeBackLock(locked: boolean, shell?: HTMLDivElement | null) {
   if (typeof document === 'undefined') return;
   if (locked) {
     document.documentElement.dataset.swipeBackLock = '1';
     document.body.style.overflowX = 'hidden';
     document.body.style.overflowY = 'hidden';
+    if (shell) shell.style.touchAction = 'none';
   } else {
     delete document.documentElement.dataset.swipeBackLock;
     document.body.style.overflowX = '';
     document.body.style.overflowY = '';
+    if (shell) shell.style.touchAction = '';
   }
 }
 

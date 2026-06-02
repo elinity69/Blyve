@@ -129,6 +129,8 @@ export function ChatScreen({
   const canLoadOlderRef = useRef(false);
   const lastMessageIdRef = useRef<string | null>(null);
   const lastAppliedViewedAtRef = useRef<string | null>(null);
+  const lastOwnReadAtRef = useRef<string | null>(null);
+  const readReceiptScrollSeededRef = useRef(false);
   const [scrollAnchorReady, setScrollAnchorReady] = useState(false);
 
   const applyInitialScrollPosition = useCallback(() => {
@@ -233,6 +235,8 @@ export function ChatScreen({
     initialScrollDoneRef.current = false;
     lastMessageIdRef.current = null;
     lastAppliedViewedAtRef.current = null;
+    lastOwnReadAtRef.current = null;
+    readReceiptScrollSeededRef.current = false;
     setScrollAnchorReady(false);
   }, [conversationId]);
 
@@ -322,6 +326,30 @@ export function ChatScreen({
       requestAnimationFrame(() => scrollContainerToBottomStable(container));
     }
   }, [isPartnerTyping, typingClearance, scrollAnchorReady]);
+
+  useLayoutEffect(() => {
+    if (!scrollAnchorReady || loading) return;
+    const container = messagesContainerRef.current;
+    if (!container || !lastOwnMessageId) return;
+
+    const lastOwn = messages.find((m) => m.id === lastOwnMessageId);
+    const readAt = lastOwn?.read_at ?? null;
+
+    if (!readReceiptScrollSeededRef.current) {
+      readReceiptScrollSeededRef.current = true;
+      lastOwnReadAtRef.current = readAt;
+      return;
+    }
+
+    if (!readAt || readAt === lastOwnReadAtRef.current) return;
+
+    lastOwnReadAtRef.current = readAt;
+    if (!isNearBottom(container)) return;
+
+    requestAnimationFrame(() => {
+      scrollContainerToBottomStable(container, 12, { smooth: true });
+    });
+  }, [messages, lastOwnMessageId, scrollAnchorReady, loading]);
 
   const loadOlderAndPreserveScroll = useCallback(async () => {
     if (loadingMore || !hasMore || isLoadingOlderRef.current) return;
@@ -698,6 +726,10 @@ export function ChatScreen({
                 (senderId) => getSenderLabel(senderId),
                 t('chat.originalMessageUnavailable')
               );
+              const readLabel =
+                isLastOwnMessage && isGroupEnd && msg.read_at
+                  ? `${t('chat.read')} ${formatMessageTime(msg.read_at, timeLocale, timeLocale === 'en-US')}`
+                  : undefined;
               return (
                 <motion.div
                   key={msg.id}
@@ -752,15 +784,10 @@ export function ChatScreen({
                                 bubblePosition={groupPosition}
                                 messageTime={messageTime}
                                 isRead={isOutgoingMessageRead(msg, messages, currentUserId)}
+                                readLabel={readLabel}
                               />
                             </MessageBubbleActionRow>
                           </div>
-                          {isLastOwnMessage && isGroupEnd && msg.read_at && (
-                            <div className="mt-0.5 text-right text-[10px] leading-none text-[#8E8E93]">
-                              {t('chat.read')}{' '}
-                              {formatMessageTime(msg.read_at, timeLocale, timeLocale === 'en-US')}
-                            </div>
-                          )}
                         </div>
                       </div>
                     </div>
