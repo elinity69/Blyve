@@ -369,7 +369,11 @@ app.post("/friends/request", async (c) => {
     if (!user) return c.json({ error: 'Unauthorized' }, 401);
 
     const { friend_username } = await c.req.json();
-    const normalized = String(friend_username || '').trim().replace(/^@/, '').toLowerCase();
+    const normalized = String(friend_username || '')
+      .trim()
+      .replace(/^@/, '')
+      .toLowerCase()
+      .replace(/[^a-z0-9_]/g, '');
     if (normalized.length < 3) {
       return c.json({ error: 'Invalid username' }, 400);
     }
@@ -386,13 +390,53 @@ app.post("/friends/request", async (c) => {
 
     const { data: existing, error: existingError } = await supabase
       .from('friends')
-      .select('id, status')
+      .select('id, user_id, friend_id, status')
       .or(`and(user_id.eq.${user.id},friend_id.eq.${friend.id}),and(user_id.eq.${friend.id},friend_id.eq.${user.id})`)
       .limit(1)
       .maybeSingle();
 
     if (existingError) return c.json({ error: existingError.message }, 500);
-    if (existing) return c.json({ error: 'Request exists' }, 400);
+    if (existing) {
+      const row = existing as { id: string; user_id: string; friend_id: string; status: string };
+      if (row.status === 'accepted') {
+        return c.json({ success: true, already_friends: true });
+      }
+      if (row.status === 'blocked') {
+        return c.json({ error: 'Friendship blocked' }, 403);
+      }
+
+      // If there is already an incoming pending request, treat this action as accept.
+      if (row.status === 'pending' && row.user_id === friend.id && row.friend_id === user.id) {
+        const { error: acceptError } = await supabase
+          .from('friends')
+          .update({ status: 'accepted' })
+          .eq('id', row.id);
+        if (acceptError) return c.json({ error: acceptError.message }, 500);
+
+        const { error: mirrorError } = await supabase
+          .from('friends')
+          .upsert(
+            {
+              user_id: user.id,
+              friend_id: friend.id,
+              status: 'accepted',
+            },
+            { onConflict: 'user_id,friend_id' }
+          );
+        if (mirrorError) {
+          const code = String((mirrorError as { code?: string }).code || '');
+          const message = String((mirrorError as { message?: string }).message || '');
+          const isNonBlocking =
+            code === '23505' || /duplicate key|already exists|conflict/i.test(message);
+          if (!isNonBlocking) return c.json({ error: mirrorError.message }, 500);
+        }
+
+        return c.json({ success: true, auto_accepted: true, friend_user_id: friend.id });
+      }
+
+      // Outgoing pending request already exists: keep endpoint idempotent.
+      return c.json({ success: true, pending: true });
+    }
 
     const { error: insertError } = await supabase.from('friends').insert({
       user_id: user.id,
