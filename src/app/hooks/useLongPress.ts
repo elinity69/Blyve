@@ -22,17 +22,25 @@ export function useLongPress(
     }
   }, []);
 
+  const isNavigationSwipeLocked = useCallback(() => {
+    if (typeof document === 'undefined') return false;
+    const root = document.documentElement.dataset;
+    return root.swipeBackLock === '1' || root.forwardSwipeLock === '1';
+  }, []);
+
   const onPointerDown = useCallback(
     (event: React.PointerEvent) => {
       if (event.pointerType === 'mouse' && event.button !== 0) return;
+      if (isNavigationSwipeLocked()) return;
       longPressTriggeredRef.current = false;
       clear();
       timeoutRef.current = window.setTimeout(() => {
+        if (isNavigationSwipeLocked()) return;
         longPressTriggeredRef.current = true;
         onLongPress(event);
       }, delay);
     },
-    [clear, delay, onLongPress]
+    [clear, delay, isNavigationSwipeLocked, onLongPress]
   );
 
   const onClickCapture = useCallback((event: React.MouseEvent) => {
