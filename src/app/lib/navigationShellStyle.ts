@@ -1,20 +1,27 @@
 import { MOBILE_VV_CSS } from './mobileViewport';
 
-/** Framer spring for snap / cancel (iOS-style settle). */
+/** Static enter/exit when not finger-tracking. */
+export const NAV_SWIPE_COMPLETE_S = 0.32;
+export const NAV_SWIPE_EASE = [0.22, 0.61, 0.36, 1] as const;
+/** Framer spring for partial snap-back cancel only (never for forward-open commit). */
 export const NAV_SWIPE_SPRING = {
   type: 'spring' as const,
-  stiffness: 380,
-  damping: 36,
-  mass: 0.85,
-  restDelta: 0.75,
-  restSpeed: 0.75,
+  stiffness: 420,
+  damping: 42,
+  mass: 0.8,
+  restDelta: 0.5,
+  restSpeed: 0.5,
 };
-/** Static enter/exit when not finger-tracking. */
-export const NAV_SWIPE_EASE = [0.22, 0.61, 0.36, 1] as const;
+/** Deterministic settle — Discord-style, no overshoot at x=0 or off-screen. */
+export const NAV_SWIPE_SETTLE = {
+  type: 'tween' as const,
+  duration: NAV_SWIPE_COMPLETE_S,
+  ease: NAV_SWIPE_EASE,
+};
 /** Push enter — slower ease-out so the panel does not overshoot past x=0. */
 export const NAV_ENTER_EASE = [0.25, 0.46, 0.45, 0.94] as const;
-export const NAV_SWIPE_COMPLETE_S = 0.32;
 export const NAV_ENTER_DURATION_S = 0.4;
+export const NAV_ENTER_SETTLE_MS = Math.round(NAV_ENTER_DURATION_S * 1000);
 export const NAV_SWIPE_CANCEL_MS = 280;
 export const NAV_SWIPE_VELOCITY_THRESHOLD = 0.28;
 export const NAV_SWIPE_DISTANCE_RATIO = 0.33;

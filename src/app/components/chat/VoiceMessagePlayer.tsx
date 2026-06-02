@@ -213,7 +213,7 @@ export function VoiceMessagePlayer({ src, isMe = false }: VoiceMessagePlayerProp
       className="flex min-w-[11.5rem] max-w-[min(100%,17rem)] items-center gap-1.5 py-0.5"
       onPointerDown={(event) => event.stopPropagation()}
     >
-      <audio ref={audioRef} src={src} preload="auto" className="hidden" />
+      <audio ref={audioRef} src={src} preload="metadata" className="hidden" />
       <button
         type="button"
         onClick={togglePlayback}

@@ -10,6 +10,8 @@ interface StackScreen {
   id: string;
   content: React.ReactNode;
   skipEnterAnimation?: boolean;
+  /** Static shell only — forward commit must push the live screen. */
+  isForwardPreview?: boolean;
 }
 
 interface UseEdgeBackNavigationProps {
@@ -21,6 +23,8 @@ interface UseEdgeBackNavigationProps {
   forwardSwipeEnabled?: boolean;
   /** When false, cached screen is ignored for forward-pull (DM vs group scope). */
   canForwardPull?: (cached: { id: string }) => boolean;
+  /** Seed forward-pull cache synchronously before the pop commit (avoids one black frame). */
+  onPopToPreview?: (poppedScreenId?: string | null) => void;
 }
 
 const navViewportClipStyle = {
@@ -66,9 +70,11 @@ export function useEdgeBackNavigation({
   onForwardSwipe,
   forwardSwipeEnabled = true,
   canForwardPull,
+  onPopToPreview,
 }: UseEdgeBackNavigationProps) {
   const isMobile = useIsMobile();
   const [stack, setStack] = useState<StackScreen[]>([]);
+  const [forwardCacheVersion, setForwardCacheVersion] = useState(0);
   const stackIdCounter = useRef(0);
   const onStackChangeRef = useRef(onStackChange);
   const onForwardSwipeRef = useRef(onForwardSwipe);
@@ -80,19 +86,36 @@ export function useEdgeBackNavigation({
   const canForwardPullRef = useRef(canForwardPull);
   const lastRenderLogRef = useRef<string>('');
   const popScreenRef = useRef<() => void>(() => {});
+  const onPopToPreviewRef = useRef(onPopToPreview);
   onStackChangeRef.current = onStackChange;
   onForwardSwipeRef.current = onForwardSwipe;
+  onPopToPreviewRef.current = onPopToPreview;
   forwardSwipeEnabledRef.current = forwardSwipeEnabled;
   canForwardPullRef.current = canForwardPull;
   stackRef.current = stack;
 
-  const clearForwardCache = useCallback(() => {
-    lastScreenCacheRef.current = null;
+  const bumpForwardCache = useCallback(() => {
+    setForwardCacheVersion((v) => v + 1);
   }, []);
 
-  const setForwardCache = useCallback((content: React.ReactNode, id: string) => {
-    lastScreenCacheRef.current = { id, content, skipEnterAnimation: true };
-  }, []);
+  const clearForwardCache = useCallback(() => {
+    if (!lastScreenCacheRef.current) return;
+    lastScreenCacheRef.current = null;
+    bumpForwardCache();
+  }, [bumpForwardCache]);
+
+  const setForwardCache = useCallback(
+    (content: React.ReactNode, id: string) => {
+      lastScreenCacheRef.current = {
+        id,
+        content,
+        skipEnterAnimation: true,
+        isForwardPreview: true,
+      };
+      bumpForwardCache();
+    },
+    [bumpForwardCache]
+  );
 
   const isCachedForwardAllowed = useCallback(() => {
     const cached = lastScreenCacheRef.current;
@@ -101,11 +124,6 @@ export function useEdgeBackNavigation({
     if (!allow) lastScreenCacheRef.current = null;
     return allow;
   }, []);
-
-  useEffect(() => {
-    if (forwardSwipeEnabled) return;
-    lastScreenCacheRef.current = null;
-  }, [forwardSwipeEnabled]);
 
   useEffect(() => {
     if (stack.length > 0) return;
@@ -123,13 +141,13 @@ export function useEdgeBackNavigation({
       forwardSwipeEnabled: forwardSwipeEnabledRef.current,
     });
 
-    if (stackDepth > 0) {
-      lastScreenCacheRef.current = stack[stackDepth - 1];
-    }
-
     if (lastReportedStackDepthRef.current !== stackDepth) {
       lastReportedStackDepthRef.current = stackDepth;
       onStackChangeRef.current?.(stackDepth);
+    }
+
+    if (stackDepth > 0) {
+      lastScreenCacheRef.current = stack[stackDepth - 1];
     }
 
     if (stackDepth > 0) {
@@ -148,15 +166,30 @@ export function useEdgeBackNavigation({
     }
   }, [stack]);
 
-  const pushScreen = useCallback((content: React.ReactNode, id?: string) => {
-    const screenId = id || `screen-${++stackIdCounter.current}`;
-    navDebug.log('nav', 'pushScreen', {
-      screenId,
-      prevDepth: stackRef.current.length,
-      trace: navDebug.captureTrace(),
-    });
-    setStack((prev) => [...prev, { id: screenId, content, skipEnterAnimation: false }]);
-  }, []);
+  const pushScreen = useCallback(
+    (
+      content: React.ReactNode,
+      id?: string,
+      options?: { skipEnterAnimation?: boolean }
+    ) => {
+      const screenId = id || `screen-${++stackIdCounter.current}`;
+      navDebug.log('nav', 'pushScreen', {
+        screenId,
+        skipEnter: options?.skipEnterAnimation ?? false,
+        prevDepth: stackRef.current.length,
+        trace: navDebug.captureTrace(),
+      });
+      setStack((prev) => [
+        ...prev,
+        {
+          id: screenId,
+          content,
+          skipEnterAnimation: options?.skipEnterAnimation ?? false,
+        },
+      ]);
+    },
+    []
+  );
 
   /** Swap the top stack entry (e.g. forward-pull preview → live screen) without growing depth. */
   const replaceTopScreen = useCallback((content: React.ReactNode, id?: string) => {
@@ -179,8 +212,26 @@ export function useEdgeBackNavigation({
       topId: stackRef.current[stackRef.current.length - 1]?.id ?? null,
       trace: navDebug.captureTrace(),
     });
+    const top = stackRef.current[stackRef.current.length - 1];
+    if (top && !top.skipEnterAnimation) {
+      lastScreenCacheRef.current = {
+        id: top.id,
+        content: top.content,
+        skipEnterAnimation: true,
+        isForwardPreview: false,
+      };
+    } else if (top?.skipEnterAnimation) {
+      lastScreenCacheRef.current = {
+        ...top,
+        isForwardPreview: top.isForwardPreview ?? false,
+      };
+    } else {
+      lastScreenCacheRef.current = null;
+    }
+    onPopToPreviewRef.current?.(top?.id ?? null);
     setStack((prev) => prev.slice(0, -1));
-  }, []);
+    bumpForwardCache();
+  }, [bumpForwardCache]);
   popScreenRef.current = popScreen;
 
   const tracedPopScreen = useCallback(() => {
@@ -198,15 +249,36 @@ export function useEdgeBackNavigation({
     setStack([]);
   }, []);
 
+  const handleForwardOpenStart = useCallback(() => {
+    const cached = lastScreenCacheRef.current;
+    if (!cached?.isForwardPreview || !isCachedForwardAllowed()) return;
+    navDebug.log('nav', 'forwardOpenStart', {
+      cachedId: cached.id,
+      trace: navDebug.captureTrace(),
+    });
+    requestAnimationFrame(() => {
+      onForwardSwipeRef.current?.();
+    });
+  }, [isCachedForwardAllowed]);
+
   const handleForwardComplete = useCallback(() => {
     const cached = lastScreenCacheRef.current;
     navDebug.log('nav', 'forwardComplete', {
       cachedId: cached?.id ?? null,
+      isForwardPreview: cached?.isForwardPreview ?? false,
+      stackDepth: stackRef.current.length,
       trace: navDebug.captureTrace(),
     });
     if (!cached || !isCachedForwardAllowed()) return;
-    setStack([{ ...cached, skipEnterAnimation: true }]);
-    queueMicrotask(() => onForwardSwipeRef.current?.());
+    if (!cached.isForwardPreview) {
+      setStack([{ ...cached, skipEnterAnimation: true, isForwardPreview: false }]);
+      return;
+    }
+    if (stackRef.current.length === 0) {
+      requestAnimationFrame(() => {
+        onForwardSwipeRef.current?.();
+      });
+    }
   }, [isCachedForwardAllowed]);
 
   const renderLayers = useCallback(() => {
@@ -248,6 +320,7 @@ export function useEdgeBackNavigation({
         forwardShellRef={previewShellRef}
         skipEnterAnimation={topStack?.skipEnterAnimation ?? true}
         onBack={tracedPopScreen}
+        onForwardOpenStart={handleForwardOpenStart}
         onForwardComplete={handleForwardComplete}
       >
         {overlayScreen.content}
@@ -296,8 +369,10 @@ export function useEdgeBackNavigation({
     );
   }, [
     stack,
+    forwardCacheVersion,
     baseContent,
     tracedPopScreen,
+    handleForwardOpenStart,
     handleForwardComplete,
     forwardSwipeEnabled,
     canForwardPull,

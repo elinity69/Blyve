@@ -4,18 +4,16 @@ import { useMobileViewportDriver } from '../hooks/useMobileViewportInsets';
 import { navDebug } from '../lib/navDebug';
 import {
   clearNavSwipeLocks,
-  BACK_EDGE_INSET_RATIO,
   FORWARD_EDGE_RATIO,
   NAV_SWIPE_COMPLETE_S,
   NAV_SWIPE_DISTANCE_RATIO,
-  NAV_SWIPE_EASE,
   NAV_SWIPE_MIN_DISTANCE_PX,
-  NAV_ENTER_DURATION_S,
-  NAV_ENTER_EASE,
+  NAV_SWIPE_EASE,
   NAV_ENTER_GRACE_MS,
   NAV_POST_ENTER_GRACE_MS,
   NAV_PANEL_HIDE_OVERSHOOT_PX,
   NAV_SWIPE_OFFSCREEN_EPSILON_PX,
+  NAV_SWIPE_SETTLE,
   NAV_SWIPE_SPRING,
   NAV_SWIPE_VELOCITY_THRESHOLD,
   navigationStackShellStyle,
@@ -36,6 +34,8 @@ interface NavigationStackProps {
   /** Pull cached screen in from the right edge (Discord-style). */
   isForwardPull?: boolean;
   forwardShellRef?: React.RefObject<HTMLDivElement | null>;
+  /** Preview cache only — mount live screen when forward snap begins. */
+  onForwardOpenStart?: () => void;
   onForwardComplete?: () => void;
 }
 
@@ -90,20 +90,18 @@ export function NavigationStack({
   onSwipeBackEnd,
   isForwardPull = false,
   forwardShellRef,
+  onForwardOpenStart,
   onForwardComplete,
 }: NavigationStackProps) {
-  const [isMobile, setIsMobile] = useState(false);
+  const [isMobile, setIsMobile] = useState(
+    () => typeof window !== 'undefined' && window.innerWidth < 768
+  );
   const [viewportWidth, setViewportWidth] = useState(() => getViewportWidth());
   const [translateX, setTranslateX] = useState(0);
   const [navPhase, setNavPhase] = useState<NavPhase>('idle');
   const [enterTouchShield, setEnterTouchShield] = useState(false);
-  const [enterSlideX, setEnterSlideX] = useState<number | string | null>(null);
-  const enterSlideXRef = useRef<number | string | null>(null);
-  enterSlideXRef.current = enterSlideX;
   const enterTouchShieldRef = useRef(false);
   const enterCssActiveRef = useRef(false);
-  const enterSlideGoalRef = useRef<number | string | null>(null);
-  const completeEnterRef = useRef<(reason: string) => void>(() => {});
   const shellRef = useRef<HTMLDivElement | null>(null);
   const viewportShellRef = useRef<HTMLDivElement | null>(null);
   const [swipeBackLocked, setSwipeBackLocked] = useState(false);
@@ -128,9 +126,9 @@ export function NavigationStack({
   const interactionReadyAtRef = useRef(0);
   const enterLockedRef = useRef(false);
   const enterBlockLogRef = useRef(false);
-  const enterCompleteFiredRef = useRef(false);
   const layoutGenRef = useRef(0);
   const enterWatchdogRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const enterStartRafRef = useRef<number | null>(null);
   const enterShieldTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const snapOnDoneRef = useRef<(() => void) | null>(null);
   const layoutPrevRef = useRef({
@@ -143,11 +141,13 @@ export function NavigationStack({
   const onSwipeBackStartRef = useRef(onSwipeBackStart);
   const onSwipeBackEndRef = useRef(onSwipeBackEnd);
   const onForwardCompleteRef = useRef(onForwardComplete);
+  const onForwardOpenStartRef = useRef(onForwardOpenStart);
   onBackRef.current = onBack;
   onBeforeBackRef.current = onBeforeBack;
   onSwipeBackStartRef.current = onSwipeBackStart;
   onSwipeBackEndRef.current = onSwipeBackEnd;
   onForwardCompleteRef.current = onForwardComplete;
+  onForwardOpenStartRef.current = onForwardOpenStart;
 
   useMobileViewportDriver(isMobile);
 
@@ -264,12 +264,51 @@ export function NavigationStack({
   const isTouchInteractionReady = () => performance.now() >= interactionReadyAtRef.current;
 
   const stopEnterAnimation = () => {
-    enterAnimationStopRef.current?.();
-    enterAnimationStopRef.current = null;
+    cancelEnterStartRaf();
+    cancelEnterAnimation();
+    enterCssActiveRef.current = false;
     releaseEnterLock();
     if (navPhase === 'enter') {
       setNavPhase('idle');
     }
+  };
+
+  const cancelEnterStartRaf = () => {
+    if (enterStartRafRef.current === null) return;
+    cancelAnimationFrame(enterStartRafRef.current);
+    enterStartRafRef.current = null;
+  };
+
+  const cancelEnterAnimation = () => {
+    enterAnimationStopRef.current?.();
+    enterAnimationStopRef.current = null;
+  };
+
+  const startEnterTween = (
+    enterStartX: number,
+    enterLayoutGen: number,
+    width: number,
+    completeEnter: (reason: string) => void
+  ) => {
+    jumpPanelX(enterStartX);
+    const controls = animate(panelX, 0, {
+      ...NAV_SWIPE_SETTLE,
+      onComplete: () => {
+        if (enterLayoutGen !== layoutGenRef.current) {
+          navDebug.log('stack', 'enter:tween:stale', {
+            enterLayoutGen,
+            currentGen: layoutGenRef.current,
+            screenId,
+          });
+          return;
+        }
+        enterAnimationStopRef.current = null;
+        completeEnter('enter-tween');
+      },
+    });
+    enterAnimationStopRef.current = () => {
+      controls.stop();
+    };
   };
 
   const settleOpenPanel = useCallback(
@@ -288,7 +327,6 @@ export function NavigationStack({
         setEnterTouchShield(false);
         enterTouchShieldRef.current = false;
       }
-      setEnterSlideX(null);
       enterCssActiveRef.current = false;
 
       requestAnimationFrame(() => {
@@ -328,7 +366,8 @@ export function NavigationStack({
     layoutPrevRef.current = { isForwardPull, skipEnterAnimation, screenId };
 
     cancelPendingTranslateFrame();
-    stopAllAnimations();
+    cancelEnterAnimation();
+    stopSnapAnimation();
     translateXRef.current = 0;
     lastPullDistanceRef.current = 0;
     setTranslateX(0);
@@ -340,7 +379,6 @@ export function NavigationStack({
       interactionReadyAtRef.current = 0;
       setEnterTouchShield(false);
       enterTouchShieldRef.current = false;
-      setEnterSlideX(null);
       enterCssActiveRef.current = false;
       logPose('layout:forward-pull-hidden', {
         panelXStart: Math.round(offscreenPanelX(width)),
@@ -350,19 +388,33 @@ export function NavigationStack({
     }
 
     if (skipEnterAnimation) {
-      applyPanelX(0, width);
-      settleOpenPanel(width, 'skip-enter');
-      blockTouchInteraction(120);
+      const fromForwardCommit = prev.isForwardPull && !isForwardPull;
+      cancelPendingTranslateFrame();
+      translateXRef.current = 0;
+      lastPullDistanceRef.current = 0;
+      setTranslateX(0);
+      jumpPanelX(0);
+      releaseEnterLock();
+      setNavPhase('idle');
       setEnterTouchShield(false);
       enterTouchShieldRef.current = false;
-      setEnterSlideX(null);
       enterCssActiveRef.current = false;
-      logPose('layout:skip-enter');
+      blockTouchInteraction(fromForwardCommit ? NAV_POST_ENTER_GRACE_MS : 120);
+      if (!fromForwardCommit) {
+        settleOpenPanel(width, 'skip-enter');
+      } else {
+        scheduleEnterShieldRelease();
+        logPose('settle:open:forward-commit', { viewportW: Math.round(width) });
+      }
+      logPose('layout:skip-enter', { fromForwardCommit });
+      return;
+    }
+
+    if (!isMobile) {
       return;
     }
 
     const enterStartX = offscreenPanelX(width);
-    const enterSlideFrom = '100%';
     const enterLayoutGen = layoutGen;
     const completeEnter = (reason: string) => {
       if (enterLayoutGen !== layoutGenRef.current) {
@@ -376,19 +428,16 @@ export function NavigationStack({
       }
       if (!enterCssActiveRef.current) return;
       enterCssActiveRef.current = false;
-      enterSlideGoalRef.current = null;
       if (enterWatchdogRef.current !== null) {
         clearTimeout(enterWatchdogRef.current);
         enterWatchdogRef.current = null;
       }
       enterAnimationStopRef.current = null;
-      setEnterSlideX(null);
       settleOpenPanel(width, reason, { releaseShield: false });
       blockTouchInteraction(NAV_POST_ENTER_GRACE_MS);
       scheduleEnterShieldRelease();
       logPose('layout:enter-complete', { layoutGen: enterLayoutGen, reason });
     };
-    completeEnterRef.current = completeEnter;
 
     jumpPanelX(enterStartX);
     translateXRef.current = 0;
@@ -399,44 +448,34 @@ export function NavigationStack({
     enterGraceUntilRef.current = performance.now() + NAV_ENTER_GRACE_MS;
     blockTouchInteraction(NAV_ENTER_GRACE_MS);
     enterCssActiveRef.current = true;
-    enterCompleteFiredRef.current = false;
-    enterAnimationStopRef.current = () => {
-      enterCssActiveRef.current = false;
-    };
-    enterSlideGoalRef.current = enterSlideFrom;
-    setEnterSlideX(enterSlideFrom);
+    enterAnimationStopRef.current = null;
     scheduleEnterShieldRelease();
     logPose('layout:enter-start', {
       panelXStart: Math.round(enterStartX),
       graceMs: NAV_ENTER_GRACE_MS,
       layoutGen,
-      enterMode: 'css-percent',
+      enterMode: 'panel-settle',
     });
 
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        if (!enterCssActiveRef.current) return;
-        enterSlideGoalRef.current = 0;
-        setEnterSlideX(0);
-        translateXRef.current = 0;
-      });
+    cancelEnterStartRaf();
+    enterStartRafRef.current = requestAnimationFrame(() => {
+      enterStartRafRef.current = null;
+      if (enterLayoutGen !== layoutGenRef.current) return;
+      if (!enterCssActiveRef.current) return;
+      startEnterTween(enterStartX, enterLayoutGen, width, completeEnter);
     });
 
     enterWatchdogRef.current = setTimeout(() => {
+      if (enterLayoutGen !== layoutGenRef.current) return;
       if (!enterCssActiveRef.current) return;
-      navDebug.log('stack', 'enter:watchdog', {
-        goalPx: enterSlideGoalRef.current,
-        screenId,
-      });
-      if (enterSlideGoalRef.current !== 0) {
-        enterSlideGoalRef.current = 0;
-        setEnterSlideX(0);
-        translateXRef.current = 0;
-      }
+      navDebug.log('stack', 'enter:watchdog', { screenId, layoutGen: enterLayoutGen });
+      cancelEnterAnimation();
+      jumpPanelX(0);
       completeEnter('enter-watchdog');
-    }, NAV_ENTER_DURATION_S * 1000 + 150);
+    }, NAV_SWIPE_COMPLETE_S * 1000 + 150);
 
     return () => {
+      cancelEnterStartRaf();
       if (enterWatchdogRef.current !== null) {
         clearTimeout(enterWatchdogRef.current);
         enterWatchdogRef.current = null;
@@ -445,12 +484,9 @@ export function NavigationStack({
         clearTimeout(enterShieldTimerRef.current);
         enterShieldTimerRef.current = null;
       }
-      enterCssActiveRef.current = false;
-      enterAnimationStopRef.current = null;
-      setEnterSlideX(null);
-      releaseEnterLock();
+      stopEnterAnimation();
     };
-  }, [isForwardPull, skipEnterAnimation, screenId]);
+  }, [isForwardPull, skipEnterAnimation, screenId, isMobile]);
 
   useEffect(() => {
     const syncViewport = () => {
@@ -490,6 +526,12 @@ export function NavigationStack({
       (forward ? -releaseVelocityPxPerMs : releaseVelocityPxPerMs) * 1000;
     const dismissingStack =
       !forward && targetPull >= width - NAV_SWIPE_OFFSCREEN_EPSILON_PX;
+    const openingStack =
+      !forward && targetPull <= NAV_SWIPE_OFFSCREEN_EPSILON_PX;
+    const openingForward =
+      forward && targetPull >= width - NAV_SWIPE_OFFSCREEN_EPSILON_PX;
+    const useSettleTween = dismissingStack || openingStack || openingForward;
+    const offscreenX = offscreenPanelX(width);
 
     setNavPhase('snap');
     const snapLayoutGen = layoutGenRef.current;
@@ -499,13 +541,15 @@ export function NavigationStack({
       targetPanelX: Math.round(targetPanelX),
       velocityPxPerS: Math.round(motionVelocity),
       layoutGen: snapLayoutGen,
+      settleMode: useSettleTween ? 'tween' : 'spring',
     });
 
     const controls = animate(panelX, targetPanelX, {
-      ...NAV_SWIPE_SPRING,
-      velocity: motionVelocity,
+      ...(useSettleTween ? NAV_SWIPE_SETTLE : NAV_SWIPE_SPRING),
+      velocity: useSettleTween ? undefined : motionVelocity,
       onUpdate: (latest) => {
-        translateXRef.current = panelXToPullForMode(latest, width, forward);
+        const clampedLatest = Math.max(0, Math.min(latest, offscreenX));
+        translateXRef.current = panelXToPullForMode(clampedLatest, width, forward);
       },
       onComplete: () => {
         snapAnimationStopRef.current = null;
@@ -600,9 +644,6 @@ export function NavigationStack({
     if (isForwardPull) {
       const width = getViewportWidth();
       if (startX <= width * FORWARD_EDGE_RATIO) return;
-    } else {
-      const width = getViewportWidth();
-      if (startX > width * BACK_EDGE_INSET_RATIO) return;
     }
 
     touchStartedOnEdgeRef.current = true;
@@ -750,6 +791,9 @@ export function NavigationStack({
     });
 
     if (shouldComplete) {
+      if (isForwardPull) {
+        onForwardOpenStartRef.current?.();
+      }
       animateToRest(width, () => {
         if (isForwardPull) {
           onForwardCompleteRef.current?.();
@@ -829,7 +873,7 @@ export function NavigationStack({
   const isGestureActive =
     navPhase === 'drag' || navPhase === 'snap' || isDraggingRef.current;
   const isForwardHidden = isForwardPull && !isGestureActive;
-  const isEnterSliding = enterCssActiveRef.current || enterSlideX !== null;
+  const isEnterSliding = enterCssActiveRef.current || navPhase === 'enter';
   const isStackFullyOpen =
     !isForwardPull &&
     !isGestureActive &&
@@ -853,50 +897,39 @@ export function NavigationStack({
     }
   }, [isForwardHidden, isForwardPull]);
 
-  const handleEnterAnimationComplete = () => {
-    if (!enterCssActiveRef.current || enterCompleteFiredRef.current) return;
-    if (enterSlideGoalRef.current !== 0) return;
-    enterCompleteFiredRef.current = true;
-    jumpPanelX(0);
-    translateXRef.current = 0;
-    completeEnterRef.current('enter-css');
-  };
-
   if (isMobile) {
-    const useCssEnter = enterSlideX !== null;
     const stackAboveTabBar = !isForwardHidden;
+    const mobileShellStyle: React.CSSProperties = {
+      ...navigationStackShellStyle,
+      zIndex: stackAboveTabBar ? navigationStackShellStyle.zIndex : 5,
+      boxShadow: isForwardHidden
+        ? 'none'
+        : isStackFullyOpen || navPhase === 'enter'
+          ? stackPanelOpenBoxShadow()
+          : navigationStackShellStyle.boxShadow,
+      touchAction: isForwardPull ? 'none' : swipeBackLocked ? 'none' : 'pan-y',
+      pointerEvents: isForwardPull ? 'none' : 'auto',
+      visibility: isForwardHidden ? 'hidden' : 'visible',
+      display: isForwardHidden ? 'none' : undefined,
+      willChange: isForwardHidden ? undefined : 'transform',
+      backfaceVisibility: 'hidden',
+      WebkitBackfaceVisibility: 'hidden',
+    };
+    const touchCaptureHandlers = {
+      onTouchStartCapture: handleReactTouchStart,
+      onTouchMoveCapture: handleReactTouchMove,
+      onTouchEndCapture: handleReactTouchEnd,
+      onTouchCancelCapture: handleReactTouchEnd,
+    };
+
     return (
       <motion.div
         ref={shellRef}
         initial={false}
-        animate={useCssEnter ? { x: enterSlideX } : undefined}
-        style={{
-          ...(useCssEnter ? {} : { x: panelX }),
-          ...navigationStackShellStyle,
-          zIndex: stackAboveTabBar ? navigationStackShellStyle.zIndex : 5,
-          boxShadow: isForwardHidden
-            ? 'none'
-            : isStackFullyOpen
-              ? stackPanelOpenBoxShadow()
-              : navigationStackShellStyle.boxShadow,
-          touchAction: isForwardPull ? 'none' : swipeBackLocked ? 'none' : 'pan-y',
-          pointerEvents: isForwardPull ? 'none' : 'auto',
-          visibility: isForwardHidden ? ('hidden' as const) : ('visible' as const),
-          willChange: 'transform',
-          backfaceVisibility: 'hidden' as const,
-          WebkitBackfaceVisibility: 'hidden' as const,
-        }}
+        style={{ x: panelX, ...mobileShellStyle }}
         exit={{ x: offscreenX }}
-        transition={
-          useCssEnter
-            ? { x: { type: 'tween', duration: NAV_ENTER_DURATION_S, ease: NAV_ENTER_EASE } }
-            : { duration: 0 }
-        }
-        onAnimationComplete={useCssEnter ? handleEnterAnimationComplete : undefined}
-        onTouchStartCapture={handleReactTouchStart}
-        onTouchMoveCapture={handleReactTouchMove}
-        onTouchEndCapture={handleReactTouchEnd}
-        onTouchCancelCapture={handleReactTouchEnd}
+        transition={{ duration: 0 }}
+        {...touchCaptureHandlers}
       >
         <div
           ref={viewportShellRef}
