@@ -2036,8 +2036,8 @@ export function MessagesScreen({ isTabActive = true }: MessagesScreenProps) {
                 </div>
               </div>
             {showFriendsPanel && (
-              <div className="mt-3 rounded-xl border border-gray-200 dark:border-white/10 bg-white dark:bg-black/60 p-3 space-y-3">
-                <div className="flex items-center gap-2">
+              <div className="mt-3 rounded-xl border border-gray-200 dark:border-white/10 bg-white dark:bg-black/60 p-3 space-y-3 max-h-[min(45vh,360px)] overflow-y-auto overscroll-y-contain">
+                <div className="flex flex-col sm:flex-row sm:items-center gap-2">
                   <input
                     value={friendUsernameInput}
                     onChange={(e) => setFriendUsernameInput(e.target.value)}
@@ -2052,7 +2052,7 @@ export function MessagesScreen({ isTabActive = true }: MessagesScreenProps) {
                   <button
                     onClick={handleSendFriendRequest}
                     disabled={sendingRequest}
-                    className="px-3 py-2 rounded-lg bg-blyve text-white text-sm font-medium disabled:opacity-60"
+                    className="w-full sm:w-auto px-3 py-2 rounded-lg bg-blyve text-white text-sm font-medium disabled:opacity-60"
                     style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent', cursor: 'pointer' }}
                   >
                     {sendingRequest ? t('chat.sending') : t('chat.send')}

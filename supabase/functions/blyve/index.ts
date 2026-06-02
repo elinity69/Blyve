@@ -441,14 +441,21 @@ app.get("/friends", async (c) => {
         requester:user_id(id, display_name, name, username, avatar_url, images)
       `)
       .eq('friend_id', user.id)
-      .eq('status', 'pending')
+      .in('status', ['accepted', 'pending'])
       .order('created_at', { ascending: false });
 
     if (incomingError) return c.json({ error: incomingError.message }, 500);
 
-    const friends = (outgoingRows || []).filter((row: any) => row.status === 'accepted');
+    const outgoingAccepted = (outgoingRows || []).filter((row: any) => row.status === 'accepted');
+    const incomingAccepted = (incomingRows || [])
+      .filter((row: any) => row.status === 'accepted')
+      .map((row: any) => ({
+        ...row,
+        friend: row.requester,
+      }));
+    const friends = [...outgoingAccepted, ...incomingAccepted];
     const outgoing_requests = (outgoingRows || []).filter((row: any) => row.status === 'pending');
-    const incoming_requests = incomingRows || [];
+    const incoming_requests = (incomingRows || []).filter((row: any) => row.status === 'pending');
 
     return c.json({ friends, outgoing_requests, incoming_requests });
   } catch (error) {
@@ -507,7 +514,17 @@ app.post("/friends/respond", async (c) => {
         },
         { onConflict: 'user_id,friend_id' }
       );
-    if (upsertError) return c.json({ error: upsertError.message }, 500);
+    if (upsertError) {
+      // Keep accept idempotent even if DB constraints/policies only allow one friendship row.
+      const code = String((upsertError as { code?: string }).code || '');
+      const message = String((upsertError as { message?: string }).message || '');
+      const isNonBlocking =
+        code === '23505' || // unique_violation
+        /duplicate key|already exists|conflict/i.test(message);
+      if (!isNonBlocking) {
+        console.warn('POST /friends/respond mirror upsert failed (non-blocking):', upsertError);
+      }
+    }
 
     return c.json({ success: true, friend_user_id: requestRow.user_id });
   } catch (error) {

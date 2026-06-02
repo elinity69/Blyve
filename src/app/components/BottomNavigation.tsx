@@ -4,6 +4,8 @@ import { NotificationBadge } from './NotificationBadge';
 import { useTranslation } from 'react-i18next';
 import { useUnread } from '../context/UnreadContext';
 import { useState, useEffect } from 'react';
+import { useIsMobile } from './ui/use-mobile';
+import { useMobileViewportInsets } from '../hooks/useMobileViewportInsets';
 
 interface BottomNavigationProps {
   activeTab: 'messages' | 'profile';
@@ -14,6 +16,8 @@ export function BottomNavigation({ activeTab, onTabChange }: BottomNavigationPro
   const { t } = useTranslation();
   const { totalUnread, unreadByConversation } = useUnread();
   const [currentConversationId, setCurrentConversationId] = useState<string | null>(null);
+  const isMobile = useIsMobile();
+  const viewportFrame = useMobileViewportInsets(isMobile);
   
   // Listen for conversation open/close events to update badge
   useEffect(() => {
@@ -45,9 +49,16 @@ export function BottomNavigation({ activeTab, onTabChange }: BottomNavigationPro
     { id: 'messages' as const, icon: MessageCircle, label: t('nav.messages') },
     { id: 'profile' as const, icon: UserCircle, label: t('nav.profile') },
   ];
+  const bottomInset = isMobile ? viewportFrame.bottomInset : 0;
+  const navPaddingBottom = isMobile
+    ? `max(8px, ${bottomInset}px, env(safe-area-inset-bottom, 0px))`
+    : '0px';
 
   return (
-    <div className="fixed bottom-0 left-0 right-0 z-40 md:z-50 bg-white/80 dark:bg-black/80 md:dark:bg-[#121212]/80 backdrop-blur-md border-t border-white/20 dark:border-white/5 shadow-lg">
+    <div
+      className="fixed bottom-0 left-0 right-0 z-40 md:z-50 bg-white/80 dark:bg-black/80 md:dark:bg-[#121212]/80 backdrop-blur-md border-t border-white/20 dark:border-white/5 shadow-lg"
+      style={{ paddingBottom: navPaddingBottom }}
+    >
       <div className="w-full flex justify-around items-center h-16">
         {tabs.map(({ id, icon: Icon, label }) => (
           <motion.button
