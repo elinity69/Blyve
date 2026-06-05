@@ -116,25 +116,42 @@ export function initAuthSession(): Promise<Session | null> {
  * This is the correct method to call before every authenticated request.
  */
 export async function getOrRefreshSession(): Promise<Session | null> {
-  // If we have a non-expired session in memory, return it immediately.
+  // Fast path: in-memory session that is still valid.
   if (cachedSession && !isSessionExpired(cachedSession)) {
     return cachedSession;
   }
 
-  // Try a full session refresh — exchanges the refresh token for a new access token.
+  // Read from the Supabase SDK's own storage (e.g. localStorage).
+  // This covers the case where the user just logged in but the auth listener
+  // hasn't fired yet — the SDK already has the session, we just lack it in cache.
+  const { data: current } = await supabase.auth.getSession();
+  const currentSession = current?.session ?? null;
+
+  if (currentSession && !isSessionExpired(currentSession)) {
+    // Session exists and is valid — cache it and return without a network call.
+    cachedSession = currentSession;
+    cachedUser = currentSession.user ?? null;
+    sessionHydrated = true;
+    syncAccessToken(currentSession);
+    return currentSession;
+  }
+
+  // No session at all — user is logged out.
+  if (!currentSession) {
+    return null;
+  }
+
+  // Session exists but is expired — exchange refresh token for a new access token.
   const { data, error } = await supabase.auth.refreshSession();
   if (error) {
     if (isInvalidRefreshTokenError(error)) {
       await clearInvalidAuthSession();
       return null;
     }
-    // If refresh fails for any other reason, fall back to whatever getSession returns.
-    const { data: fallback } = await supabase.auth.getSession();
-    const session = fallback?.session ?? null;
-    cachedSession = session;
-    cachedUser = session?.user ?? null;
-    syncAccessToken(session);
-    return session;
+    // Refresh failed for another reason (e.g. network error) — return the stale
+    // session so the request can at least attempt to run (the 401 retry in api.ts
+    // will call refreshSession explicitly if needed).
+    return currentSession;
   }
 
   const session = data?.session ?? null;

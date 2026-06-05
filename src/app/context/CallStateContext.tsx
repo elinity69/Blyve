@@ -44,6 +44,8 @@ export type CallDisplayMode = 'embedded' | 'pip' | 'fullscreen';
 type TerminalCallStatus = 'ended' | 'cancelled' | 'declined' | 'missed';
 type CallSelfRole = 'host' | 'participant' | 'unknown';
 const RINGING_TIMEOUT_MS = 30_000;
+/** Any call session older than this is treated as stale regardless of status. */
+const CALL_SESSION_MAX_AGE_MS = 5 * 60_000;
 /** Fallback poll when Realtime is quiet — not the primary incoming-call path. */
 const INCOMING_POLL_INTERVAL_MS = 120_000;
 
@@ -281,6 +283,26 @@ function isExpiredRingingSession(
   const basisTs = new Date(basisIso).getTime();
   if (!Number.isFinite(basisTs)) return false;
   return Date.now() - basisTs > RINGING_TIMEOUT_MS;
+}
+
+/**
+ * Returns true for any non-terminal call session that is older than
+ * CALL_SESSION_MAX_AGE_MS (5 minutes). This catches ghost 'active' sessions
+ * that were never cleaned up (e.g., after a re-deploy or tab crash).
+ */
+function isStaleCallSession(
+  statusRaw: unknown,
+  createdAtRaw?: string | null,
+  updatedAtRaw?: string | null
+): boolean {
+  const status = String(statusRaw || '').toLowerCase();
+  // Terminal sessions don't need a staleness check.
+  if (['ended', 'cancelled', 'declined', 'missed'].includes(status)) return false;
+  const basisIso = updatedAtRaw || createdAtRaw;
+  if (!basisIso) return false;
+  const basisTs = new Date(basisIso).getTime();
+  if (!Number.isFinite(basisTs)) return false;
+  return Date.now() - basisTs > CALL_SESSION_MAX_AGE_MS;
 }
 
 export function CallProvider({ children }: { children: React.ReactNode }) {
@@ -1217,11 +1239,16 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       }
       if (
         sessionRow &&
-        isExpiredRingingSession(
+        (isExpiredRingingSession(
           sessionRow.status,
           sessionRow.created_at ?? null,
           sessionRow.updated_at ?? null
-        )
+        ) ||
+          isStaleCallSession(
+            sessionRow.status,
+            sessionRow.created_at ?? null,
+            sessionRow.updated_at ?? null
+          ))
       ) {
         try {
           await api.acceptCall(callSessionId, 'missed');
@@ -2002,11 +2029,16 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
 
         if (
           sessionRow &&
-          isExpiredRingingSession(
+          (isExpiredRingingSession(
             sessionRow.status,
             sessionRow.created_at ?? null,
             sessionRow.updated_at ?? null
-          )
+          ) ||
+            isStaleCallSession(
+              sessionRow.status,
+              sessionRow.created_at ?? null,
+              sessionRow.updated_at ?? null
+            ))
         ) {
           try {
             await api.acceptCall(sessionId, 'missed');
