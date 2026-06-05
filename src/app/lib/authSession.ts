@@ -12,6 +12,12 @@ let listenerRegistered = false;
 
 const listeners = new Set<AuthListener>();
 
+/** Returns true if the session token is expired or expires within the next 60 seconds. */
+function isSessionExpired(session: Session): boolean {
+  if (!session.expires_at) return false;
+  return session.expires_at * 1000 - Date.now() < 60_000;
+}
+
 function syncAccessToken(session: Session | null) {
   if (session?.access_token) {
     api.setAccessToken(session.access_token);
@@ -88,6 +94,8 @@ export function initAuthSession(): Promise<Session | null> {
         return session;
       })
       .catch(async (error) => {
+        // Reset so next call can retry.
+        initPromise = null;
         if (isInvalidRefreshTokenError(error)) {
           await clearInvalidAuthSession();
           return null;
@@ -100,6 +108,43 @@ export function initAuthSession(): Promise<Session | null> {
       });
   }
   return initPromise;
+}
+
+/**
+ * Returns a valid (non-expired) access token. If the cached session is
+ * expired or missing, forces a Supabase token refresh before returning.
+ * This is the correct method to call before every authenticated request.
+ */
+export async function getOrRefreshSession(): Promise<Session | null> {
+  // If we have a non-expired session in memory, return it immediately.
+  if (cachedSession && !isSessionExpired(cachedSession)) {
+    return cachedSession;
+  }
+
+  // Try a full session refresh — exchanges the refresh token for a new access token.
+  const { data, error } = await supabase.auth.refreshSession();
+  if (error) {
+    if (isInvalidRefreshTokenError(error)) {
+      await clearInvalidAuthSession();
+      return null;
+    }
+    // If refresh fails for any other reason, fall back to whatever getSession returns.
+    const { data: fallback } = await supabase.auth.getSession();
+    const session = fallback?.session ?? null;
+    cachedSession = session;
+    cachedUser = session?.user ?? null;
+    syncAccessToken(session);
+    return session;
+  }
+
+  const session = data?.session ?? null;
+  cachedSession = session;
+  cachedUser = session?.user ?? null;
+  sessionHydrated = true;
+  syncAccessToken(session);
+  // Reset init promise so future initAuthSession() calls pick up the fresh session.
+  initPromise = null;
+  return session;
 }
 
 export function getCachedSession(): Session | null {

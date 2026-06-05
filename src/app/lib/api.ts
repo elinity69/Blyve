@@ -1,6 +1,6 @@
 // Refactored ApiClient to use Supabase SDK directly instead of Edge Functions
 import type { User } from '@supabase/supabase-js';
-import { getCachedAccessToken, initAuthSession, resolveAuthUser } from './authSession';
+import { getCachedAccessToken, getOrRefreshSession, initAuthSession, resolveAuthUser } from './authSession';
 import { supabase } from './supabase';
 import { isJitsiCallProvider } from './callProvider';
 
@@ -114,12 +114,12 @@ export class ApiClient {
     return payload;
   }
 
-  /** Always resolves the freshest available token — prefers live Supabase session over cache. */
+  /** Always resolves the freshest available token — forces a Supabase token refresh if the
+   *  cached session is expired or close to expiry. */
   private async getFreshAccessToken(): Promise<string | null> {
-    // Ask Supabase for the current session — it auto-refreshes if the access token is close
-    // to expiry (within the refresh threshold), so this is safe to call on every request.
-    const { data } = await supabase.auth.getSession();
-    const freshToken = data?.session?.access_token ?? null;
+    // getOrRefreshSession proactively refreshes if the token is expired (unlike getSession which just reads cache).
+    const session = await getOrRefreshSession();
+    const freshToken = session?.access_token ?? null;
     if (freshToken) {
       this.setAccessToken(freshToken);
       return freshToken;
