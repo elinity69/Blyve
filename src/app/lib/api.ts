@@ -72,7 +72,7 @@ export class ApiClient {
   }
 
   private async edgeRequest(path: string, init: RequestInit = {}) {
-    const token = await this.getAccessToken();
+    const token = await this.getFreshAccessToken();
     if (!token) {
       throw new Error('Not authenticated');
     }
@@ -82,17 +82,25 @@ export class ApiClient {
 
     const safePath = this.normalizeEdgeFunctionPath(path);
     const url = `${SUPABASE_URL.replace(/\/+$/, '')}/functions/v1/blyve${safePath}`;
-    const headers: HeadersInit = {
-      Authorization: `Bearer ${token}`,
+    const makeHeaders = (tok: string): HeadersInit => ({
+      Authorization: `Bearer ${tok}`,
       apikey: SUPABASE_ANON_KEY,
       ...(init.body ? { 'Content-Type': 'application/json' } : {}),
       ...(init.headers || {}),
-    };
-
-    const response = await fetch(url, {
-      ...init,
-      headers,
     });
+
+    let response = await fetch(url, { ...init, headers: makeHeaders(token) });
+
+    // On 401, force a session refresh and retry once — covers expired JWT tokens.
+    if (response.status === 401) {
+      const { data: refreshed } = await supabase.auth.refreshSession();
+      const newToken = refreshed?.session?.access_token ?? null;
+      if (newToken && newToken !== token) {
+        this.setAccessToken(newToken);
+        response = await fetch(url, { ...init, headers: makeHeaders(newToken) });
+      }
+    }
+
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) {
       const err = new Error(payload?.error || `Request failed (${response.status})`) as Error & {
@@ -104,6 +112,20 @@ export class ApiClient {
       throw err;
     }
     return payload;
+  }
+
+  /** Always resolves the freshest available token — prefers live Supabase session over cache. */
+  private async getFreshAccessToken(): Promise<string | null> {
+    // Ask Supabase for the current session — it auto-refreshes if the access token is close
+    // to expiry (within the refresh threshold), so this is safe to call on every request.
+    const { data } = await supabase.auth.getSession();
+    const freshToken = data?.session?.access_token ?? null;
+    if (freshToken) {
+      this.setAccessToken(freshToken);
+      return freshToken;
+    }
+    // Fall back to whatever we have cached.
+    return this.getAccessToken();
   }
 
   // Auth - Use Supabase SDK directly
@@ -767,19 +789,29 @@ export class ApiClient {
   }
 
   private async callFunction(functionName: string, init: RequestInit = {}) {
-    const token = await this.getAccessToken();
+    const token = await this.getFreshAccessToken();
     if (!token) throw new Error('Not authenticated');
     if (!SUPABASE_URL) throw new Error('Missing VITE_SUPABASE_URL');
 
     const url = `${SUPABASE_URL.replace(/\/+$/, '')}/functions/v1/${functionName}`;
-    const headers: HeadersInit = {
-      Authorization: `Bearer ${token}`,
+    const makeHeaders = (tok: string): HeadersInit => ({
+      Authorization: `Bearer ${tok}`,
       apikey: SUPABASE_ANON_KEY,
       ...(init.body ? { 'Content-Type': 'application/json' } : {}),
       ...(init.headers || {}),
-    };
+    });
 
-    const response = await fetch(url, { ...init, headers });
+    let response = await fetch(url, { ...init, headers: makeHeaders(token) });
+
+    if (response.status === 401) {
+      const { data: refreshed } = await supabase.auth.refreshSession();
+      const newToken = refreshed?.session?.access_token ?? null;
+      if (newToken && newToken !== token) {
+        this.setAccessToken(newToken);
+        response = await fetch(url, { ...init, headers: makeHeaders(newToken) });
+      }
+    }
+
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) {
       throw new Error(payload?.error || `Request failed (${response.status})`);
@@ -789,7 +821,7 @@ export class ApiClient {
 
   /** Jitsi join via smart-action (alternative to joinCall). room_name is server-side only. */
   async getJitsiJoinViaSmartAction(sessionId: string, inviteToken?: string) {
-    const token = await this.getAccessToken();
+    const token = await this.getFreshAccessToken();
     if (!token) throw new Error('Not authenticated');
     const { data, error } = await supabase.functions.invoke('smart-action', {
       body: { action: 'jitsi-join', sessionId, inviteToken },
