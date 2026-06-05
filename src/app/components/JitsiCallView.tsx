@@ -602,7 +602,7 @@ export function JitsiCallView({
             <div
               data-call-controls
               className={`pointer-events-none absolute inset-x-0 bottom-1 z-[30] flex justify-center px-1 transition-opacity ${
-                pipControlsVisible ? 'opacity-100' : 'opacity-0 group-hover/pip:opacity-100'
+                pipControlsVisible || forceShowControls ? 'opacity-100' : 'opacity-0 group-hover/pip:opacity-100'
               }`}
             >
               <CallControlBar
@@ -615,7 +615,7 @@ export function JitsiCallView({
                 onToggleCamera={onToggleCamera}
                 onToggleScreenShare={onToggleScreenShare}
                 onHangUp={onHangUp}
-                forceShowControls={pipControlsVisible}
+                forceShowControls={pipControlsVisible || forceShowControls}
                 compact
               />
             </div>

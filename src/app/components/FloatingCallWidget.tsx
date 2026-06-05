@@ -275,6 +275,18 @@ export function FloatingCallWidget({
     const surface = jitsiSurfaceRef.current;
     if (!surface) return;
 
+    // Fullscreen: cover the entire viewport.
+    if (isFullscreen) {
+      surface.style.visibility = 'visible';
+      surface.style.left = '0px';
+      surface.style.top = '0px';
+      surface.style.width = '100vw';
+      surface.style.height = '100dvh';
+      surface.style.zIndex = '9998';
+      surface.style.pointerEvents = 'auto';
+      return;
+    }
+
     const target =
       isEmbedded && hostAnchorEl ? hostAnchorEl : showPipChrome ? pipContentRef.current : null;
 
@@ -294,9 +306,8 @@ export function FloatingCallWidget({
     surface.style.top = `${rect.top}px`;
     surface.style.width = `${rect.width}px`;
     surface.style.height = `${rect.height}px`;
-    surface.style.zIndex = isEmbedded ? '120' : isFullscreen ? '9998' : '134';
-    surface.style.pointerEvents =
-      showPipChrome && !isFullscreen ? 'none' : 'auto';
+    surface.style.zIndex = isEmbedded ? '120' : '134';
+    surface.style.pointerEvents = showPipChrome ? 'none' : 'auto';
   }, [hostAnchorEl, isEmbedded, isFullscreen, showPipChrome]);
 
   useLayoutEffect(() => {
@@ -304,6 +315,15 @@ export function FloatingCallWidget({
 
     const target =
       isEmbedded && hostAnchorEl ? hostAnchorEl : showPipChrome ? pipContentRef.current : null;
+
+    // In fullscreen, watch the viewport via window resize only.
+    if (isFullscreen) {
+      window.addEventListener('resize', syncJitsiSurfaceBounds);
+      return () => {
+        window.removeEventListener('resize', syncJitsiSurfaceBounds);
+      };
+    }
+
     if (!target) return undefined;
 
     const resizeObserver = new ResizeObserver(() => syncJitsiSurfaceBounds());
@@ -317,7 +337,7 @@ export function FloatingCallWidget({
       window.removeEventListener('scroll', syncJitsiSurfaceBounds, true);
       window.removeEventListener('resize', syncJitsiSurfaceBounds);
     };
-  }, [hostAnchorEl, isEmbedded, position, showPipChrome, syncJitsiSurfaceBounds]);
+  }, [hostAnchorEl, isEmbedded, isFullscreen, position, showPipChrome, syncJitsiSurfaceBounds]);
 
   useLayoutEffect(() => {
     syncJitsiSurfaceBounds();
@@ -458,7 +478,11 @@ export function FloatingCallWidget({
 
   const avatarOverlay =
     !hasStream && displayParticipants.length > 0 ? (
-      <div className="pointer-events-none absolute inset-0 z-[25] flex items-center justify-center gap-1.5 bg-[#0b0b0b] p-2">
+      <div
+        className={`pointer-events-none absolute inset-0 flex items-center justify-center gap-1.5 bg-[#0b0b0b] p-2 ${
+          isFullscreen ? 'z-[10001]' : 'z-[25]'
+        }`}
+      >
         <div className="flex items-center justify-center gap-1.5">
           {displayParticipants.slice(0, 2).map((participant) => {
             const isSpeaking =
@@ -530,8 +554,10 @@ export function FloatingCallWidget({
     onToggleMute,
     onToggleCamera,
     onToggleScreenShare,
-    compactControls: !isEmbedded,
-    forceShowControls: !isEmbedded && (pipHovered || isMobile),
+    compactControls: !isEmbedded && !isFullscreen,
+    // PiP: show controls on hover (pipHovered state) or on mobile tap.
+    // Fullscreen: always show controls.
+    forceShowControls: isFullscreen || (!isEmbedded && (pipHovered || isMobile)),
   };
 
   return (
