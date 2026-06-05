@@ -180,7 +180,7 @@ export async function closeOrphanedActiveCallIfNeeded(
   if (sErr || !session) return false;
 
   const status = String(session.status || "").toLowerCase();
-  if (status !== "active") return false;
+  if (!["active", "joining"].includes(status)) return false;
 
   const { data: parts, error: pErr } = await supabase
     .from("call_participants")

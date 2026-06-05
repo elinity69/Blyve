@@ -303,6 +303,35 @@ export async function mountJitsiMeetingFromServerJoin(
       'Jitsi JWT is required. Configure JITSI_APP_ID and JITSI_APP_SECRET on the server.',
     );
   }
+
+  // Diagnostic log — surfaced in browser console to make tenant/kid mismatches obvious.
+  try {
+    const [, payloadB64] = resolvedJwt.split('.');
+    const jwtPayload = JSON.parse(atob(payloadB64.replace(/-/g, '+').replace(/_/g, '/')));
+    const [headerB64] = resolvedJwt.split('.');
+    const jwtHeader = JSON.parse(atob(headerB64.replace(/-/g, '+').replace(/_/g, '/')));
+    console.info('[Jitsi] Join diagnostic', {
+      domain: resolvedDomain,
+      jitsiAppId: jitsiAppId?.trim() || '(none)',
+      room: resolvedRoom,
+      authorizedRoom,
+      jwt_kid: jwtHeader?.kid,
+      jwt_iss: jwtPayload?.iss,
+      jwt_sub: jwtPayload?.sub,
+      jwt_aud: jwtPayload?.aud,
+      jwt_room: jwtPayload?.room,
+    });
+    const appIdFromKid = typeof jwtHeader?.kid === 'string' ? jwtHeader.kid.split('/')[0] : null;
+    if (appIdFromKid && jwtPayload?.sub && appIdFromKid !== jwtPayload.sub) {
+      console.warn('[Jitsi] kid/sub mismatch — tenant mismatch likely:', {
+        kid_prefix: appIdFromKid,
+        sub: jwtPayload.sub,
+      });
+    }
+  } catch {
+    // JWT decode is best-effort; never block the call
+  }
+
   await loadJitsiExternalApi(resolvedDomain, jitsiAppId?.trim() || undefined);
 
   if (!window.JitsiMeetExternalAPI) {
@@ -612,11 +641,19 @@ export async function mountJitsiMeetingFromServerJoin(
         lower.includes('authentication') ||
         lower.includes('unauthorized') ||
         lower.includes('jwt') ||
-        lower.includes('token')
+        lower.includes('token') ||
+        lower.includes('password') ||
+        lower.includes('tenant') ||
+        lower.includes('kid')
       ) {
         options.onAuthError?.(message);
       }
     }
+  });
+  api.addListener('passwordRequired', () => {
+    const message = 'connection.passwordRequired: Jitsi JWT tenant/kid mismatch or wrong tenant in URL';
+    console.error(message, { domain: resolvedDomain, room: resolvedRoom, jitsiAppId });
+    options.onAuthError?.(message);
   });
   api.addListener('readyToClose', () => {
     options.onReadyToClose?.();

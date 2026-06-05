@@ -622,6 +622,26 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
           } catch (createError: unknown) {
             const createMsg = String((createError as Error)?.message || '');
             if (/409|active call already exists/i.test(createMsg)) {
+              // The server returns existingSessionId in the 409 response payload — use it directly.
+              const errPayload = (createError as { responsePayload?: Record<string, unknown> })
+                ?.responsePayload;
+              const existingId = errPayload?.existingSessionId
+                ? String(errPayload.existingSessionId)
+                : null;
+
+              if (existingId) {
+                if (outgoingCallTimeoutRef.current) {
+                  window.clearTimeout(outgoingCallTimeoutRef.current);
+                  outgoingCallTimeoutRef.current = null;
+                }
+                activeCallSessionIdRef.current = existingId;
+                setActiveCall((prev) => (prev ? { ...prev, callSessionId: existingId } : prev));
+                pushDebug(`join existing session=${existingId} (from 409 payload)`);
+                await connectToJitsi(existingId, input.conversationId, 'audio');
+                return;
+              }
+
+              // Fallback: query Supabase if payload didn't include existingSessionId.
               const { data: existing } = await supabase
                 .from('call_sessions')
                 .select('id')
@@ -631,15 +651,15 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
                 .limit(1)
                 .maybeSingle();
               if (existing?.id) {
-                const existingId = String(existing.id);
+                const fallbackId = String(existing.id);
                 if (outgoingCallTimeoutRef.current) {
                   window.clearTimeout(outgoingCallTimeoutRef.current);
                   outgoingCallTimeoutRef.current = null;
                 }
-                activeCallSessionIdRef.current = existingId;
-                setActiveCall((prev) => (prev ? { ...prev, callSessionId: existingId } : prev));
-                pushDebug(`join existing session=${existingId}`);
-                await connectToJitsi(existingId, input.conversationId, 'audio');
+                activeCallSessionIdRef.current = fallbackId;
+                setActiveCall((prev) => (prev ? { ...prev, callSessionId: fallbackId } : prev));
+                pushDebug(`join existing session=${fallbackId} (from DB fallback)`);
+                await connectToJitsi(fallbackId, input.conversationId, 'audio');
                 return;
               }
               pushDebug('jitsi create 409 — retry after server cleanup');

@@ -95,7 +95,13 @@ export class ApiClient {
     });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) {
-      throw new Error(payload?.error || `Request failed (${response.status})`);
+      const err = new Error(payload?.error || `Request failed (${response.status})`) as Error & {
+        statusCode?: number;
+        responsePayload?: Record<string, unknown>;
+      };
+      err.statusCode = response.status;
+      err.responsePayload = payload ?? {};
+      throw err;
     }
     return payload;
   }

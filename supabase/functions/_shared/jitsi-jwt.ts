@@ -238,6 +238,15 @@ export async function mintJitsiJwt(
       },
     };
 
+    console.log("[jitsi-jwt] JaaS mint diagnostic", {
+      domain: input.domain,
+      kid: jaasKid,
+      iss: config.appId,
+      sub: config.appId,
+      room: formattedRoom,
+      rawRoom: input.roomName,
+    });
+
     return signJwtRs256(
       { alg: "RS256", typ: "JWT", kid: jaasKid },
       payload,
@@ -264,6 +273,13 @@ export async function mintJitsiJwt(
   if (input.isModerator) {
     payload.moderator = true;
   }
+
+  console.log("[jitsi-jwt] self-hosted mint diagnostic", {
+    domain: input.domain,
+    iss: config.appId,
+    sub: input.domain,
+    room: formattedRoom,
+  });
 
   return signJwtHs256({ alg: "HS256", typ: "JWT" }, payload, config.appSecret);
 }
