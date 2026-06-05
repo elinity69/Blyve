@@ -52,8 +52,13 @@ export function assertServerAuthorizedRoom(roomName: string, sessionId: string):
 }
 
 /**
- * JaaS loads external_api.js from https://8x8.vc/{appId}/external_api.js — the API
- * roomName must be the server slug only, not `{appId}/{slug}` (otherwise vmms 404).
+ * For JaaS (8x8.vc), the roomName passed to JitsiMeetExternalAPI MUST be
+ * `{appId}/{slug}` — JaaS uses the appId prefix to derive the tenant and
+ * match it against the `kid` in the JWT. Stripping it causes:
+ *   "kid and jwt tenant do not match or wrong tenant in URL"
+ *
+ * The external_api.js script is loaded from a separate URL that already
+ * includes the appId, so the roomName itself must still carry the prefix.
  */
 export function resolveJitsiExternalRoomName(roomName: string, jitsiAppId?: string): string {
   const normalized = roomName.trim();
@@ -61,10 +66,8 @@ export function resolveJitsiExternalRoomName(roomName: string, jitsiAppId?: stri
   if (!appId) return normalized;
 
   const prefix = `${appId}/`;
-  if (normalized.startsWith(prefix)) {
-    return normalized.slice(prefix.length);
-  }
-  return normalized;
+  if (normalized.startsWith(prefix)) return normalized;
+  return `${prefix}${normalized}`;
 }
 
 function parseJitsiJoinPayload(
