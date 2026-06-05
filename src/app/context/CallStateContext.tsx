@@ -1008,26 +1008,43 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     pushDebug(`incoming accepted session=${sessionId}`);
 
     const micPromise = ensureMicrophoneForCall();
+
+    // Accept MUST complete before join — the server rejects joinCall with 409
+    // when invite_status is still "pending". Mic request runs in parallel since
+    // it doesn't depend on server state.
+    try {
+      await api.acceptCall(sessionId, 'accept');
+    } catch (error) {
+      if (!isStaleAcceptCallError(error)) {
+        joinInFlightRef.current = false;
+        console.error('Failed to accept call:', error);
+        const uiError = toUserFacingCallError(error);
+        toast.error('Accept failed', uiError);
+        setErrorMessage(uiError);
+        setIncomingCall(null);
+        incomingSessionIdRef.current = null;
+        stopIncomingSound();
+        pushDebug(`accept failed: ${(error as Error)?.message || 'unknown'}`);
+        moveToEnded();
+        return;
+      }
+      pushDebug(`accept ignored stale state session=${sessionId}`);
+    }
+
     const joinPromise = connectToCallMedia(sessionId, conversationId, 'audio');
-    const acceptPromise = api
-      .acceptCall(sessionId, 'accept')
-      .catch((error) => {
-        if (!isStaleAcceptCallError(error)) throw error;
-        pushDebug(`accept ignored stale state session=${sessionId}`);
-      });
 
     try {
-      await Promise.all([micPromise, joinPromise, acceptPromise]);
+      await Promise.all([micPromise, joinPromise]);
     } catch (error: unknown) {
       joinInFlightRef.current = false;
-      console.error('Failed to accept call:', error);
+      console.error('Failed to join call after accept:', error);
       const uiError = toUserFacingCallError(error);
       toast.error('Accept failed', uiError);
       setErrorMessage(uiError);
       setIncomingCall(null);
       incomingSessionIdRef.current = null;
       stopIncomingSound();
-      pushDebug(`accept failed: ${(error as Error)?.message || 'unknown'}`);
+      pushDebug(`join failed after accept: ${(error as Error)?.message || 'unknown'}`);
       moveToEnded();
     }
   }, [connectToCallMedia, incomingCall, moveToEnded, pushDebug, stopIncomingSound]);
