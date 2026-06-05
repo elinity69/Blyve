@@ -282,8 +282,8 @@ export function FloatingCallWidget({
       surface.style.visibility = 'visible';
       surface.style.left = '0px';
       surface.style.top = '0px';
-      surface.style.width = '100vw';
-      surface.style.height = '100dvh';
+      surface.style.width = `${window.innerWidth}px`;
+      surface.style.height = `${window.innerHeight}px`;
       surface.style.zIndex = '9998';
       surface.style.pointerEvents = 'auto';
       return;
@@ -356,9 +356,7 @@ export function FloatingCallWidget({
 
   const handleRemoteMediaChanged = useCallback(
     (state: { remoteVideoActive: boolean; remoteScreenShareActive: boolean }) => {
-      if (state.remoteVideoActive || state.remoteScreenShareActive) {
-        setRemoteStreamActive(true);
-      }
+      setRemoteStreamActive(state.remoteVideoActive || state.remoteScreenShareActive);
       onRemoteMediaChanged?.(state);
     },
     [onRemoteMediaChanged]
@@ -481,40 +479,42 @@ export function FloatingCallWidget({
   const live = connectionState === 'connected';
 
   const avatarOverlay =
-    !hasStream && displayParticipants.length > 0 ? (
+    !showVideoSurface ? (
       <div
         className={`pointer-events-none absolute inset-0 flex items-center justify-center gap-1.5 bg-[#0b0b0b] p-2 ${
           isFullscreen ? 'z-[10001]' : 'z-[25]'
         }`}
       >
-        <div className="flex items-center justify-center gap-1.5">
-          {displayParticipants.slice(0, 2).map((participant) => {
-            const isSpeaking =
-              speakingParticipantId === participant.id ||
-              speakingParticipantId === participant.jitsiParticipantId;
-            const solo = displayParticipants.length === 1;
-            return (
-              <div key={participant.id} data-pip-avatar>
-                <PipAvatar
-                  participant={participant}
-                  isSpeaking={Boolean(isSpeaking)}
-                  sizeClass={
-                    isFullscreen
-                      ? 'h-20 w-20 sm:h-24 sm:w-24'
-                      : solo
-                        ? 'h-16 w-16'
-                        : 'h-9 w-9'
-                  }
-                  onOpenVolumeMenu={
-                    participant.isLocal
-                      ? undefined
-                      : (event) => openPipVolumeMenu(participant, event)
-                  }
-                />
-              </div>
-            );
-          })}
-        </div>
+        {displayParticipants.length > 0 ? (
+          <div className="flex items-center justify-center gap-1.5">
+            {displayParticipants.slice(0, 2).map((participant) => {
+              const isSpeaking =
+                speakingParticipantId === participant.id ||
+                speakingParticipantId === participant.jitsiParticipantId;
+              const solo = displayParticipants.length === 1;
+              return (
+                <div key={participant.id} data-pip-avatar>
+                  <PipAvatar
+                    participant={participant}
+                    isSpeaking={Boolean(isSpeaking)}
+                    sizeClass={
+                      isFullscreen
+                        ? 'h-20 w-20 sm:h-24 sm:w-24'
+                        : solo
+                          ? 'h-16 w-16'
+                          : 'h-9 w-9'
+                    }
+                    onOpenVolumeMenu={
+                      participant.isLocal
+                        ? undefined
+                        : (event) => openPipVolumeMenu(participant, event)
+                    }
+                  />
+                </div>
+              );
+            })}
+          </div>
+        ) : null}
       </div>
     ) : null;
 
@@ -576,7 +576,7 @@ export function FloatingCallWidget({
       </div>
       {showPipChrome ? (
         <div
-          className={isFullscreen ? 'fixed inset-0 z-[9999] select-none' : 'group/pip fixed z-[135] select-none'}
+        className={isFullscreen ? 'fixed inset-0 z-[9999] select-none' : 'group/pip fixed z-[135] select-none'}
           style={
             isFullscreen
               ? undefined
