@@ -28,8 +28,33 @@ export async function fetchJitsiJoinCredentials(
   sessionId: string,
   inviteToken?: string,
 ): Promise<JitsiJoinCredentials> {
-  const payload = await api.joinCall(sessionId, inviteToken);
-
+  let payload: Record<string, unknown> | null | undefined;
+  try {
+    payload = await api.joinCall(sessionId, inviteToken);
+  } catch (error) {
+    const err = error as { statusCode?: number; responsePayload?: Record<string, unknown>; message?: string };
+    if (err?.statusCode === 409) {
+      // If the server returned join credentials inside the 409 payload, use them directly.
+      if (err?.responsePayload?.jwt) {
+        payload = err.responsePayload;
+      } else {
+        // "Accept the call before joining" — auto-accept then retry once.
+        const msg = String(err?.responsePayload?.error || err?.message || '').toLowerCase();
+        if (msg.includes('accept') || msg.includes('pending')) {
+          try {
+            await api.acceptCall(sessionId, 'accept');
+          } catch {
+            // best-effort; if accept fails (e.g. already accepted) proceed anyway
+          }
+          payload = await api.joinCall(sessionId, inviteToken);
+        } else {
+          throw error;
+        }
+      }
+    } else {
+      throw error;
+    }
+  }
   return parseJitsiJoinPayload(payload, sessionId);
 }
 

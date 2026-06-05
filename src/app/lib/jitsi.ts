@@ -490,10 +490,9 @@ export async function mountJitsiMeetingFromServerJoin(
       window.clearTimeout(timeoutId);
     }
     ensureUnmuteTimeoutIds.length = 0;
-    // After Jicofo grants moderator/unmute permissions.
-    for (const delayMs of [800, 2000]) {
-      ensureUnmuteTimeoutIds.push(window.setTimeout(ensureAudioUnmuted, delayMs));
-    }
+    // Single delayed call — firing twice causes a double-toggle that mutes the mic.
+    // 1200ms gives Jicofo time to grant unmute permissions before we request the mic.
+    ensureUnmuteTimeoutIds.push(window.setTimeout(ensureAudioUnmuted, 1200));
   };
 
   const focusRemoteParticipant = (participantId: string, videoType: 'camera' | 'desktop' = 'camera') => {

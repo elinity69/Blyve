@@ -216,6 +216,7 @@ export function FloatingCallWidget({
 }: FloatingCallWidgetProps) {
   const { t } = useTranslation();
   const isMobile = useIsMobile();
+  const [pipHovered, setPipHovered] = useState(false);
   const [volumeMenu, setVolumeMenu] = useState<{
     participantId: string;
     participantName: string;
@@ -452,7 +453,7 @@ export function FloatingCallWidget({
     event.preventDefault();
     event.stopPropagation();
     lastPipOpenTapAtRef.current = 0;
-    openCallWindowFromPip();
+    onEnterFullscreenRef.current();
   };
 
   const avatarOverlay =
@@ -530,6 +531,7 @@ export function FloatingCallWidget({
     onToggleCamera,
     onToggleScreenShare,
     compactControls: !isEmbedded,
+    forceShowControls: !isEmbedded && (pipHovered || isMobile),
   };
 
   return (
@@ -545,19 +547,21 @@ export function FloatingCallWidget({
       </div>
       {showPipChrome ? (
         <div
-          className={isFullscreen ? 'fixed inset-0 z-[9999] select-none' : 'fixed z-[135] select-none'}
+          className={isFullscreen ? 'fixed inset-0 z-[9999] select-none' : 'group/pip fixed z-[135] select-none'}
           style={
             isFullscreen
               ? undefined
               : { left: position.x, top: position.y, width: PIP_SIZE, height: PIP_SIZE }
           }
+          onMouseEnter={!isFullscreen ? () => setPipHovered(true) : undefined}
+          onMouseLeave={!isFullscreen ? () => setPipHovered(false) : undefined}
         >
           <div
             ref={pipContentRef}
             className={
               isFullscreen
                 ? 'relative h-full w-full'
-                : 'group/pip relative h-full w-full overflow-hidden rounded-xl border border-white/15 bg-transparent shadow-2xl'
+                : 'relative h-full w-full overflow-hidden rounded-xl border border-white/15 bg-transparent shadow-2xl'
             }
           />
           {avatarOverlay}
