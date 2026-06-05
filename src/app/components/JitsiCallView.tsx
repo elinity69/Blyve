@@ -9,6 +9,7 @@ import {
   PhoneOff,
   PictureInPicture2,
   Pin,
+  ShieldAlert,
   Video,
   VideoOff,
 } from 'lucide-react';
@@ -242,6 +243,7 @@ export function JitsiCallView({
   });
   const [credentials, setCredentials] = useState<JitsiJoinCredentials | null>(null);
   const [joining, setJoining] = useState(true);
+  const [authError, setAuthError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState(false);
   const [remoteStreamActive, setRemoteStreamActive] = useState(false);
   const [pipControlsVisible, setPipControlsVisible] = useState(false);
@@ -308,6 +310,7 @@ export function JitsiCallView({
     let cancelled = false;
     setJoining(true);
     setCredentials(null);
+    setAuthError(null);
 
     void (async () => {
       try {
@@ -392,8 +395,10 @@ export function JitsiCallView({
           onRemoteSpeakingChanged: (payload) =>
             callbacksRef.current.onRemoteSpeakingChanged?.(payload),
           onAuthError: (message) => {
+            const err = message || 'Jitsi authentication failed';
+            setAuthError(err);
             callbacksRef.current.onJoinError?.(
-              new Error(message || 'Jitsi authentication failed'),
+              new Error(err),
             );
           },
           onParticipantJoined: () => {
@@ -420,6 +425,18 @@ export function JitsiCallView({
           mountInFlightRef.current = null;
         }
         console.error('Jitsi mount failed:', error);
+        const msg = String((error as { message?: string })?.message || '');
+        const lower = msg.toLowerCase();
+        if (
+          lower.includes('jwt') ||
+          lower.includes('token') ||
+          lower.includes('auth') ||
+          lower.includes('unauthorized') ||
+          lower.includes('tenant') ||
+          lower.includes('kid')
+        ) {
+          setAuthError(msg || 'Jitsi authentication failed');
+        }
         callbacksRef.current.onJoinError?.(error);
       }
     })();
@@ -480,13 +497,21 @@ export function JitsiCallView({
           : undefined
       }
     >
-      {joining || !credentials ? (
+      {authError && !joining ? (
+        <div className={`flex h-full w-full flex-col items-center justify-center gap-2 px-4 text-center ${isPip ? 'text-xs' : ''}`}>
+          <ShieldAlert className={`shrink-0 text-[#ed4245] ${isPip ? 'h-4 w-4' : 'h-6 w-6'}`} />
+          {!isPip ? (
+            <p className="max-w-[260px] text-sm text-white/70">
+              {t('call.jitsiAuthError', { defaultValue: 'Call authentication failed. Please try again or contact support.' })}
+            </p>
+          ) : null}
+        </div>
+      ) : joining || !credentials ? (
         <div className={`flex h-full w-full items-center justify-center gap-3 text-white/90 ${isPip ? 'text-xs' : ''}`}>
           <Loader2 className={`animate-spin ${isPip ? 'h-4 w-4' : 'h-6 w-6'}`} />
           {!isPip ? <span>{t('call.connectionConnecting')}</span> : null}
         </div>
       ) : null}
-
       {credentials ? (
         <>
           <div

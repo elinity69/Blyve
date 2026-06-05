@@ -204,9 +204,15 @@ export async function mintJitsiJwt(
   const formattedRoom = formatJitsiRoomName(input.roomName, config);
 
   if (config.mode === "jaas") {
+    // JaaS requires iss === sub === appId (tenant identifier).
+    // kid must be "{appId}/{apiKeyId}" — JaaS uses the appId prefix to locate the tenant
+    // and the apiKeyId suffix to select the correct RS256 public key for verification.
+    // Using only the bare apiKeyId (without the appId/ prefix) causes the error:
+    //   "kid and jwt tenant do not match or wrong tenant in URL"
+    const jaasKid = `${config.appId}/${config.apiKeyId}`;
     const payload: Record<string, unknown> = {
       aud: "jitsi",
-      iss: "chat",
+      iss: config.appId,
       sub: config.appId,
       // Wildcard room claim — JaaS validates tenant via `sub`; exact MUC names vary internally.
       room: "*",
@@ -233,7 +239,7 @@ export async function mintJitsiJwt(
     };
 
     return signJwtRs256(
-      { alg: "RS256", typ: "JWT", kid: config.apiKeyId },
+      { alg: "RS256", typ: "JWT", kid: jaasKid },
       payload,
       config.privateKeyPem,
     );
