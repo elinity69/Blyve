@@ -204,15 +204,19 @@ export async function mintJitsiJwt(
   const formattedRoom = formatJitsiRoomName(input.roomName, config);
 
   if (config.mode === "jaas") {
-    // JaaS requires iss === sub === appId (tenant identifier).
-    // kid must be "{appId}/{apiKeyId}" — JaaS uses the appId prefix to locate the tenant
-    // and the apiKeyId suffix to select the correct RS256 public key for verification.
-    // Using only the bare apiKeyId (without the appId/ prefix) causes the error:
-    //   "kid and jwt tenant do not match or wrong tenant in URL"
-    const jaasKid = `${config.appId}/${config.apiKeyId}`;
+    // JaaS JWT spec (8x8 JaaS API Keys Authentication):
+    //   iss  = "chat"  (fixed literal — NOT the appId)
+    //   sub  = appId   (tenant identifier)
+    //   kid  = "{appId}/{apiKeyId}"
+    // Guard against JITSI_API_KEY_ID already containing the "appId/" prefix, which
+    // would cause a double-prefix and the "could not obtain public key" auth error.
+    const rawKeyId = config.apiKeyId.startsWith(`${config.appId}/`)
+      ? config.apiKeyId.slice(config.appId.length + 1)
+      : config.apiKeyId;
+    const jaasKid = `${config.appId}/${rawKeyId}`;
     const payload: Record<string, unknown> = {
       aud: "jitsi",
-      iss: config.appId,
+      iss: "chat",
       sub: config.appId,
       // Wildcard room claim — JaaS validates tenant via `sub`; exact MUC names vary internally.
       room: "*",
@@ -241,7 +245,7 @@ export async function mintJitsiJwt(
     console.log("[jitsi-jwt] JaaS mint diagnostic", {
       domain: input.domain,
       kid: jaasKid,
-      iss: config.appId,
+      iss: "chat",
       sub: config.appId,
       room: formattedRoom,
       rawRoom: input.roomName,
