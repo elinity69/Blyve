@@ -11,6 +11,7 @@ import {
   VOLUME_MENU_WIDTH,
 } from './CallParticipantVolumeMenu';
 import type { JitsiCallLayout } from './JitsiCallView';
+import { CallControlBar } from './JitsiCallView';
 import { PersistentJitsiMeeting } from './PersistentJitsiMeeting';
 import { useIsMobile } from './ui/use-mobile';
 
@@ -217,6 +218,7 @@ export function FloatingCallWidget({
   const { t } = useTranslation();
   const isMobile = useIsMobile();
   const [pipHovered, setPipHovered] = useState(false);
+  const [pipControlsVisible, setPipControlsVisible] = useState(false);
   const [volumeMenu, setVolumeMenu] = useState<{
     participantId: string;
     participantName: string;
@@ -476,6 +478,8 @@ export function FloatingCallWidget({
     onEnterFullscreenRef.current();
   };
 
+  const live = connectionState === 'connected';
+
   const avatarOverlay =
     !hasStream && displayParticipants.length > 0 ? (
       <div
@@ -555,9 +559,8 @@ export function FloatingCallWidget({
     onToggleCamera,
     onToggleScreenShare,
     compactControls: !isEmbedded && !isFullscreen,
-    // PiP: show controls on hover (pipHovered state) or on mobile tap.
-    // Fullscreen: always show controls.
-    forceShowControls: isFullscreen || (!isEmbedded && (pipHovered || isMobile)),
+    // Only embedded layout still uses JitsiCallView's own controls bar.
+    forceShowControls: isEmbedded ? true : false,
   };
 
   return (
@@ -580,7 +583,15 @@ export function FloatingCallWidget({
               : { left: position.x, top: position.y, width: PIP_SIZE, height: PIP_SIZE }
           }
           onMouseEnter={!isFullscreen ? () => setPipHovered(true) : undefined}
-          onMouseLeave={!isFullscreen ? () => setPipHovered(false) : undefined}
+          onMouseLeave={!isFullscreen ? () => { setPipHovered(false); } : undefined}
+          onClick={
+            !isFullscreen
+              ? (event) => {
+                  if ((event.target as HTMLElement).closest('button, [data-call-controls], [data-pip-avatar]')) return;
+                  setPipControlsVisible((v) => !v);
+                }
+              : undefined
+          }
         >
           <div
             ref={pipContentRef}
@@ -591,6 +602,45 @@ export function FloatingCallWidget({
             }
           />
           {avatarOverlay}
+          {/* Controls bar rendered HERE inside chrome so it is always above the drag handle and jitsiSurface */}
+          {!isFullscreen ? (
+            <div
+              data-call-controls
+              className={`pointer-events-none absolute inset-x-0 bottom-1 z-[50] flex justify-center px-1 transition-opacity ${
+                pipControlsVisible || pipHovered || isMobile ? 'opacity-100' : 'opacity-0'
+              }`}
+            >
+              <CallControlBar
+                live={live}
+                isMuted={isMuted}
+                isCameraEnabled={isCameraEnabled}
+                isScreenShareEnabled={isScreenShareEnabled}
+                mediaActive={hasStream}
+                onToggleMute={onToggleMute}
+                onToggleCamera={onToggleCamera}
+                onToggleScreenShare={onToggleScreenShare}
+                onHangUp={onHangUp}
+                compact
+              />
+            </div>
+          ) : (
+            <div
+              data-call-controls
+              className="pointer-events-none absolute inset-x-0 bottom-6 z-[10002] flex justify-center px-4"
+            >
+              <CallControlBar
+                live={live}
+                isMuted={isMuted}
+                isCameraEnabled={isCameraEnabled}
+                isScreenShareEnabled={isScreenShareEnabled}
+                mediaActive={hasStream}
+                onToggleMute={onToggleMute}
+                onToggleCamera={onToggleCamera}
+                onToggleScreenShare={onToggleScreenShare}
+                onHangUp={onHangUp}
+              />
+            </div>
+          )}
           {!isFullscreen ? (
             <div
               data-pip-drag-handle

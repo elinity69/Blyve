@@ -246,7 +246,6 @@ export function JitsiCallView({
   const [authError, setAuthError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState(false);
   const [remoteStreamActive, setRemoteStreamActive] = useState(false);
-  const [pipControlsVisible, setPipControlsVisible] = useState(false);
 
   callbacksRef.current = {
     onJoinResolved,
@@ -279,12 +278,6 @@ export function JitsiCallView({
   useEffect(() => {
     if (layout === 'standalone') {
       setExpanded(false);
-    }
-  }, [layout]);
-
-  useEffect(() => {
-    if (layout !== 'pip') {
-      setPipControlsVisible(false);
     }
   }, [layout]);
 
@@ -488,14 +481,6 @@ export function JitsiCallView({
   return (
     <div
       className={shellClass}
-      onClick={
-        isPip
-          ? (event) => {
-              if ((event.target as HTMLElement).closest('[data-call-controls], button')) return;
-              setPipControlsVisible((visible) => !visible);
-            }
-          : undefined
-      }
     >
       {authError && !joining ? (
         <div className={`flex h-full w-full flex-col items-center justify-center gap-2 px-4 text-center ${isPip ? 'text-xs' : ''}`}>
@@ -579,7 +564,7 @@ export function JitsiCallView({
               <Minimize2 className="h-4 w-4" />
             </button>
           ) : null}
-          {!isPip ? (
+          {layout === 'embedded' ? (
             <div
               data-call-controls
               className="pointer-events-none absolute inset-x-0 bottom-3 z-[30] flex justify-center px-3"
@@ -598,28 +583,7 @@ export function JitsiCallView({
                 compact={compactControls}
               />
             </div>
-          ) : (
-            <div
-              data-call-controls
-              className={`pointer-events-none absolute inset-x-0 bottom-1 z-[30] flex justify-center px-1 transition-opacity ${
-                pipControlsVisible || forceShowControls ? 'opacity-100' : 'opacity-0 group-hover/pip:opacity-100'
-              }`}
-            >
-              <CallControlBar
-                live={live}
-                isMuted={isMuted}
-                isCameraEnabled={isCameraEnabled}
-                isScreenShareEnabled={isScreenShareEnabled}
-                mediaActive={effectiveMediaActive}
-                onToggleMute={onToggleMute}
-                onToggleCamera={onToggleCamera}
-                onToggleScreenShare={onToggleScreenShare}
-                onHangUp={onHangUp}
-                forceShowControls={pipControlsVisible || forceShowControls}
-                compact
-              />
-            </div>
-          )}
+          ) : null}
         </>
       ) : null}
     </div>
