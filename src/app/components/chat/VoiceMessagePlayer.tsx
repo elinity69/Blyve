@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Pause, Play, Volume2, VolumeX } from 'lucide-react';
+import { AlertCircle, Pause, Play, Volume2, VolumeX } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { resolveAudioDuration } from '../../lib/audioDuration';
 
@@ -93,12 +93,17 @@ interface VoiceMessagePlayerProps {
 }
 
 export function VoiceMessagePlayer({ src, isMe = false }: VoiceMessagePlayerProps) {
+  // The <audio> element has no src in JSX — we set it imperatively in the effect
+  // to guarantee listeners are attached before any load events fire, preventing
+  // the race where 'loadedmetadata' fires before the effect has a chance to run.
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const volumeBeforeMuteRef = useRef(100);
   const [playing, setPlaying] = useState(false);
   const [duration, setDuration] = useState(0);
   const [currentTime, setCurrentTime] = useState(0);
   const [volume, setVolume] = useState(100);
+  const [audioError, setAudioError] = useState(false);
+  const { t } = useTranslation();
 
   const bars = useMemo(() => buildWaveformBars(src), [src]);
   const progress = duration > 0 ? Math.min(1, currentTime / duration) : 0;
@@ -127,9 +132,11 @@ export function VoiceMessagePlayer({ src, isMe = false }: VoiceMessagePlayerProp
     audio.muted = volume === 0;
   }, [volume]);
 
+  // Probe duration via a separate hidden element (handles headerless WebM / Safari MP4).
   useEffect(() => {
     let cancelled = false;
     setDuration(0);
+    setAudioError(false);
     void resolveAudioDuration(src).then((resolved) => {
       if (!cancelled && resolved > 0) setDuration(resolved);
     });
@@ -138,6 +145,11 @@ export function VoiceMessagePlayer({ src, isMe = false }: VoiceMessagePlayerProp
     };
   }, [src]);
 
+  // Wire up the audio element imperatively so that src assignment and event
+  // listener registration happen in the same synchronous block — this avoids
+  // the race where the browser fires 'loadedmetadata' before the React effect
+  // has attached its listeners (can happen when the element is reused across
+  // src changes because React does not unmount/remount <audio> elements).
   useEffect(() => {
     const audio = audioRef.current;
     if (!audio) return undefined;
@@ -149,20 +161,34 @@ export function VoiceMessagePlayer({ src, isMe = false }: VoiceMessagePlayerProp
       setPlaying(false);
       setCurrentTime(0);
     };
+    const onError = () => {
+      setPlaying(false);
+      setAudioError(true);
+    };
 
     setCurrentTime(0);
     setPlaying(false);
+    setAudioError(false);
 
     audio.addEventListener('loadedmetadata', onMetadata);
     audio.addEventListener('durationchange', syncTimes);
     audio.addEventListener('loadeddata', onMetadata);
     audio.addEventListener('canplay', onMetadata);
+    audio.addEventListener('canplaythrough', onMetadata);
     audio.addEventListener('timeupdate', syncTimes);
     audio.addEventListener('play', onPlay);
     audio.addEventListener('pause', onPause);
     audio.addEventListener('ended', onEnded);
+    audio.addEventListener('error', onError);
 
+    // Set crossOrigin before src so the browser does not cache a non-CORS
+    // response — matches what audioDuration.ts does to avoid cache mismatches
+    // that silently break playback on some CORS-restricted CDN configs (R2).
+    audio.crossOrigin = 'anonymous';
+    audio.src = src;
+    audio.preload = 'metadata';
     audio.load();
+
     if (audio.readyState >= HTMLMediaElement.HAVE_METADATA) onMetadata();
 
     return () => {
@@ -170,10 +196,20 @@ export function VoiceMessagePlayer({ src, isMe = false }: VoiceMessagePlayerProp
       audio.removeEventListener('durationchange', syncTimes);
       audio.removeEventListener('loadeddata', onMetadata);
       audio.removeEventListener('canplay', onMetadata);
+      audio.removeEventListener('canplaythrough', onMetadata);
       audio.removeEventListener('timeupdate', syncTimes);
       audio.removeEventListener('play', onPlay);
       audio.removeEventListener('pause', onPause);
       audio.removeEventListener('ended', onEnded);
+      audio.removeEventListener('error', onError);
+
+      try {
+        audio.pause();
+        audio.removeAttribute('src');
+        audio.load();
+      } catch {
+        // ignore cleanup errors during unmount
+      }
     };
   }, [src, syncTimes]);
 
@@ -208,12 +244,27 @@ export function VoiceMessagePlayer({ src, isMe = false }: VoiceMessagePlayerProp
   const accentSoft = isMe ? 'bg-white/35' : 'bg-blyve/35';
   const textClass = isMe ? 'text-white/85' : 'text-gray-600 dark:text-gray-300';
 
+  if (audioError) {
+    return (
+      <div
+        className={`flex min-w-[11.5rem] max-w-[min(100%,17rem)] items-center gap-2 py-1 ${textClass}`}
+        onPointerDown={(event) => event.stopPropagation()}
+      >
+        {/* Hidden audio element kept in DOM so ref is valid if user retries */}
+        <audio ref={audioRef} className="hidden" />
+        <AlertCircle className="h-4 w-4 shrink-0 opacity-60" />
+        <span className="text-xs opacity-70">{t('chat.voiceMemoPlaybackError', 'Audio unavailable')}</span>
+      </div>
+    );
+  }
+
   return (
     <div
       className="flex min-w-[11.5rem] max-w-[min(100%,17rem)] items-center gap-1.5 py-0.5"
       onPointerDown={(event) => event.stopPropagation()}
     >
-      <audio ref={audioRef} src={src} preload="metadata" className="hidden" />
+      {/* No src prop here — src is set imperatively in the useEffect above */}
+      <audio ref={audioRef} className="hidden" />
       <button
         type="button"
         onClick={togglePlayback}

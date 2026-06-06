@@ -254,11 +254,16 @@ export function ChatMessageComposer({
     }
     voiceStreamRef.current = stream;
     try {
-      const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
-        ? 'audio/webm;codecs=opus'
-        : MediaRecorder.isTypeSupported('audio/webm')
-          ? 'audio/webm'
-          : '';
+      // Prefer Opus-in-WebM (Chromium/Firefox); fall back to AAC-in-MP4 (Safari/iOS).
+      // Always resolve a concrete mimeType so sendVoiceMemo names the file correctly.
+      const CANDIDATES = [
+        'audio/webm;codecs=opus',
+        'audio/webm',
+        'audio/mp4;codecs=mp4a.40.2',
+        'audio/mp4',
+        'audio/ogg;codecs=opus',
+      ];
+      const mimeType = CANDIDATES.find((m) => MediaRecorder.isTypeSupported(m)) ?? '';
       const recorder = mimeType
         ? new MediaRecorder(stream, { mimeType })
         : new MediaRecorder(stream);

@@ -125,6 +125,31 @@ export async function createAggressiveNoiseFilter(
     // best effort — graph still works once user gesture resumes context
   }
 
+  // On mobile (iOS Safari, Chrome Android) AudioContext starts suspended and
+  // requires a user-gesture resume. Poll for up to 500ms before giving up so
+  // that voice memo recording does not silently capture silence.
+  if (audioContext.state === 'suspended') {
+    await new Promise<void>((resolveWait) => {
+      const check = () => {
+        if (audioContext.state !== 'suspended') {
+          resolveWait();
+        } else {
+          window.setTimeout(check, 50);
+        }
+      };
+      window.setTimeout(check, 50);
+      window.setTimeout(resolveWait, 500);
+    });
+  }
+
+  // If the context is still suspended after the grace period, the Web Audio
+  // graph will produce silence. Return null so callers fall back to the raw
+  // stream rather than uploading a silent recording.
+  if (audioContext.state === 'suspended') {
+    void audioContext.close();
+    return null;
+  }
+
   rafId = window.requestAnimationFrame(tick);
 
   const handle: AggressiveNoiseFilterHandle = {

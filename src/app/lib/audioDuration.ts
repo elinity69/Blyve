@@ -1,5 +1,9 @@
-const PROBE_TIMEOUT_MS = 12_000;
-const DECODE_MAX_BYTES = 8 * 1024 * 1024;
+const PROBE_TIMEOUT_MS = 15_000;
+
+// Large but finite seek target. Using 1e101 throws NotSupportedError on Safari
+// for MP4/M4A; Number.MAX_SAFE_INTEGER is accepted by all browsers and still
+// forces Chromium/WebM to compute the real duration via the seek-to-end trick.
+const SEEK_TARGET = 1e9;
 
 function readElementDuration(audio: HTMLAudioElement): number {
   const value = audio.duration;
@@ -10,6 +14,10 @@ function probeWithAudioElement(src: string): Promise<number> {
   return new Promise((resolve) => {
     const audio = document.createElement('audio');
     audio.preload = 'auto';
+    // crossOrigin must be set before src to avoid a second preflight on CORS
+    // resources (R2 buckets); omitting it causes Safari to cache a no-CORS
+    // response and refuse subsequent credentialed requests.
+    audio.crossOrigin = 'anonymous';
     audio.src = src;
 
     let settled = false;
@@ -19,9 +27,13 @@ function probeWithAudioElement(src: string): Promise<number> {
       if (settled) return;
       settled = true;
       window.clearTimeout(timer);
-      audio.pause();
-      audio.removeAttribute('src');
-      audio.load();
+      try {
+        audio.pause();
+        audio.removeAttribute('src');
+        audio.load();
+      } catch {
+        // ignore cleanup errors
+      }
       resolve(value > 0 ? value : 0);
     };
 
@@ -29,23 +41,40 @@ function probeWithAudioElement(src: string): Promise<number> {
 
     const trySeekProbe = () => {
       if (settled || seekProbeStarted) return;
-      if (readElementDuration(audio) > 0) {
-        settle(readElementDuration(audio));
+
+      const direct = readElementDuration(audio);
+      if (direct > 0) {
+        settle(direct);
         return;
       }
+
       seekProbeStarted = true;
 
+      // Allow a grace period for 'seeked' to fire (Safari on MP4 may be slow).
+      const seekTimer = window.setTimeout(() => {
+        audio.removeEventListener('seeked', onSeeked);
+        settle(readElementDuration(audio));
+      }, 4_000);
+
       const onSeeked = () => {
+        window.clearTimeout(seekTimer);
         audio.removeEventListener('seeked', onSeeked);
         settle(readElementDuration(audio));
       };
 
       audio.addEventListener('seeked', onSeeked);
       try {
-        audio.currentTime = 1e101;
+        audio.currentTime = SEEK_TARGET;
       } catch {
+        window.clearTimeout(seekTimer);
+        audio.removeEventListener('seeked', onSeeked);
         settle(0);
       }
+    };
+
+    const onDurationOrData = () => {
+      const direct = readElementDuration(audio);
+      if (direct > 0) settle(direct);
     };
 
     const onMetadata = () => {
@@ -54,15 +83,16 @@ function probeWithAudioElement(src: string): Promise<number> {
         settle(direct);
         return;
       }
+      // Duration is Infinity (headerless WebM) or 0 — attempt seek probe.
       trySeekProbe();
     };
 
     audio.addEventListener('loadedmetadata', onMetadata);
-    audio.addEventListener('durationchange', () => {
-      const direct = readElementDuration(audio);
-      if (direct > 0) settle(direct);
-    });
-    audio.addEventListener('canplay', () => {
+    audio.addEventListener('durationchange', onDurationOrData);
+    // 'canplay' fires on Safari before loadedmetadata in some MP4 streams.
+    audio.addEventListener('canplay', onDurationOrData);
+    // 'canplaythrough' is a reliable second chance on Safari for remote MP4.
+    audio.addEventListener('canplaythrough', () => {
       const direct = readElementDuration(audio);
       if (direct > 0) settle(direct);
       else trySeekProbe();
@@ -74,29 +104,8 @@ function probeWithAudioElement(src: string): Promise<number> {
   });
 }
 
-async function probeWithDecode(src: string): Promise<number> {
-  try {
-    const response = await fetch(src);
-    if (!response.ok) return 0;
-    const buffer = await response.arrayBuffer();
-    if (buffer.byteLength <= 0 || buffer.byteLength > DECODE_MAX_BYTES) return 0;
-
-    const context = new AudioContext();
-    try {
-      const decoded = await context.decodeAudioData(buffer.slice(0));
-      return decoded.duration > 0 ? decoded.duration : 0;
-    } finally {
-      void context.close();
-    }
-  } catch {
-    return 0;
-  }
-}
-
 /** Resolves playable length for voice messages (incl. WebM without duration metadata). */
 export async function resolveAudioDuration(src: string): Promise<number> {
   if (!src) return 0;
-  const fromElement = await probeWithAudioElement(src);
-  if (fromElement > 0) return fromElement;
-  return probeWithDecode(src);
+  return probeWithAudioElement(src);
 }
