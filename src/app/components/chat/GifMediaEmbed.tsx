@@ -7,6 +7,7 @@ import {
 } from '../../lib/embedMediaResolver';
 import { openExternalLink } from '../../lib/openExternalLink';
 import { MessageImageEmbed } from './MessageMediaEmbeds';
+import { MediaLightbox } from './MediaLightbox';
 
 function GifLoadFailedFallback({
   url,
@@ -51,30 +52,40 @@ function GifVideoEmbed({
   inBubble?: boolean;
   onFailed: () => void;
 }) {
+  const [lightboxOpen, setLightboxOpen] = useState(false);
+
   return (
-    <button
-      type="button"
-      className={
-        inBubble
-          ? 'block w-full max-w-full cursor-pointer overflow-hidden rounded-xl p-0 sm:max-w-[min(100%,20rem)]'
-          : 'mt-1.5 block w-full max-w-full cursor-pointer overflow-hidden rounded-xl border border-black/10 p-0 dark:border-white/10 sm:max-w-[min(100%,24rem)]'
-      }
-      onClick={(event) => openExternalLink(event, openUrl)}
-      onPointerDown={(event) => event.stopPropagation()}
-    >
-      <video
-        src={src}
-        className={`pointer-events-none w-full object-contain ${
-          inBubble ? 'max-h-80 rounded-xl' : 'max-h-80 bg-black/5 dark:bg-white/5'
-        }`}
-        autoPlay
-        loop
-        muted
-        playsInline
-        preload="metadata"
-        onError={onFailed}
-      />
-    </button>
+    <>
+      <button
+        type="button"
+        className={
+          inBubble
+            ? 'block w-full max-w-full cursor-zoom-in overflow-hidden rounded-xl p-0 sm:max-w-[min(100%,20rem)]'
+            : 'mt-1.5 block w-full max-w-full cursor-zoom-in overflow-hidden rounded-xl border border-black/10 p-0 dark:border-white/10 sm:max-w-[min(100%,24rem)]'
+        }
+        onClick={() => setLightboxOpen(true)}
+        onPointerDown={(event) => event.stopPropagation()}
+      >
+        <video
+          src={src}
+          className={`pointer-events-none w-full object-contain ${
+            inBubble ? 'max-h-80 rounded-xl' : 'max-h-80 bg-black/5 dark:bg-white/5'
+          }`}
+          autoPlay
+          loop
+          muted
+          playsInline
+          preload="metadata"
+          onError={onFailed}
+        />
+      </button>
+      {lightboxOpen && (
+        <MediaLightbox
+          media={{ type: 'gif-video', src, openUrl }}
+          onClose={() => setLightboxOpen(false)}
+        />
+      )}
+    </>
   );
 }
 

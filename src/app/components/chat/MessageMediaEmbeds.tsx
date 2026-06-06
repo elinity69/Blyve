@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { FileText, ExternalLink } from 'lucide-react';
 import { openExternalLink } from '../../lib/openExternalLink';
 import { VoiceMessagePlayer } from './VoiceMessagePlayer';
+import { MediaLightbox } from './MediaLightbox';
 
 export function MessageVideoEmbed({
   src,
@@ -12,40 +13,52 @@ export function MessageVideoEmbed({
   openUrl: string;
   inBubble?: boolean;
 }) {
+  const [lightboxOpen, setLightboxOpen] = useState(false);
+
   if (inBubble) {
     return (
-      <video
-        src={src}
-        controls
-        playsInline
-        preload="metadata"
-        className="max-h-48 w-full min-w-[12rem] max-w-[min(100%,16rem)] rounded-xl"
-        onPointerDown={(e) => e.stopPropagation()}
-      />
+      <>
+        <video
+          src={src}
+          controls
+          playsInline
+          preload="metadata"
+          className="max-h-48 w-full min-w-[12rem] max-w-[min(100%,16rem)] cursor-zoom-in rounded-xl"
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={() => setLightboxOpen(true)}
+        />
+        {lightboxOpen && (
+          <MediaLightbox
+            media={{ type: 'video', src, openUrl }}
+            onClose={() => setLightboxOpen(false)}
+          />
+        )}
+      </>
     );
   }
 
   return (
-    <div
-      className="mt-1.5 w-full max-w-full overflow-hidden rounded-xl border border-black/10 dark:border-white/10 sm:max-w-[min(100%,24rem)]"
-      onPointerDown={(e) => e.stopPropagation()}
-    >
-      <video
-        src={src}
-        controls
-        playsInline
-        preload="metadata"
-        className="max-h-80 w-full bg-black/5 dark:bg-white/5"
-      />
-      <button
-        type="button"
-        className="mt-1 flex items-center gap-1 px-1 text-[11px] text-gray-500 hover:underline dark:text-gray-400"
-        onClick={(e) => openExternalLink(e, openUrl)}
+    <>
+      <div
+        className="mt-1.5 w-full max-w-full overflow-hidden rounded-xl border border-black/10 dark:border-white/10 sm:max-w-[min(100%,24rem)]"
+        onPointerDown={(e) => e.stopPropagation()}
       >
-        <ExternalLink className="h-3 w-3" aria-hidden />
-        {openUrl}
-      </button>
-    </div>
+        <video
+          src={src}
+          controls
+          playsInline
+          preload="metadata"
+          className="max-h-80 w-full cursor-zoom-in bg-black/5 dark:bg-white/5"
+          onClick={() => setLightboxOpen(true)}
+        />
+      </div>
+      {lightboxOpen && (
+        <MediaLightbox
+          media={{ type: 'video', src, openUrl }}
+          onClose={() => setLightboxOpen(false)}
+        />
+      )}
+    </>
   );
 }
 
@@ -123,33 +136,42 @@ export function MessageImageEmbed({
   onFailed?: () => void;
 }) {
   const [failed, setFailed] = useState(false);
+  const [lightboxOpen, setLightboxOpen] = useState(false);
   if (failed) return null;
 
   return (
-    <button
-      type="button"
-      className={
-        inBubble
-          ? 'block w-full max-w-full cursor-pointer overflow-hidden rounded-xl p-0 sm:max-w-[min(100%,20rem)]'
-          : 'mt-1.5 block w-full max-w-full cursor-pointer overflow-hidden rounded-xl border border-black/10 p-0 dark:border-white/10 sm:max-w-[min(100%,24rem)]'
-      }
-      onClick={(event) => openExternalLink(event, openUrl)}
-      onPointerDown={(e) => e.stopPropagation()}
-      aria-label={alt}
-    >
-      <img
-        src={src}
-        alt={alt}
-        draggable={false}
-        className={`pointer-events-none w-full object-contain ${
-          inBubble ? 'max-h-80 rounded-xl' : 'max-h-80 bg-black/5 dark:bg-white/5'
-        }`}
-        loading="lazy"
-        onError={() => {
-          setFailed(true);
-          onFailed?.();
-        }}
-      />
-    </button>
+    <>
+      <button
+        type="button"
+        className={
+          inBubble
+            ? 'block w-full max-w-full cursor-zoom-in overflow-hidden rounded-xl p-0 sm:max-w-[min(100%,20rem)]'
+            : 'mt-1.5 block w-full max-w-full cursor-zoom-in overflow-hidden rounded-xl border border-black/10 p-0 dark:border-white/10 sm:max-w-[min(100%,24rem)]'
+        }
+        onClick={() => setLightboxOpen(true)}
+        onPointerDown={(e) => e.stopPropagation()}
+        aria-label={alt}
+      >
+        <img
+          src={src}
+          alt={alt}
+          draggable={false}
+          className={`pointer-events-none w-full object-contain ${
+            inBubble ? 'max-h-80 rounded-xl' : 'max-h-80 bg-black/5 dark:bg-white/5'
+          }`}
+          loading="lazy"
+          onError={() => {
+            setFailed(true);
+            onFailed?.();
+          }}
+        />
+      </button>
+      {lightboxOpen && (
+        <MediaLightbox
+          media={{ type: 'image', src, alt, openUrl }}
+          onClose={() => setLightboxOpen(false)}
+        />
+      )}
+    </>
   );
 }
