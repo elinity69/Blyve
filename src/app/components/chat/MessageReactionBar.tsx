@@ -1,11 +1,14 @@
 /**
  * MessageReactionBar — Discord-style reaction pills rendered below the bubble.
  *
- * Features:
- * - Radix Tooltip on hover showing reactor names (desktop).
- * - framer-motion AnimatePresence scale-in for new pills.
- * - Floating "+" add-reaction button visible on group-hover/bubble (desktop).
- * - Current user's reactions highlighted with blyve accent.
+ * Layout contract:
+ * - When summaries is empty: renders nothing. Zero height, zero layout shift.
+ * - When summaries exist: renders pills + a "+" button that fades in on hover.
+ *   The "+" button uses opacity (not display) so it always occupies its slot —
+ *   no layout shift on hover that would scroll the chat view.
+ *
+ * First-reaction entry point is the context menu (right-click / long-press),
+ * which avoids any layout disruption entirely.
  */
 import { forwardRef, useCallback, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -30,26 +33,9 @@ export function MessageReactionBar({ summaries, isMe, onToggle }: MessageReactio
     setPickerAnchor({ x: rect.left, y: rect.bottom + 4 });
   }, []);
 
-  const picker = pickerAnchor ? (
-    <EmojiPickerPopover
-      x={pickerAnchor.x}
-      y={pickerAnchor.y}
-      onEmojiSelect={(emoji) => { onToggle(emoji); setPickerAnchor(null); }}
-      onClose={() => setPickerAnchor(null)}
-    />
-  ) : null;
-
-  // When there are no reactions yet — only show the floating + button on hover
-  if (summaries.length === 0) {
-    return (
-      <>
-        <div className={`mt-0.5 flex ${isMe ? 'justify-end' : 'justify-start'}`}>
-          <AddReactionButton label={t('chat.addEmoji')} onClick={handleOpenPicker} />
-        </div>
-        {picker}
-      </>
-    );
-  }
+  // No reactions yet → render nothing. Zero layout impact.
+  // First reaction is added via the right-click / long-press context menu.
+  if (summaries.length === 0) return null;
 
   return (
     <Tooltip.Provider delayDuration={400} skipDelayDuration={150}>
@@ -73,10 +59,18 @@ export function MessageReactionBar({ summaries, isMe, onToggle }: MessageReactio
           ))}
         </AnimatePresence>
 
-        {/* Floating "+emoji" button — shown on group-hover/bubble */}
+        {/* "+" button — always occupies its slot (no layout shift), fades in on hover */}
         <AddReactionButton label={t('chat.addEmoji')} onClick={handleOpenPicker} />
       </div>
-      {picker}
+
+      {pickerAnchor ? (
+        <EmojiPickerPopover
+          x={pickerAnchor.x}
+          y={pickerAnchor.y}
+          onEmojiSelect={(emoji) => { onToggle(emoji); setPickerAnchor(null); }}
+          onClose={() => setPickerAnchor(null)}
+        />
+      ) : null}
     </Tooltip.Provider>
   );
 }
@@ -140,12 +134,10 @@ function ReactionPill({ summary, onToggle }: ReactionPillProps) {
   );
 }
 
-/** Localised "Alice, Bob and 2 others reacted 👍" */
 function buildTooltipText(s: ReactionSummary): string {
   const names = s.reactorNames.filter(Boolean);
   const emoji = s.emoji;
   if (names.length === 0) return emoji;
-  // Keep simple — tooltip is desktop only; English phrasing is broadly understood.
   if (names.length <= 2) return `${names.join(' & ')} ${emoji}`;
   const shown = names.slice(0, 2).join(', ');
   const rest = names.length - 2;
@@ -153,7 +145,12 @@ function buildTooltipText(s: ReactionSummary): string {
 }
 
 // ---------------------------------------------------------------------------
-// Floating add-reaction button (desktop hover via parent group-hover/bubble)
+// "+ add reaction" button
+//
+// Matches the same pattern as MessageRowReplyButton:
+// - `md:block` so it occupies space on desktop (no layout shift on hover)
+// - `opacity-0 group-hover/bubble:opacity-100` fade — never toggles display
+// - `hidden` on mobile (reaction picker is via long-press context menu)
 // ---------------------------------------------------------------------------
 
 interface AddReactionButtonProps {
@@ -170,12 +167,13 @@ const AddReactionButton = forwardRef<HTMLButtonElement, AddReactionButtonProps>(
       title={label}
       onClick={onClick}
       className={[
-        'flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-full',
+        'h-[26px] w-[26px] shrink-0 items-center justify-center rounded-full',
         'border border-white/10 bg-white/5 text-gray-400',
-        'transition-all hover:bg-white/10 hover:text-gray-100 active:scale-95',
+        'opacity-0 transition-opacity group-hover/bubble:opacity-100',
+        'hover:bg-white/10 hover:text-gray-100 active:scale-95',
         'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blyve/60',
-        // Desktop: only show on group-hover/bubble; mobile: hidden (use long-press menu)
-        'hidden group-hover/bubble:flex md:hidden md:group-hover/bubble:flex',
+        // hidden on mobile (long-press menu handles it); always occupies space on md+
+        'hidden md:flex',
       ].join(' ')}
     >
       <SmilePlus className="h-3.5 w-3.5" aria-hidden />
