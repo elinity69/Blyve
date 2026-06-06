@@ -17,6 +17,8 @@ import { useCall } from '../context/CallStateContext';
 import { ChatEmbeddedCallBar } from './ChatEmbeddedCallBar';
 import { NotificationManager } from '../lib/notifications';
 import { getCachedUser, resolveAuthUser } from '../lib/authSession';
+import { SharedProfileView } from './SharedProfileView';
+import { User } from '../types';
 import { getAppDateLocale } from '../../lib/i18n';
 import {
   ConversationActionsMenu,
@@ -125,6 +127,8 @@ export function ChatScreen({
   const [reportTargetUserId, setReportTargetUserId] = useState<string | null>(null);
   const [newlyLoadedIds, setNewlyLoadedIds] = useState<Set<string>>(new Set());
   const [dropActive, setDropActive] = useState(false);
+  const [profilePreviewUserId, setProfilePreviewUserId] = useState<string | null>(null);
+  const [profilePreviewData, setProfilePreviewData] = useState<User | null>(null);
   const initialScrollDoneRef = useRef(false);
   const canLoadOlderRef = useRef(false);
   const lastMessageIdRef = useRef<string | null>(null);
@@ -422,6 +426,40 @@ export function ChatScreen({
     return () => document.removeEventListener('mousedown', handleOutsideClick);
   }, [showOptionsMenu]);
 
+  useEffect(() => {
+    if (!profilePreviewUserId) {
+      setProfilePreviewData(null);
+      return;
+    }
+    let cancelled = false;
+    const loadProfile = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('profiles')
+          .select('id, name, display_name, username, bio, avatar_url, images')
+          .eq('id', profilePreviewUserId)
+          .single();
+        if (cancelled) return;
+        if (error) throw error;
+        if (data) {
+          setProfilePreviewData({
+            id: data.id,
+            name: data.display_name || data.name || 'Unknown',
+            display_name: data.display_name || data.name,
+            username: data.username,
+            bio: data.bio || '',
+            avatar_url: data.avatar_url,
+            images: data.images || [],
+          });
+        }
+      } catch {
+        if (!cancelled) setProfilePreviewUserId(null);
+      }
+    };
+    void loadProfile();
+    return () => { cancelled = true; };
+  }, [profilePreviewUserId]);
+
   const focusMessageInput = useCallback(() => {
     if (!isMdUp) return;
     requestAnimationFrame(() => {
@@ -593,7 +631,7 @@ export function ChatScreen({
             {...profileLongPress}
           >
             <button
-              onClick={() => onOpenProfilePreview?.(otherUser.id)}
+              onClick={() => setProfilePreviewUserId(otherUser.id)}
               className="flex items-center gap-3"
               style={{
                 touchAction: 'manipulation',
@@ -959,11 +997,22 @@ export function ChatScreen({
         <ConversationActionsMenu
           target={conversationActionsMenu}
           onClose={() => setConversationActionsMenu(null)}
-          onViewProfile={() => onOpenProfilePreview?.(otherUser.id)}
+          onViewProfile={() => setProfilePreviewUserId(otherUser.id)}
           onRemoveFriend={handleRemoveFriend}
           onBlockUser={handleBlockFromMenu}
         />
       ) : null}
+
+      {profilePreviewUserId && profilePreviewData && (
+        <SharedProfileView
+          profile={profilePreviewData}
+          conversationId={conversationId}
+          onClose={() => {
+            setProfilePreviewUserId(null);
+            setProfilePreviewData(null);
+          }}
+        />
+      )}
     </div>
   );
 }

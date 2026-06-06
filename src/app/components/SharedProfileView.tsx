@@ -121,7 +121,13 @@ export function SharedProfileView({
     }
   };
 
-  const handleDragStart = () => {
+  const handleDragStart = (_event: MouseEvent | TouchEvent | PointerEvent, info: PanInfo) => {
+    // Only allow drag-to-dismiss when at the top of the scroll area and dragging downward
+    if (scrollTop > 4 || info.delta.y < 0) {
+      y.set(0);
+      setIsDragging(false);
+      return;
+    }
     setIsDragging(true);
     y.set(0);
   };
@@ -198,7 +204,9 @@ export function SharedProfileView({
           onClick={(e) => e.stopPropagation()}
         >
           {!isDesktop ? (
-            <div className="absolute left-0 right-0 top-0 z-30 h-12 cursor-grab active:cursor-grabbing" />
+            <div className="pointer-events-none absolute left-0 right-0 top-0 z-30 flex h-12 items-center justify-center">
+              <div className="h-1.5 w-12 rounded-full bg-gray-300 dark:bg-gray-700" />
+            </div>
           ) : null}
 
           <div
@@ -208,7 +216,7 @@ export function SharedProfileView({
                 : 'h-full overflow-y-auto'
             }
             style={{
-              touchAction: scrollTop === 0 && !isDragging ? 'pan-y' : 'pan-y pinch-zoom',
+              touchAction: isDesktop ? 'pan-y pinch-zoom' : scrollTop === 0 ? 'none' : 'pan-y pinch-zoom',
               pointerEvents: isDragging ? 'none' : 'auto',
             }}
             onScroll={handleScroll}
@@ -217,14 +225,11 @@ export function SharedProfileView({
             <div
               className={`relative w-full shrink-0 overflow-hidden ${isDesktop ? 'h-[400px]' : 'h-[45vh]'}`}
               style={{
-                touchAction: isTouchDevice ? 'pan-y' : 'none',
+                touchAction: 'inherit',
                 userSelect: 'none',
                 WebkitUserSelect: 'none',
               }}
             >
-              {!isDesktop ? (
-                <div className="absolute left-1/2 top-2 z-30 h-1.5 w-12 -translate-x-1/2 rounded-full bg-gray-300 dark:bg-gray-700" />
-              ) : null}
               {currentImage ? (
                 <img
                   src={getOptimizedImageUrl(currentImage, 800)}

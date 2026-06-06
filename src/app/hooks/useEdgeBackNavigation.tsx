@@ -251,15 +251,17 @@ export function useEdgeBackNavigation({
 
   const handleForwardOpenStart = useCallback(() => {
     const cached = lastScreenCacheRef.current;
-    if (!cached?.isForwardPreview || !isCachedForwardAllowed()) return;
     navDebug.log('nav', 'forwardOpenStart', {
-      cachedId: cached.id,
+      cachedId: cached?.id ?? null,
+      isForwardPreview: cached?.isForwardPreview ?? false,
       trace: navDebug.captureTrace(),
     });
-    requestAnimationFrame(() => {
-      onForwardSwipeRef.current?.();
-    });
-  }, [isCachedForwardAllowed]);
+    // Intentionally no-op: do NOT push the live screen here.
+    // The preview panel is still mid-animation at this point; firing onForwardSwipe
+    // now causes React to remount NavigationStack with a new key while panelX is
+    // still tweening, producing the visible bounce.  handleForwardComplete fires
+    // after animateToRest finishes (panelX already at 0) and handles the commit.
+  }, []);
 
   const handleForwardComplete = useCallback(() => {
     const cached = lastScreenCacheRef.current;

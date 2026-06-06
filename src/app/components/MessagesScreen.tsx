@@ -2447,7 +2447,6 @@ export function MessagesScreen({ isTabActive = true }: MessagesScreenProps) {
           handleLeaveChat(selectedConversationId, { clearSelection: false });
           popScreenRef.current();
         }}
-        onOpenProfilePreview={setProfilePreviewUserId}
         onConversationUpdated={() => void reload()}
       />,
       `chat-${selectedConversationId}`,

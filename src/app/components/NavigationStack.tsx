@@ -777,9 +777,27 @@ export function NavigationStack({
         fingerVelocity > NAV_SWIPE_VELOCITY_THRESHOLD ||
         distance > distanceThreshold;
 
+    const wasDraggingForward = isForwardPull;
+
     isDraggingRef.current = false;
     setSwipeBackLock(false);
     setNavForwardSwipeLock(false, forwardShellRef?.current);
+
+    // After any forward-swipe drag the browser fires a synthetic click at the
+    // lift-off coordinates.  Because the forward shell has pointerEvents:'none'
+    // that click falls through to the preview list and opens the wrong chat row.
+    // Install a one-shot capture handler that swallows that click.
+    if (wasDraggingForward && forwardShellRef?.current) {
+      const shield = forwardShellRef.current;
+      const blockClick = (e: MouseEvent) => {
+        e.stopPropagation();
+        e.preventDefault();
+        shield.removeEventListener('click', blockClick, true);
+      };
+      shield.addEventListener('click', blockClick, { capture: true, once: true });
+      // Safety removal if no click arrives within 600 ms.
+      setTimeout(() => shield.removeEventListener('click', blockClick, true), 600);
+    }
 
     logPose('touch:end', {
       distance: Math.round(distance),
@@ -925,13 +943,9 @@ export function NavigationStack({
           {children}
           {enterTouchShield ? (
             <div
-              className="absolute inset-0 z-[200] touch-none"
+              className="absolute inset-0 z-[200] touch-none pointer-events-none"
               aria-hidden
               data-nav-enter-shield
-              onTouchStart={(event) => event.stopPropagation()}
-              onTouchMove={(event) => event.stopPropagation()}
-              onTouchEnd={(event) => event.stopPropagation()}
-              onTouchCancel={(event) => event.stopPropagation()}
             />
           ) : null}
         </div>
