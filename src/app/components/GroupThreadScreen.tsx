@@ -23,6 +23,7 @@ import { NotificationManager } from '../lib/notifications';
 import { MessageReplyComposerBar } from './chat/MessageReplyComposerBar';
 import { ChatMessageComposer } from './chat/ChatMessageComposer';
 import { scrollContainerToBottomStable } from '../lib/chatScroll';
+import { ScrollToBottomButton, useScrollToBottom } from './chat/ScrollToBottomButton';
 import { useChatMediaSend } from '../hooks/useChatMediaSend';
 import { MessageWithReactions } from './chat/MessageWithReactions';
 import {
@@ -119,6 +120,7 @@ export function GroupThreadScreen({
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const typingIndicatorRef = useRef<HTMLDivElement>(null);
   const [typingClearance, setTypingClearance] = useState(0);
+  const { show: showScrollToBottom, handleScroll: scrollToBottomHandleScroll, scrollToBottom } = useScrollToBottom(scrollRef);
   const onOpenedRef = useRef(onOpened);
   onOpenedRef.current = onOpened;
   const prevChannelIdRef = useRef<string | null>(null);
@@ -530,6 +532,7 @@ export function GroupThreadScreen({
         data-chat-messages-scroll
         ref={assignScrollContainer}
         className={`${CHAT_MESSAGE_LIST_CLASS} ${dropActive ? 'ring-2 ring-inset ring-blyve/40' : ''}`}
+        onScroll={scrollToBottomHandleScroll}
         onDragOver={(e) => {
           e.preventDefault();
           setDropActive(true);
@@ -635,6 +638,8 @@ export function GroupThreadScreen({
         )}
         <div ref={messagesEndRef} aria-hidden className="h-px w-full shrink-0" />
       </div>
+
+      <ScrollToBottomButton show={showScrollToBottom} onClick={scrollToBottom} />
 
       <ChatMessageComposer
         value={input}

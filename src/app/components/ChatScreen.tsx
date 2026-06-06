@@ -61,6 +61,7 @@ import {
   scrollContainerToBottomStable,
   scrollContainerToMessage,
 } from '../lib/chatScroll';
+import { ScrollToBottomButton, useScrollToBottom } from './chat/ScrollToBottomButton';
 
 interface ChatScreenProps {
   onBack: () => void;
@@ -119,6 +120,7 @@ export function ChatScreen({
   const isLoadingOlderRef = useRef(false);
   const optionsMenuRef = useRef<HTMLDivElement>(null);
   const optionsButtonRef = useRef<HTMLButtonElement>(null);
+  const { show: showScrollToBottom, handleScroll: scrollToBottomHandleScroll, scrollToBottom } = useScrollToBottom(messagesContainerRef);
   const [showOptionsMenu, setShowOptionsMenu] = useState(false);
   const [showReportModal, setShowReportModal] = useState(false);
   const [showBlockModal, setShowBlockModal] = useState(false);
@@ -407,11 +409,12 @@ export function ChatScreen({
 
   const handleMessagesScroll = useCallback(() => {
     const container = messagesContainerRef.current;
+    scrollToBottomHandleScroll();
     if (!container || loadingMore || !hasMore) return;
     if (container.scrollTop <= 80 && canLoadOlderRef.current) {
       loadOlderAndPreserveScroll();
     }
-  }, [loadOlderAndPreserveScroll, loadingMore, hasMore]);
+  }, [loadOlderAndPreserveScroll, loadingMore, hasMore, scrollToBottomHandleScroll]);
 
   useEffect(() => {
     if (messageInput.trim().length > 0) {
@@ -849,6 +852,8 @@ export function ChatScreen({
           </>
         )}
       </div>
+
+      <ScrollToBottomButton show={showScrollToBottom} onClick={scrollToBottom} />
 
       <ChatMessageComposer
         value={messageInput}
