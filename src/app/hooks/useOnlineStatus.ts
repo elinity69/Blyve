@@ -50,7 +50,7 @@ export function useOnlineStatus(userId: string | null) {
     if (!userId) return;
 
     const channel = supabase
-      .channel(`online-users-${userId}`)
+      .channel(`online-users-global`)
       .on('presence', { event: 'sync' }, () => {
         const presenceState = channel.presenceState();
         const online = new Set<string>();

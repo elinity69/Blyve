@@ -300,6 +300,21 @@ export function ChatScreen({
   useLayoutEffect(() => {
     if (!isPartnerTyping) {
       setTypingClearance(0);
+      // Re-pin scroll to bottom after the spacer is removed. The browser
+      // clamps scrollTop automatically, but scrollContainerToBottomStable
+      // also fires the end-marker scrollIntoView to guarantee correctness.
+      if (initialScrollDoneRef.current) {
+        requestAnimationFrame(() => {
+          const container = messagesContainerRef.current;
+          if (!container) return;
+          // Only snap if the user was near bottom (typing spacer was visible).
+          const distance =
+            container.scrollHeight - container.scrollTop - container.clientHeight;
+          if (distance < 160) {
+            scrollContainerToBottomStable(container);
+          }
+        });
+      }
       return;
     }
 
@@ -719,7 +734,6 @@ export function ChatScreen({
           overscrollBehavior: 'contain',
           overscrollBehaviorX: 'hidden',
           overscrollBehaviorY: 'contain',
-          ...(typingClearance > 0 ? { paddingBottom: typingClearance } : {}),
         }}
       >
         {loading && messages.length === 0 ? (
@@ -832,6 +846,9 @@ export function ChatScreen({
                 </motion.div>
               );
             })}
+            {typingClearance > 0 && (
+              <div aria-hidden style={{ height: typingClearance, flexShrink: 0 }} />
+            )}
             <div ref={messagesEndRef} data-chat-scroll-end aria-hidden />
           </>
         )}

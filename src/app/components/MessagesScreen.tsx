@@ -3,6 +3,7 @@ import { useQueryClient, useQuery } from '@tanstack/react-query';
 import { useEdgeBackNavigation } from '../hooks/useEdgeBackNavigation';
 import { navDebug } from '../lib/navDebug';
 import { useConversations } from '../hooks/useConversations';
+import { useOnlineStatus } from '../hooks/useOnlineStatus';
 import { ChatScreen } from './ChatScreen';
 import { DmChatForwardPreview } from './DmChatForwardPreview';
 import { GroupThreadScreen } from './GroupThreadScreen';
@@ -270,6 +271,7 @@ export function MessagesScreen({ isTabActive = true }: MessagesScreenProps) {
   const [inviteTargetGroupId, setInviteTargetGroupId] = useState<string | null>(null);
 
   const { conversations, loading, error, reload } = useConversations();
+  const { isOnline } = useOnlineStatus(currentUserId);
   const queryClient = useQueryClient();
   const selectedGroupId = selectedGroup?.id ?? null;
 
@@ -2134,7 +2136,7 @@ export function MessagesScreen({ isTabActive = true }: MessagesScreenProps) {
                     <ConversationListRow
                       key={conv.id}
                       conv={conv}
-                      otherUser={otherUser}
+                      otherUser={{ ...otherUser, is_online: isOnline(otherUser.id) }}
                       unreadCount={unreadCount}
                       imageUrl={imageUrl}
                       isSelected={isSelected}
@@ -2243,7 +2245,7 @@ export function MessagesScreen({ isTabActive = true }: MessagesScreenProps) {
             <ChatScreen
               key={selectedConversationId}
               conversationId={selectedConversationId}
-              otherUser={{ ...selectedOtherUser, age: selectedOtherUser.age }}
+              otherUser={{ ...selectedOtherUser, age: selectedOtherUser.age, is_online: isOnline(selectedOtherUser.id) }}
               currentUserId={currentUserId}
               onBack={() => handleLeaveChat(selectedConversationId!)}
               onOpenProfilePreview={setProfilePreviewUserId}
@@ -2296,6 +2298,7 @@ export function MessagesScreen({ isTabActive = true }: MessagesScreenProps) {
     activeCall,
     callState,
     callDisplayMode,
+    isOnline,
   ]);
 
   const { pushScreen, replaceTopScreen, popScreen, clearStack, clearForwardCache, setForwardCache, renderLayers } =

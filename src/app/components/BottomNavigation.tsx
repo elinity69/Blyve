@@ -59,7 +59,7 @@ export function BottomNavigation({ activeTab, onTabChange }: BottomNavigationPro
       className="fixed bottom-0 left-0 right-0 z-40 md:z-50 bg-white/80 dark:bg-black/80 md:dark:bg-[#121212]/80 backdrop-blur-md border-t border-white/20 dark:border-white/5 shadow-lg"
       style={{ paddingBottom: navPaddingBottom }}
     >
-      <div className="w-full flex justify-around items-center h-14">
+      <div className="w-full flex justify-around items-center h-12">
         {tabs.map(({ id, icon: Icon, label }) => (
           <motion.button
             key={id}
@@ -77,21 +77,21 @@ export function BottomNavigation({ activeTab, onTabChange }: BottomNavigationPro
             <div 
               className="relative flex items-center justify-center mb-0.5" 
               style={{ 
-                width: '28px',
-                height: '28px',
-                minWidth: '28px',
-                minHeight: '28px',
-                maxWidth: '28px',
-                maxHeight: '28px'
+                width: '24px',
+                height: '24px',
+                minWidth: '24px',
+                minHeight: '24px',
+                maxWidth: '24px',
+                maxHeight: '24px'
               }}
             >
               <Icon
-                className="w-6 h-6"
+                className="w-5 h-5"
                 style={{
-                  width: '24px',
-                  height: '24px',
-                  minWidth: '24px',
-                  minHeight: '24px',
+                  width: '20px',
+                  height: '20px',
+                  minWidth: '20px',
+                  minHeight: '20px',
                   transform: activeTab === id ? 'scale(1.2)' : 'scale(1)',
                   transition: 'transform 0.3s ease',
                 }}
@@ -107,7 +107,7 @@ export function BottomNavigation({ activeTab, onTabChange }: BottomNavigationPro
             <span 
               className="text-xs" 
               style={{ 
-                fontSize: activeTab === id ? '14px' : '12px',
+                fontSize: activeTab === id ? '12px' : '10px',
                 lineHeight: '1',
                 marginTop: '0',
                 paddingTop: '0',
