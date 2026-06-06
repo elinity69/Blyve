@@ -179,10 +179,10 @@ export function ChatCallPanel({ conversationId }: ChatCallPanelProps) {
   return (
     <div className="relative shrink-0">
       {showEmbeddedHost ? (
-        <div
-          ref={callHostAnchorRef}
-          className="relative min-h-[200px] w-full shrink-0 overflow-hidden border-b border-white/10 bg-[#0b0b0b]"
-        />
+          <div
+            ref={callHostAnchorRef}
+            className="relative h-[min(32vh,300px)] min-h-[200px] w-full shrink-0 overflow-hidden border-b border-white/10 bg-[#0b0b0b]"
+          />
       ) : (
         <div className="flex h-[min(32vh,300px)] min-h-[200px] w-full items-center justify-center border-b border-white/10 bg-[#0b0b0b] px-4">
           <div className="text-center">

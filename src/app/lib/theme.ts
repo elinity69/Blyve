@@ -28,7 +28,7 @@ export function resolveThemeMode(profile?: ProfileThemeInput | null): ThemeMode 
   if (isThemeMode(profile?.theme_mode ?? null)) {
     return profile!.theme_mode as ThemeMode;
   }
-  return resolveDarkMode(profile?.dark_mode) ? 'dark' : 'light';
+  return resolveDarkMode(profile?.dark_mode) ? 'oled' : 'light';
 }
 
 export function readThemeCache(): ThemeCache | null {
@@ -47,7 +47,7 @@ export function readThemeCache(): ThemeCache | null {
       if (typeof legacy.userId === 'string' && typeof legacy.darkMode === 'boolean') {
         return {
           userId: legacy.userId,
-          themeMode: legacy.darkMode ? 'dark' : 'light',
+          themeMode: legacy.darkMode ? 'oled' : 'light',
         };
       }
     }
@@ -97,7 +97,7 @@ export function applyBootTheme(): void {
     applyThemeMode(cache.themeMode);
     return;
   }
-  applyThemeMode('dark');
+  applyThemeMode('oled');
 }
 
 export function syncThemeFromProfile(

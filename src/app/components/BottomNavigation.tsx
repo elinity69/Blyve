@@ -59,7 +59,7 @@ export function BottomNavigation({ activeTab, onTabChange }: BottomNavigationPro
       className="fixed bottom-0 left-0 right-0 z-40 md:z-50 bg-white/80 dark:bg-black/80 md:dark:bg-[#121212]/80 backdrop-blur-md border-t border-white/20 dark:border-white/5 shadow-lg"
       style={{ paddingBottom: navPaddingBottom }}
     >
-      <div className="w-full flex justify-around items-center h-16">
+      <div className="w-full flex justify-around items-center h-14">
         {tabs.map(({ id, icon: Icon, label }) => (
           <motion.button
             key={id}
@@ -67,7 +67,7 @@ export function BottomNavigation({ activeTab, onTabChange }: BottomNavigationPro
             className={`flex flex-col items-center justify-center flex-1 h-full transition-colors bg-transparent dark:bg-transparent relative ${
               activeTab === id
                 ? 'text-blyve'
-                : 'text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300'
+                : 'text-gray-400 dark:text-gray-500 oled:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 oled:hover:text-gray-300'
             }`}
             style={{ backgroundColor: 'transparent' }}
             whileTap={{ scale: 0.95 }}
@@ -77,12 +77,12 @@ export function BottomNavigation({ activeTab, onTabChange }: BottomNavigationPro
             <div 
               className="relative flex items-center justify-center mb-0.5" 
               style={{ 
-                width: '32px',
-                height: '32px',
-                minWidth: '32px',
-                minHeight: '32px',
-                maxWidth: '32px',
-                maxHeight: '32px'
+                width: '28px',
+                height: '28px',
+                minWidth: '28px',
+                minHeight: '28px',
+                maxWidth: '28px',
+                maxHeight: '28px'
               }}
             >
               <Icon

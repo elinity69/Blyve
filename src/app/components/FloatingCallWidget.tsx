@@ -277,29 +277,24 @@ export function FloatingCallWidget({
     const surface = jitsiSurfaceRef.current;
     if (!surface) return;
 
-    // Fullscreen: cover the entire viewport.
-    if (isFullscreen) {
-      surface.style.visibility = 'visible';
-      surface.style.left = '0px';
-      surface.style.top = '0px';
-      surface.style.width = `${window.innerWidth}px`;
-      surface.style.height = `${window.innerHeight}px`;
-      surface.style.zIndex = '9999';
-      surface.style.pointerEvents = 'auto';
-      return;
-    }
+    // Fullscreen bounds are controlled by React via jitsiSurfaceStyle — skip imperative update.
+    if (isFullscreen) return;
 
     const target =
       isEmbedded && hostAnchorEl ? hostAnchorEl : showPipChrome ? pipContentRef.current : null;
 
     if (!target) {
       surface.style.visibility = 'hidden';
+      surface.style.width = '0px';
+      surface.style.height = '0px';
       return;
     }
 
     const rect = target.getBoundingClientRect();
     if (rect.width < 2 || rect.height < 2) {
       surface.style.visibility = 'hidden';
+      surface.style.width = '0px';
+      surface.style.height = '0px';
       return;
     }
 
@@ -318,13 +313,8 @@ export function FloatingCallWidget({
     const target =
       isEmbedded && hostAnchorEl ? hostAnchorEl : showPipChrome ? pipContentRef.current : null;
 
-    // In fullscreen, watch the viewport via window resize only.
-    if (isFullscreen) {
-      window.addEventListener('resize', syncJitsiSurfaceBounds);
-      return () => {
-        window.removeEventListener('resize', syncJitsiSurfaceBounds);
-      };
-    }
+    // In fullscreen, React controls the surface style — no observers needed.
+    if (isFullscreen) return undefined;
 
     if (!target) return undefined;
 
@@ -509,6 +499,37 @@ export function FloatingCallWidget({
       </div>
     ) : null;
 
+  // Embedded overlay — rendered INSIDE jitsiSurface so it sits above the hidden Jitsi iframe
+  // (z-index 120) without needing to pierce the stacking context from ChatCallPanel.
+  const embeddedOverlay = isEmbedded && showAvatarStage ? (
+    <div className="pointer-events-none absolute inset-0 z-[1] flex items-center justify-center bg-[#0b0b0b]">
+      {displayParticipants.length > 0 && (
+        <div className="flex items-center justify-center gap-3">
+          {displayParticipants.slice(0, 4).map((participant) => {
+            const isSpeaking =
+              speakingParticipantId === participant.id ||
+              speakingParticipantId === participant.jitsiParticipantId;
+            const solo = displayParticipants.length === 1;
+            return (
+              <div key={participant.id} data-pip-avatar>
+                <PipAvatar
+                  participant={participant}
+                  isSpeaking={Boolean(isSpeaking)}
+                  sizeClass={solo ? 'h-20 w-20 sm:h-24 sm:w-24' : 'h-14 w-14 sm:h-16 sm:w-16'}
+                  onOpenVolumeMenu={
+                    participant.isLocal
+                      ? undefined
+                      : (event) => openPipVolumeMenu(participant, event)
+                  }
+                />
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  ) : null;
+
   // Fullscreen overlay — rendered INSIDE jitsiSurface via the overlay prop so everything
   // lives in a single stacking context (no cross-context z-index confusion).
   const fullscreenOverlay = isFullscreen ? (
@@ -581,7 +602,7 @@ export function FloatingCallWidget({
     isMuted,
     isCameraEnabled,
     isScreenShareEnabled,
-    overlay: fullscreenOverlay,
+    overlay: fullscreenOverlay ?? embeddedOverlay,
     onRemoteStreamActiveChange: setRemoteStreamActive,
     onExpandedChange: isEmbedded ? onExpandedChange : undefined,
     onMinimizeToPip: isEmbedded ? onMinimizeToPip : undefined,
@@ -612,6 +633,19 @@ export function FloatingCallWidget({
     forceShowControls: isEmbedded ? true : false,
   };
 
+  // Fullscreen: let React control the surface style so it never flickers back to hidden.
+  const jitsiSurfaceStyle: React.CSSProperties = isFullscreen
+    ? {
+        visibility: 'visible',
+        left: 0,
+        top: 0,
+        width: '100dvw',
+        height: '100dvh',
+        zIndex: 9999,
+        pointerEvents: 'auto',
+      }
+    : { visibility: 'hidden', left: 0, top: 0, width: 0, height: 0 };
+
   return (
     <>
       <div
@@ -619,7 +653,7 @@ export function FloatingCallWidget({
         className={`fixed overflow-hidden bg-[#0b0b0b] ${
           showPipChrome && !isFullscreen ? 'rounded-xl' : ''
         }`}
-        style={{ visibility: 'hidden', left: 0, top: 0, width: 0, height: 0 }}
+        style={jitsiSurfaceStyle}
       >
         <PersistentJitsiMeeting {...jitsiMeetingProps} />
       </div>
