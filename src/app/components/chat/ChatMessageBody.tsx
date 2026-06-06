@@ -12,8 +12,11 @@ import {
 } from './chatMessageStyles';
 import { MessageTextContent } from './MessageTextContent';
 import { useMessageContentParts } from './MessageContent';
+import type { ReactionSummary } from '../../hooks/useMessageReactions';
+import { MessageReactionBar } from './MessageReactionBar';
 
 interface ChatMessageBodyProps {
+  messageId: string;
   content: string;
   isMe: boolean;
   isBundled: boolean;
@@ -22,9 +25,14 @@ interface ChatMessageBodyProps {
   messageTime?: string;
   isRead?: boolean;
   readLabel?: string;
+  /** Reaction summaries — provided by parent MessageWithReactions */
+  summaries?: ReactionSummary[];
+  /** Toggle reaction callback — provided by parent MessageWithReactions */
+  onToggleReaction?: (emoji: string) => void;
 }
 
 export function ChatMessageBody({
+  messageId: _messageId,
   content,
   isMe,
   isBundled,
@@ -33,6 +41,8 @@ export function ChatMessageBody({
   messageTime,
   isRead,
   readLabel,
+  summaries = [],
+  onToggleReaction,
 }: ChatMessageBodyProps) {
   const { embeds, suppressUrls, showText } = useMessageContentParts(content);
   const textClassName = isBundled
@@ -41,6 +51,10 @@ export function ChatMessageBody({
 
   const mediaOnly = !showText && embeds.length > 0;
   const voiceOnly = mediaOnly && embeds.length === 1 && embeds[0]?.kind === 'audio';
+
+  const reactionBar = onToggleReaction ? (
+    <MessageReactionBar summaries={summaries} isMe={isMe} onToggle={onToggleReaction} />
+  ) : null;
 
   if (voiceOnly) {
     return (
@@ -54,6 +68,7 @@ export function ChatMessageBody({
           <MessageEmbedList embeds={embeds} inBubble isMe={isMe} />
         </MessageBubble>
         <MessageEmbedTimeFooter time={messageTime} isMe={isMe} isRead={isRead} />
+        {reactionBar}
       </div>
     );
   }
@@ -75,29 +90,33 @@ export function ChatMessageBody({
           isRead={isRead}
           readLabel={readLabel}
         />
+        {reactionBar}
       </div>
     );
   }
 
   return (
-    <MessageBubble
-      position={bubblePosition}
-      isMe={isMe}
-      time={messageTime}
-      isRead={isRead}
-      readLabel={readLabel}
-    >
-      {replyQuote ? <MessageReplyQuote quote={replyQuote} isMe={isMe} /> : null}
-      {showText ? (
-        <MessageTextContent
-          content={content}
-          isMe={isMe}
-          className={textClassName}
-          suppressUrls={suppressUrls}
-          embeds={embeds}
-        />
-      ) : null}
-      {embeds.length > 0 ? <MessageEmbedList embeds={embeds} inBubble isMe={isMe} /> : null}
-    </MessageBubble>
+    <div className={`${CHAT_MESSAGE_BODY_STACK_CLASS} ${isMe ? 'items-end' : 'items-start'}`}>
+      <MessageBubble
+        position={bubblePosition}
+        isMe={isMe}
+        time={messageTime}
+        isRead={isRead}
+        readLabel={readLabel}
+      >
+        {replyQuote ? <MessageReplyQuote quote={replyQuote} isMe={isMe} /> : null}
+        {showText ? (
+          <MessageTextContent
+            content={content}
+            isMe={isMe}
+            className={textClassName}
+            suppressUrls={suppressUrls}
+            embeds={embeds}
+          />
+        ) : null}
+        {embeds.length > 0 ? <MessageEmbedList embeds={embeds} inBubble isMe={isMe} /> : null}
+      </MessageBubble>
+      {reactionBar}
+    </div>
   );
 }

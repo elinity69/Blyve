@@ -1,15 +1,17 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Reply } from 'lucide-react';
 import { useSwipeToReply } from '../../hooks/useSwipeToReply';
 import { useIsMdUp } from '../ui/use-mobile';
-import { MessageContextMenuWrapper } from './MessageContextMenu';
+import { MessageContextMenu, MessageContextMenuWrapper } from './MessageContextMenu';
 import { MessageRowReplyButton } from './MessageRowReplyButton';
+import { useLongPress } from '../../hooks/useLongPress';
 
 interface MessageBubbleActionRowProps {
   isMe: boolean;
   onReply: () => void;
   canDelete?: boolean;
   onDelete?: () => void;
+  onReact?: (emoji: string) => void;
   children: React.ReactNode;
 }
 
@@ -22,10 +24,19 @@ export function MessageBubbleActionRow({
   onReply,
   canDelete = false,
   onDelete,
+  onReact,
   children,
 }: MessageBubbleActionRowProps) {
   const isMdUp = useIsMdUp();
   const { offsetX, swipeProgress, swipeHandlers } = useSwipeToReply(onReply, !isMdUp);
+  const [mobileMenu, setMobileMenu] = useState<{ x: number; y: number } | null>(null);
+
+  const { bind: longPressBind } = useLongPress(
+    (event: React.PointerEvent) => {
+      if (isMdUp) return;
+      setMobileMenu({ x: event.clientX, y: event.clientY });
+    }
+  );
 
   const bubble = (
     <div
@@ -33,8 +44,12 @@ export function MessageBubbleActionRow({
       style={{
         transform: offsetX < 0 ? `translateX(${offsetX}px)` : undefined,
         transition: offsetX < 0 ? 'none' : 'transform 0.2s ease-out',
+        WebkitUserSelect: 'none',
+        userSelect: 'none',
       }}
+      onContextMenu={!isMdUp ? (e) => e.preventDefault() : undefined}
       {...(!isMdUp ? swipeHandlers : {})}
+      {...(!isMdUp ? longPressBind : {})}
     >
       {!isMdUp && swipeProgress > 0.08 ? (
         <div
@@ -51,6 +66,7 @@ export function MessageBubbleActionRow({
           canDelete={canDelete}
           onReply={onReply}
           onDelete={onDelete ?? onReply}
+          onReact={onReact}
         >
           {children}
         </MessageContextMenuWrapper>
@@ -73,6 +89,17 @@ export function MessageBubbleActionRow({
           <MessageRowReplyButton onReply={onReply} />
         </>
       )}
+      {mobileMenu ? (
+        <MessageContextMenu
+          x={mobileMenu.x}
+          y={mobileMenu.y}
+          canDelete={canDelete}
+          onReply={() => { onReply(); setMobileMenu(null); }}
+          onDelete={() => { onDelete?.(); setMobileMenu(null); }}
+          onReact={onReact ? (emoji) => { onReact(emoji); setMobileMenu(null); } : undefined}
+          onClose={() => setMobileMenu(null)}
+        />
+      ) : null}
     </div>
   );
 }

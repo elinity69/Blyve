@@ -24,7 +24,7 @@ import { MessageReplyComposerBar } from './chat/MessageReplyComposerBar';
 import { ChatMessageComposer } from './chat/ChatMessageComposer';
 import { scrollContainerToBottomStable } from '../lib/chatScroll';
 import { useChatMediaSend } from '../hooks/useChatMediaSend';
-import { MessageBubbleActionRow } from './chat/MessageBubbleActionRow';
+import { MessageWithReactions } from './chat/MessageWithReactions';
 import {
   buildReplyTarget,
   resolveReplyQuote,
@@ -40,7 +40,6 @@ import {
 } from './chat/chatMessageStyles';
 import { MessageRowAvatarSlot } from './chat/MessageRowAvatarSlot';
 import { MessageGroupHeader } from './chat/MessageGroupHeader';
-import { ChatMessageBody } from './chat/ChatMessageBody';
 import {
   formatMessageTime,
   getMessageGroupPosition,
@@ -611,22 +610,21 @@ export function GroupThreadScreen({
                         />
                       )}
                       <div className={getChatMessageBubbleRowAlignClass(mine)}>
-                        <MessageBubbleActionRow
+                        <MessageWithReactions
+                          messageId={m.id}
                           isMe={mine}
+                          canDelete={false}
                           onReply={() =>
                             setReplyTarget(buildReplyTarget(m, getSenderLabel(m.sender_id, m)))
                           }
-                        >
-                          <ChatMessageBody
-                            content={m.content}
-                            isMe={mine}
-                            isBundled={isBundled}
-                            replyQuote={replyQuote}
-                            bubblePosition={groupPosition}
-                            messageTime={messageTime}
-                            isRead={false}
-                          />
-                        </MessageBubbleActionRow>
+                          onDelete={() => { /* group message delete not yet wired */ }}
+                          content={m.content}
+                          isBundled={isBundled}
+                          replyQuote={replyQuote}
+                          bubblePosition={groupPosition}
+                          messageTime={messageTime}
+                          isRead={false}
+                        />
                       </div>
                     </div>
                   </div>
