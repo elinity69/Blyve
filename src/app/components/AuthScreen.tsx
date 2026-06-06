@@ -50,27 +50,41 @@ export function AuthScreen({ onAuthSuccess }: AuthScreenProps) {
 
     try {
       if (isSignup) {
-        await api.signup({
+        const result = await api.signup({
           email: cleanEmail,
           password: cleanPassword,
           name: '',
         });
 
-        await api.signin(cleanEmail, cleanPassword);
+        if (result.accessToken) {
+          api.setAccessToken(result.accessToken);
+        } else {
+          // No session yet (e.g. email confirmation required) — sign in explicitly
+          await api.signin(cleanEmail, cleanPassword);
+          const { data: supabaseSession, error: supabaseError } = await supabase.auth.signInWithPassword({
+            email: cleanEmail,
+            password: cleanPassword,
+          });
+          if (supabaseError || !supabaseSession?.session) {
+            throw new Error(supabaseError?.message || 'Signup succeeded but sign-in failed');
+          }
+          api.setAccessToken(supabaseSession.session.access_token);
+        }
       } else {
         await api.signin(cleanEmail, cleanPassword);
+
+        const { data: supabaseSession, error: supabaseError } = await supabase.auth.signInWithPassword({
+          email: cleanEmail,
+          password: cleanPassword,
+        });
+
+        if (supabaseError || !supabaseSession?.session) {
+          throw new Error(`Failed to establish session: ${supabaseError?.message || 'No session returned'}`);
+        }
+
+        api.setAccessToken(supabaseSession.session.access_token);
       }
 
-      const { data: supabaseSession, error: supabaseError } = await supabase.auth.signInWithPassword({
-        email: cleanEmail,
-        password: cleanPassword,
-      });
-
-      if (supabaseError || !supabaseSession?.session) {
-        throw new Error(`Failed to establish session: ${supabaseError?.message || 'No session returned'}`);
-      }
-
-      api.setAccessToken(supabaseSession.session.access_token);
       onAuthSuccess();
     } catch (err: any) {
       setError(err.message || 'Authentication failed');

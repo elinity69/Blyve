@@ -29,9 +29,11 @@ interface FavoriteEmbedThumbnailProps {
 
 function FavoriteEmbedThumbnail({ favorite }: FavoriteEmbedThumbnailProps) {
   const [src, setSrc] = useState<string | undefined>(() => previewUrlForFavorite(favorite));
+  const [imgFailed, setImgFailed] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
+    setImgFailed(false);
 
     async function resolvePreview() {
       if (src) return;
@@ -66,13 +68,14 @@ function FavoriteEmbedThumbnail({ favorite }: FavoriteEmbedThumbnailProps) {
     };
   }, [favorite, src]);
 
-  if (src) {
+  if (src && !imgFailed) {
     return (
       <img
         src={getOptimizedImageUrl(src, 240)}
         alt=""
         className="h-full w-full object-cover"
         loading="lazy"
+        onError={() => setImgFailed(true)}
       />
     );
   }
