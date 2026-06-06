@@ -1,6 +1,6 @@
 /** Shared chat message styles (DM + group) — grouped bubble layout. */
 export const CHAT_MESSAGE_LIST_CLASS =
-  'min-h-0 flex-1 max-w-full overflow-x-hidden overflow-y-auto overflow-anchor-none overscroll-y-contain blyve-screen-bg px-2 pt-2 pb-10 scroll-pb-10';
+  'min-h-0 flex-1 max-w-full overflow-x-hidden overflow-y-auto overflow-anchor-none overscroll-y-contain blyve-screen-bg px-2 pt-2 pb-3 scroll-pb-3';
 
 /** Gap between the last message bubble and the typing indicator. */
 export const CHAT_TYPING_CLEARANCE_EXTRA_PX = 12;

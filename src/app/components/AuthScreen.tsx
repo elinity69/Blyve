@@ -152,35 +152,6 @@ export function AuthScreen({ onAuthSuccess }: AuthScreenProps) {
 
         {!isSignup && (
           <div className="mt-4">
-            <div className="relative">
-              <div className="absolute inset-0 flex items-center">
-                <div className="w-full border-t border-gray-300 dark:border-white/5"></div>
-              </div>
-              <div className="relative flex justify-center text-sm">
-                <span className="px-2 bg-white dark:bg-[#0A0A0A] text-gray-500 dark:text-gray-400">Or</span>
-              </div>
-            </div>
-
-            <div className="mt-4 space-y-3">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => handleSocialLogin('apple')}
-                disabled={loading}
-                className="w-full border-2 border-gray-300 dark:border-white/5 text-gray-700 dark:text-gray-200 h-12 font-semibold hover:bg-gray-50 dark:hover:bg-[#0A0A0A]/80"
-              >
-                🍎 Continue with Apple
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => handleSocialLogin('google')}
-                disabled={loading}
-                className="w-full border-2 border-gray-300 dark:border-white/5 text-gray-700 dark:text-gray-200 h-12 font-semibold hover:bg-gray-50 dark:hover:bg-[#0A0A0A]/80"
-              >
-                🔍 Continue with Google
-              </Button>
-            </div>
           </div>
         )}
 

@@ -49,6 +49,27 @@ export const FORWARD_EDGE_INSET_RATIO = FORWARD_EDGE_RATIO;
 /** Left-edge inset for swipe-back — ignores taps from the conversation list center. */
 export const BACK_EDGE_INSET_RATIO = 0.18;
 
+/**
+ * Signal that a profile sheet (or any overlay sheet) is currently being dragged
+ * vertically.  NavigationStack checks this flag before starting a horizontal
+ * swipe-back gesture so the two gestures never compete.
+ */
+const SHEET_DRAG_ATTR = 'sheetDragActive' as const;
+
+export function setSheetDragActive(active: boolean) {
+  if (typeof document === 'undefined') return;
+  if (active) {
+    document.documentElement.dataset[SHEET_DRAG_ATTR] = '1';
+  } else {
+    delete document.documentElement.dataset[SHEET_DRAG_ATTR];
+  }
+}
+
+export function isSheetDragActive(): boolean {
+  if (typeof document === 'undefined') return false;
+  return document.documentElement.dataset[SHEET_DRAG_ATTR] === '1';
+}
+
 export function clearNavSwipeLocks(shell?: HTMLDivElement | null) {
   if (typeof document === 'undefined') return;
   delete document.documentElement.dataset.swipeBackLock;

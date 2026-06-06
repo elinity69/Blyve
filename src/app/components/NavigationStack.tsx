@@ -21,6 +21,7 @@ import {
   stackPanelOpenBoxShadow,
   setNavForwardSwipeLock,
   setNavSwipeBackLock,
+  isSheetDragActive,
 } from '../lib/navigationShellStyle';
 
 interface NavigationStackProps {
@@ -613,6 +614,9 @@ export function NavigationStack({
   };
 
   const handleTouchStart = (startX: number, startY: number) => {
+    // If an overlay sheet (e.g. profile card) is currently being dragged
+    // vertically, do not start a horizontal swipe-back gesture.
+    if (isSheetDragActive()) return;
     if (!isForwardPull && enterTouchShieldRef.current) {
       return;
     }
@@ -672,6 +676,11 @@ export function NavigationStack({
 
   const handleTouchMove = (currentX: number, currentY: number) => {
     if (!touchStartedOnEdgeRef.current) return;
+    // Yield to an active sheet drag even if touchstart already registered.
+    if (isSheetDragActive()) {
+      touchStartedOnEdgeRef.current = false;
+      return;
+    }
     if (!isForwardPull && enterTouchShieldRef.current) return;
     if (!isForwardPull && !isTouchInteractionReady()) return;
 

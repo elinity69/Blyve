@@ -3170,6 +3170,15 @@ function ConversationPreviewIcon({ kind }: { kind: ConversationPreviewIcon }) {
   }
 }
 
+/** Minimum horizontal movement (px) on the row itself that signals a swipe, not a tap. */
+const ROW_SWIPE_SLOP_PX = 8;
+
+function isNavSwipeLocked() {
+  if (typeof document === 'undefined') return false;
+  const d = document.documentElement.dataset;
+  return d.swipeBackLock === '1' || d.forwardSwipeLock === '1';
+}
+
 function ConversationListRow({
   conv,
   otherUser,
@@ -3185,6 +3194,7 @@ function ConversationListRow({
   const { t } = useTranslation();
   const { bind: longPress, wasTriggered } = useLongPress(onOpenActions);
   const touchOpenedRef = useRef(false);
+  const pointerDownXRef = useRef<number | null>(null);
 
   const lastMessagePreview = useMemo(
     () =>
@@ -3220,18 +3230,30 @@ function ConversationListRow({
         }
       }}
       onPointerDown={(event) => {
+        if (event.pointerType === 'touch') {
+          pointerDownXRef.current = event.clientX;
+        }
         onPrefetch();
         longPress.onPointerDown(event);
       }}
       onPointerUp={(event) => {
         longPress.onPointerUp(event);
         if (event.pointerType !== 'touch' || wasTriggered()) return;
+        // Suppress open if a navigation swipe is currently active.
+        if (isNavSwipeLocked()) return;
+        // Suppress open if the finger has moved horizontally beyond tap slop —
+        // this catches the forward-swipe window before the lock flag is set.
+        const downX = pointerDownXRef.current;
+        if (downX !== null && Math.abs(event.clientX - downX) > ROW_SWIPE_SLOP_PX) return;
         touchOpenedRef.current = true;
         onOpenChat();
       }}
+      onPointerCancel={(event) => {
+        pointerDownXRef.current = null;
+        longPress.onPointerCancel(event);
+      }}
       onPointerMove={longPress.onPointerMove}
       onPointerLeave={longPress.onPointerLeave}
-      onPointerCancel={longPress.onPointerCancel}
       onClickCapture={longPress.onClickCapture}
       onContextMenu={onOpenActions}
       className={`w-full cursor-pointer transition-colors ${isSelected ? 'bg-gray-100 dark:bg-gray-900/90' : 'hover:bg-gray-50 dark:hover:bg-gray-900'}`}
