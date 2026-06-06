@@ -205,7 +205,7 @@ export function parseXStatus(url: URL): { author: string; statusId: string } | n
   return null;
 }
 
-
+/** Normalise an Instagram share URL to a canonical post/reel shortcode.
  *
  * Accepted shapes:
  *   instagram.com/p/<shortcode>
