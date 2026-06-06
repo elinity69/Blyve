@@ -18,6 +18,8 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 import type { Context } from "npm:hono";
 // @ts-ignore - Deno jsr: imports are valid at runtime
 import { handleLinkPreview } from "./_shared/link-preview-handlers.ts";
+// @ts-ignore - Deno relative import
+import { handleSocialOEmbed } from "./_shared/social-oembed-handlers.ts";
 import { handleUploadConfirm, handleUploadPresign } from "./_shared/upload-handlers.ts";
 
 // HINWEIS: seedData wurde entfernt, damit keine Fake-User mehr erstellt werden!
@@ -92,6 +94,7 @@ app.get("/health", (c) => {
 });
 
 app.get("/link-preview", handleLinkPreview);
+app.get("/social-oembed", handleSocialOEmbed);
 
 // ==================== R2 UPLOADS (presigned; secrets server-side only) ====================
 
@@ -2091,6 +2094,7 @@ function normalizeEdgeRequest(req: Request): Request {
       "/user",
       "/uploads",
       "/link-preview",
+      "/social-oembed",
     ];
     for (const root of roots) {
       if (pathname === root || pathname.startsWith(`${root}/`)) {

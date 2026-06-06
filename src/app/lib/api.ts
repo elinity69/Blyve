@@ -759,6 +759,13 @@ export class ApiClient {
     return payload?.preview ?? null;
   }
 
+  async getSocialOEmbed(provider: 'instagram' | 'tiktok' | 'x', url: string): Promise<unknown> {
+    const q = new URLSearchParams({ provider, url });
+    const payload = await this.edgeRequest(`/social-oembed?${q.toString()}`, { method: 'GET' });
+    if (payload?.ok && payload.data) return payload.data;
+    return null;
+  }
+
   async sendGroupMessage(
     groupId: string,
     content: string,

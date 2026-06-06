@@ -1,27 +1,17 @@
 import { useEffect, useRef, useState } from 'react';
 import { ExternalLink, Instagram } from 'lucide-react';
 import { openExternalLink } from '../../lib/openExternalLink';
-
-/**
- * Instagram's public oEmbed endpoint.
- *
- * api.instagram.com/oembed does NOT require an access_token for public posts
- * and is CORS-enabled.  It returns 400 for private content, protected accounts,
- * or posts where the creator has disabled embedding.
- *
- * Note: graph.facebook.com/v{n}/instagram_oembed requires an access_token and
- * is blocked by CORS for browser requests — we intentionally avoid it.
- */
-const INSTAGRAM_OEMBED = 'https://api.instagram.com/oembed';
-
-const oEmbedCache = new Map<string, OEmbedResult | null>();
-const oEmbedInflight = new Map<string, Promise<OEmbedResult | null>>();
+import { api } from '../../lib/api';
 
 interface OEmbedResult {
   author_name?: string;
   thumbnail_url?: string;
   title?: string;
 }
+
+/** Session-level cache — avoids re-fetching the same URL within the same page session. */
+const oEmbedCache = new Map<string, OEmbedResult | null>();
+const oEmbedInflight = new Map<string, Promise<OEmbedResult | null>>();
 
 async function fetchInstagramOEmbed(postUrl: string): Promise<OEmbedResult | null> {
   if (oEmbedCache.has(postUrl)) return oEmbedCache.get(postUrl) ?? null;
@@ -30,16 +20,9 @@ async function fetchInstagramOEmbed(postUrl: string): Promise<OEmbedResult | nul
 
   const promise = (async (): Promise<OEmbedResult | null> => {
     try {
-      const params = new URLSearchParams({
-        url: postUrl,
-        omitscript: 'true',
-        fields: 'author_name,thumbnail_url,title',
-      });
-      const res = await fetch(`${INSTAGRAM_OEMBED}?${params.toString()}`, { mode: 'cors' });
-      if (!res.ok) return null;
-      const json = (await res.json()) as OEmbedResult & { error?: unknown };
-      if ('error' in json) return null;
-      return json;
+      const data = await api.getSocialOEmbed('instagram', postUrl);
+      if (!data || typeof data !== 'object') return null;
+      return data as OEmbedResult;
     } catch {
       return null;
     }

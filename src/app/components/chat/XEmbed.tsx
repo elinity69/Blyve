@@ -1,18 +1,16 @@
 import { useEffect, useState } from 'react';
 import { ExternalLink } from 'lucide-react';
 import { openExternalLink } from '../../lib/openExternalLink';
-
-/** X/Twitter public oEmbed endpoint — no auth, CORS-enabled. */
-const X_OEMBED = 'https://publish.twitter.com/oembed';
-
-const oEmbedCache = new Map<string, OEmbedResult | null>();
-const oEmbedInflight = new Map<string, Promise<OEmbedResult | null>>();
+import { api } from '../../lib/api';
 
 interface OEmbedResult {
   author_name?: string;
   author_url?: string;
   html?: string;
 }
+
+const oEmbedCache = new Map<string, OEmbedResult | null>();
+const oEmbedInflight = new Map<string, Promise<OEmbedResult | null>>();
 
 async function fetchXOEmbed(tweetUrl: string): Promise<OEmbedResult | null> {
   if (oEmbedCache.has(tweetUrl)) return oEmbedCache.get(tweetUrl) ?? null;
@@ -21,18 +19,9 @@ async function fetchXOEmbed(tweetUrl: string): Promise<OEmbedResult | null> {
 
   const promise = (async (): Promise<OEmbedResult | null> => {
     try {
-      const params = new URLSearchParams({
-        url: tweetUrl,
-        omit_script: 'true',
-        dnt: 'true',
-        theme: 'dark',
-        hide_thread: 'false',
-      });
-      const res = await fetch(`${X_OEMBED}?${params.toString()}`, { mode: 'cors' });
-      if (!res.ok) return null;
-      const json = (await res.json()) as OEmbedResult & { error?: unknown };
-      if ('error' in json) return null;
-      return json;
+      const data = await api.getSocialOEmbed('x', tweetUrl);
+      if (!data || typeof data !== 'object') return null;
+      return data as OEmbedResult;
     } catch {
       return null;
     }

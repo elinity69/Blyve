@@ -1,12 +1,7 @@
 import { useEffect, useState } from 'react';
 import { ExternalLink } from 'lucide-react';
 import { openExternalLink } from '../../lib/openExternalLink';
-
-/** TikTok's public oEmbed probe — no auth required. CORS-enabled. */
-const TIKTOK_OEMBED = 'https://www.tiktok.com/oembed';
-
-const oEmbedCache = new Map<string, OEmbedResult | null>();
-const oEmbedInflight = new Map<string, Promise<OEmbedResult | null>>();
+import { api } from '../../lib/api';
 
 interface OEmbedResult {
   author_name?: string;
@@ -15,6 +10,9 @@ interface OEmbedResult {
   title?: string;
 }
 
+const oEmbedCache = new Map<string, OEmbedResult | null>();
+const oEmbedInflight = new Map<string, Promise<OEmbedResult | null>>();
+
 async function fetchTikTokOEmbed(videoUrl: string): Promise<OEmbedResult | null> {
   if (oEmbedCache.has(videoUrl)) return oEmbedCache.get(videoUrl) ?? null;
   const pending = oEmbedInflight.get(videoUrl);
@@ -22,12 +20,9 @@ async function fetchTikTokOEmbed(videoUrl: string): Promise<OEmbedResult | null>
 
   const promise = (async (): Promise<OEmbedResult | null> => {
     try {
-      const params = new URLSearchParams({ url: videoUrl });
-      const res = await fetch(`${TIKTOK_OEMBED}?${params.toString()}`, { mode: 'cors' });
-      if (!res.ok) return null;
-      const json = (await res.json()) as OEmbedResult & { error?: unknown };
-      if ('error' in json) return null;
-      return json;
+      const data = await api.getSocialOEmbed('tiktok', videoUrl);
+      if (!data || typeof data !== 'object') return null;
+      return data as OEmbedResult;
     } catch {
       return null;
     }
