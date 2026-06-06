@@ -3099,7 +3099,7 @@ function GroupRailIcon({
           background: iconSrc
             ? undefined
             : `linear-gradient(145deg, hsl(${hue}, 42%, 42%), hsl(${hue}, 45%, 32%))`,
-          touchAction: 'manipulation',
+          touchAction: 'none',
           cursor: 'pointer',
         }}
         {...longPressHandlers}
@@ -3229,6 +3229,7 @@ function ConversationListRow({
         touchOpenedRef.current = true;
         onOpenChat();
       }}
+      onPointerMove={longPress.onPointerMove}
       onPointerLeave={longPress.onPointerLeave}
       onPointerCancel={longPress.onPointerCancel}
       onClickCapture={longPress.onClickCapture}
