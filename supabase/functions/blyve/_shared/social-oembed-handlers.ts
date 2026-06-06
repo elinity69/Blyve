@@ -7,7 +7,8 @@ type Provider = "instagram" | "tiktok" | "x";
 
 /** Allowed origin domains per provider — server-side allowlist. */
 const ALLOWED_ORIGINS: Record<Provider, RegExp> = {
-  instagram: /^(?:www\.)?instagram\.com$/i,
+  // l.instagram.com is the iOS share-link redirector; the probe resolves it to instagram.com
+  instagram: /^(?:(?:www\.|l\.)?instagram\.com|instagr\.am)$/i,
   tiktok: /^(?:www\.)?tiktok\.com$/i,
   x: /^(?:(?:www\.)?(?:x|twitter)\.com|mobile\.twitter\.com)$/i,
 };
@@ -31,8 +32,18 @@ function isAllowedUrl(provider: Provider, rawUrl: string): boolean {
  */
 async function probeInstagram(postUrl: string, signal: AbortSignal): Promise<boolean> {
   try {
-    // Extract shortcode from the post URL
-    const match = new URL(postUrl).pathname.match(/^\/(p|reel|reels|tv)\/([A-Za-z0-9_-]+)/);
+    // Resolve iOS l.instagram.com share links to canonical instagram.com URL
+    let resolvedUrl = postUrl;
+    try {
+      const parsed = new URL(postUrl);
+      if (parsed.hostname === "l.instagram.com") {
+        const inner = parsed.searchParams.get("u");
+        if (inner) resolvedUrl = inner;
+      }
+    } catch { /* use original */ }
+
+    // Extract shortcode from the (possibly resolved) post URL
+    const match = new URL(resolvedUrl).pathname.match(/^\/(p|reel|reels|tv)\/([A-Za-z0-9_-]+)/);
     if (!match?.[2]) return false;
     const shortcode = match[2];
     const embedUrl = `https://www.instagram.com/p/${shortcode}/embed/`;

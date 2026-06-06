@@ -182,9 +182,10 @@ export function InstagramEmbed({ postId, url, inBubble = false }: InstagramEmbed
             maxWidth: 540,
             margin: '0 auto',
             display: 'block',
+            // iOS Safari: allow the embed content to scroll inside the iframe
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            WebkitOverflowScrolling: 'touch' as any,
           }}
-          scrolling="no"
-          frameBorder={0}
           allow="encrypted-media"
           onLoad={() => {
             iframeLoadedRef.current = true;

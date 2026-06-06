@@ -205,6 +205,30 @@ export function parseXStatus(url: URL): { author: string; statusId: string } | n
   return null;
 }
 
+/**
+ * Resolve iOS/mobile Instagram share redirect links to a canonical instagram.com URL.
+ *
+ * iOS Instagram app shares produce:
+ *   https://l.instagram.com/?u=https%3A%2F%2Fwww.instagram.com%2Freel%2FXXX%2F&e=...
+ *
+ * The real URL is in the `u` query parameter. We decode it here so the rest
+ * of the parser always works on a clean instagram.com URL.
+ */
+function resolveInstagramRedirect(url: URL): URL {
+  const host = url.hostname.replace(/^www\./, '').toLowerCase();
+  if (host === 'l.instagram.com') {
+    const inner = url.searchParams.get('u');
+    if (inner) {
+      try {
+        return new URL(inner);
+      } catch {
+        // fall through
+      }
+    }
+  }
+  return url;
+}
+
 /** Normalise an Instagram share URL to a canonical post/reel shortcode.
  *
  * Accepted shapes:
@@ -213,23 +237,25 @@ export function parseXStatus(url: URL): { author: string; statusId: string } | n
  *   instagram.com/reels/<shortcode>
  *   instagram.com/tv/<shortcode>       (IGTV legacy)
  *   instagr.am/p/<shortcode>           (short-link redirect)
+ *   l.instagram.com/?u=<encoded-url>   (iOS app share link)
  *   instagram.com/stories/<user>/<id>  (stories — not embeddable, return null)
  */
 export function parseInstagramPostId(url: URL): string | null {
-  const host = url.hostname.replace(/^www\./, '').toLowerCase();
+  const resolved = resolveInstagramRedirect(url);
+  const host = resolved.hostname.replace(/^www\./, '').toLowerCase();
   if (host !== 'instagram.com' && host !== 'instagr.am') return null;
 
   const EMBEDDABLE = /^\/(p|reel|reels|tv)\//;
-  const match = url.pathname.match(/^\/(p|reel|reels|tv)\/([A-Za-z0-9_-]+)/);
+  const match = resolved.pathname.match(/^\/(p|reel|reels|tv)\/([A-Za-z0-9_-]+)/);
   if (match?.[2]) {
     // Validate shortcode: at least 8 chars, only base64url characters
     const shortcode = match[2];
     if (/^[A-Za-z0-9_-]{8,}$/.test(shortcode)) return shortcode;
   }
   // Stories are intentionally not embeddable
-  if (/^\/stories\//.test(url.pathname)) return null;
+  if (/^\/stories\//.test(resolved.pathname)) return null;
   // Profile pages, explore, etc.
-  if (!EMBEDDABLE.test(url.pathname)) return null;
+  if (!EMBEDDABLE.test(resolved.pathname)) return null;
   return null;
 }
 
@@ -237,7 +263,7 @@ export function isInstagramUrl(url: string): boolean {
   try {
     const parsed = new URL(url);
     const host = parsed.hostname.replace(/^www\./, '').toLowerCase();
-    return host === 'instagram.com' || host === 'instagr.am';
+    return host === 'instagram.com' || host === 'instagr.am' || host === 'l.instagram.com';
   } catch {
     return false;
   }
@@ -280,7 +306,9 @@ export function parseEmbed(url: string): ParsedEmbed | null {
 
     const instagramPostId = parseInstagramPostId(parsed);
     if (instagramPostId) {
-      return { url, kind: 'instagram', instagramPostId };
+      // Normalise l.instagram.com share links to canonical instagram.com URL
+      const canonicalUrl = resolveInstagramRedirect(parsed).href;
+      return { url: canonicalUrl, kind: 'instagram', instagramPostId };
     }
 
     const tiktok = parseTikTokVideo(parsed);
