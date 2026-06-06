@@ -586,7 +586,7 @@ function AppContent({ onUserIdChange }: AppContentProps = {}) {
 
   if (loading) {
     return (
-      <div className="h-screen bg-gradient-to-br from-blyve to-blyve-hover flex items-center justify-center">
+      <div className="h-screen bg-black flex items-center justify-center">
         <div className="text-white text-xl">Loading...</div>
       </div>
     );
