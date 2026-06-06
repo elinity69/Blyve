@@ -3,9 +3,10 @@ import { ExternalLink } from 'lucide-react';
 import { openExternalLink } from '../../lib/openExternalLink';
 import { api } from '../../lib/api';
 
+// ─── oEmbed probe ──────────────────────────────────────────────────────────────
+
 interface OEmbedResult {
   author_name?: string;
-  author_url?: string;
   thumbnail_url?: string;
   title?: string;
 }
@@ -35,21 +36,15 @@ async function fetchTikTokOEmbed(videoUrl: string): Promise<OEmbedResult | null>
   return result;
 }
 
-/** TikTok's official v2 embed iframe URL — stable, no script injection needed. */
 function tiktokEmbedUrl(videoId: string): string {
   return `https://www.tiktok.com/embed/v2/${videoId}?lang=en-US&referrer=https%3A%2F%2Fblyve.app`;
 }
 
-// ─── TikTok brand SVG (official mark, inline to avoid external asset dep) ────
+// ─── TikTok brand icon ─────────────────────────────────────────────────────────
 
 function TikTokIcon({ className }: { className?: string }) {
   return (
-    <svg
-      viewBox="0 0 24 24"
-      fill="currentColor"
-      aria-hidden="true"
-      className={className}
-    >
+    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" className={className}>
       <path d="M19.59 6.69a4.83 4.83 0 0 1-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 0 1-2.88 2.5 2.89 2.89 0 0 1-2.89-2.89 2.89 2.89 0 0 1 2.89-2.89c.28 0 .54.04.79.1V9.01a6.33 6.33 0 0 0-.79-.05 6.34 6.34 0 0 0-6.34 6.34 6.34 6.34 0 0 0 6.34 6.34 6.34 6.34 0 0 0 6.33-6.34V8.69a8.27 8.27 0 0 0 4.83 1.54V6.78a4.85 4.85 0 0 1-1.06-.09z" />
     </svg>
   );
@@ -88,7 +83,7 @@ function TikTokFallbackCard({ url, inBubble }: { url: string; inBubble: boolean 
   );
 }
 
-// ─── Loading skeleton ──────────────────────────────────────────────────────────
+// ─── Skeleton ──────────────────────────────────────────────────────────────────
 
 function TikTokSkeleton({ inBubble }: { inBubble: boolean }) {
   return (
@@ -97,16 +92,14 @@ function TikTokSkeleton({ inBubble }: { inBubble: boolean }) {
         inBubble ? '' : 'border border-black/10 dark:border-white/10'
       }`}
     >
-      <div className="animate-pulse bg-white dark:bg-[#1a1a1a]">
-        {/* Narrow portrait aspect typical of TikTok embeds */}
-        <div className="relative mx-auto" style={{ maxWidth: 325, aspectRatio: '9/16' }}>
-          <div className="h-full w-full bg-black/5 dark:bg-white/5" />
-          {/* Fake side controls */}
-          <div className="absolute bottom-24 right-3 flex flex-col gap-4">
-            {[0, 1, 2].map((i) => (
-              <div key={i} className="h-8 w-8 rounded-full bg-black/10 dark:bg-white/10" />
-            ))}
-          </div>
+      <div
+        className="relative mx-auto animate-pulse bg-[#161823]"
+        style={{ maxWidth: 325, aspectRatio: '9/16', minHeight: 580 }}
+      >
+        <div className="absolute bottom-24 right-3 flex flex-col gap-4">
+          {[0, 1, 2].map((i) => (
+            <div key={i} className="h-8 w-8 rounded-full bg-white/10" />
+          ))}
         </div>
       </div>
     </div>
@@ -124,16 +117,13 @@ interface TikTokEmbedProps {
 }
 
 /**
- * TikTokEmbed — renders TikTok's official v2 embed iframe for public videos.
+ * TikTokEmbed — renders TikTok's official v2 embed iframe.
  *
  * Flow:
- *  1. oEmbed probe (tiktok.com/oembed) verifies the video is public and embeddable.
- *  2. On success → render https://www.tiktok.com/embed/v2/<videoId> in an iframe.
- *     The TikTok embed JS runs inside the iframe; we never inject it into the host page.
- *  3. On probe failure → TikTokFallbackCard (branded link-out).
- *  4. iframe onError → fall back gracefully.
- *
- * TikTok embeds are portrait 9:16 with a max width of 325px (TikTok's own constraint).
+ *  1. oEmbed probe via /social-oembed edge function.
+ *     Returns null for private/deleted → fallback card.
+ *  2. On success → render tiktok.com/embed/v2/<videoId>.
+ *  3. iframe onError → fallback card.
  */
 export function TikTokEmbed({ videoId, url, inBubble = false }: TikTokEmbedProps) {
   const [state, setState] = useState<EmbedState>(() => {
@@ -163,11 +153,6 @@ export function TikTokEmbed({ videoId, url, inBubble = false }: TikTokEmbedProps
       onClick={(e) => e.stopPropagation()}
       onMouseDown={(e) => e.stopPropagation()}
     >
-      {/*
-       * TikTok's own embed enforces max-width: 605px but the player itself is 325px wide.
-       * We constrain to 325px and use a 9:16 aspect ratio container so there's no
-       * layout jump as the iframe loads its own internal sizing.
-       */}
       <div
         className="relative mx-auto w-full"
         style={{ maxWidth: 325, aspectRatio: '9/16', minHeight: 580 }}

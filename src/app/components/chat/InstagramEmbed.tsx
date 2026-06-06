@@ -1,7 +1,9 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ExternalLink, Instagram } from 'lucide-react';
 import { openExternalLink } from '../../lib/openExternalLink';
 import { api } from '../../lib/api';
+
+// ─── oEmbed probe (server-proxied, no CORS) ────────────────────────────────────
 
 interface OEmbedResult {
   author_name?: string;
@@ -9,7 +11,6 @@ interface OEmbedResult {
   title?: string;
 }
 
-/** Session-level cache — avoids re-fetching the same URL within the same page session. */
 const oEmbedCache = new Map<string, OEmbedResult | null>();
 const oEmbedInflight = new Map<string, Promise<OEmbedResult | null>>();
 
@@ -35,7 +36,6 @@ async function fetchInstagramOEmbed(postUrl: string): Promise<OEmbedResult | nul
   return result;
 }
 
-/** Canonical embed URL for a public Instagram post/reel (no script required). */
 function instagramEmbedUrl(postId: string): string {
   return `https://www.instagram.com/p/${postId}/embed/captioned/?cr=1&v=14&rd=${encodeURIComponent('https://blyve.app')}`;
 }
@@ -73,7 +73,7 @@ function InstagramFallbackCard({ url, inBubble }: { url: string; inBubble: boole
   );
 }
 
-// ─── Loading skeleton ──────────────────────────────────────────────────────────
+// ─── Skeleton ──────────────────────────────────────────────────────────────────
 
 function InstagramSkeleton({ inBubble }: { inBubble: boolean }) {
   return (
@@ -112,16 +112,13 @@ interface InstagramEmbedProps {
 }
 
 /**
- * InstagramEmbed — renders Instagram's official captioned embed iframe for
- * public posts and reels.
+ * InstagramEmbed — renders Instagram's official captioned embed iframe.
  *
  * Flow:
- *  1. oEmbed probe (api.instagram.com/oembed, no token, CORS-enabled) confirms
- *     the post is public and embeddable.
- *  2. On success → render https://www.instagram.com/p/<shortcode>/embed/captioned/
- *     directly as an iframe.  No embed.js injection needed.
- *  3. On probe failure (private, disabled, error) → InstagramFallbackCard.
- *  4. iframe onError → InstagramFallbackCard.
+ *  1. oEmbed probe via /social-oembed edge function (no CORS issues).
+ *     Returns null for private / disabled / deleted posts → fallback card.
+ *  2. On success → render instagram.com/p/<id>/embed/captioned/ iframe.
+ *  3. iframe onError → fallback card.
  */
 export function InstagramEmbed({ postId, url, inBubble = false }: InstagramEmbedProps) {
   const [state, setState] = useState<EmbedState>(() => {
@@ -130,7 +127,6 @@ export function InstagramEmbed({ postId, url, inBubble = false }: InstagramEmbed
     if (cached !== undefined) return 'ready';
     return 'loading';
   });
-  const iframeRef = useRef<HTMLIFrameElement>(null);
 
   useEffect(() => {
     if (state !== 'loading') return;
@@ -152,15 +148,8 @@ export function InstagramEmbed({ postId, url, inBubble = false }: InstagramEmbed
       onClick={(e) => e.stopPropagation()}
       onMouseDown={(e) => e.stopPropagation()}
     >
-      {/*
-       * Instagram's embed iframe self-sizes via postMessage — we cannot read
-       * that cross-origin, so we set a stable min-height that covers the smallest
-       * possible embed (caption-only post ≈ 400 px) and allow natural growth.
-       * max-width 540 px matches Instagram's own embed constraint.
-       */}
       <div className="relative w-full" style={{ minHeight: 400 }}>
         <iframe
-          ref={iframeRef}
           src={instagramEmbedUrl(postId)}
           title="Instagram post"
           className="block w-full border-0"
