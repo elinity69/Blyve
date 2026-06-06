@@ -7,6 +7,9 @@ import { EmbedContextMenuWrapper } from './EmbedContextMenu';
 import { EmbedFavoriteButton } from './EmbedFavoriteButton';
 import { YouTubeEmbed } from './YouTubeEmbed';
 import { SpotifyEmbed } from './SpotifyEmbed';
+import { InstagramEmbed } from './InstagramEmbed';
+import { TikTokEmbed } from './TikTokEmbed';
+import { XEmbed } from './XEmbed';
 import {
   MessageAudioEmbed,
   MessageFileEmbed,
@@ -209,6 +212,32 @@ function MessageEmbedItem({
       content =
         embed.spotifyType && embed.spotifyId ? (
           <SpotifyEmbed type={embed.spotifyType} id={embed.spotifyId} inBubble={inBubble} />
+        ) : null;
+      break;
+    case 'instagram':
+      content = embed.instagramPostId ? (
+        <InstagramEmbed postId={embed.instagramPostId} url={embed.url} inBubble={inBubble} />
+      ) : null;
+      break;
+    case 'tiktok':
+      content =
+        embed.tiktokVideoId && embed.tiktokAuthor ? (
+          <TikTokEmbed
+            videoId={embed.tiktokVideoId}
+            url={embed.url}
+            inBubble={inBubble}
+          />
+        ) : null;
+      break;
+    case 'x':
+      content =
+        embed.xStatusId && embed.xAuthor ? (
+          <XEmbed
+            statusId={embed.xStatusId}
+            author={embed.xAuthor}
+            url={embed.url}
+            inBubble={inBubble}
+          />
         ) : null;
       break;
     case 'link':

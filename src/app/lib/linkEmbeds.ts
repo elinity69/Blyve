@@ -4,6 +4,9 @@ export type EmbedKind =
   | 'spotify'
   | 'tenor'
   | 'giphy'
+  | 'instagram'
+  | 'tiktok'
+  | 'x'
   | 'video'
   | 'audio'
   | 'file'
@@ -18,6 +21,11 @@ export interface ParsedEmbed {
   spotifyId?: string;
   giphyId?: string;
   tenorId?: string;
+  instagramPostId?: string;
+  tiktokVideoId?: string;
+  tiktokAuthor?: string;
+  xStatusId?: string;
+  xAuthor?: string;
 }
 
 export interface LinkPreviewData {
@@ -153,6 +161,88 @@ function resolveImageUrl(url: URL): string {
   return url.toString();
 }
 
+/** Parse a TikTok video URL into author + video ID.
+ *
+ * Accepted shapes:
+ *   tiktok.com/@<user>/video/<id>
+ *   tiktok.com/@<user>/video/<id>?...
+ *   vm.tiktok.com/<shortcode>            — short-links: no video ID, return null
+ *     (vm.tiktok.com redirects to the full URL; short-links cannot be embedded
+ *     directly because the video ID is only known after the redirect resolves,
+ *     which requires a server-side follow. We treat them as generic link previews.)
+ */
+export function parseTikTokVideo(url: URL): { author: string; videoId: string } | null {
+  const host = url.hostname.replace(/^www\./, '').toLowerCase();
+  if (host !== 'tiktok.com') return null;
+
+  // /@<author>/video/<id>
+  const match = url.pathname.match(/^\/@([^/]+)\/video\/(\d+)/);
+  if (match?.[1] && match[2]) {
+    return { author: match[1], videoId: match[2] };
+  }
+  return null;
+}
+
+/** Parse an X (formerly Twitter) status URL.
+ *
+ * Accepted shapes:
+ *   x.com/<user>/status/<id>
+ *   twitter.com/<user>/status/<id>
+ *   mobile.twitter.com/<user>/status/<id>
+ *   t.co/<shortcode>   — redirects; we cannot resolve them client-side, treat as link
+ */
+export function parseXStatus(url: URL): { author: string; statusId: string } | null {
+  const host = url.hostname.replace(/^www\./, '').toLowerCase();
+  const isX = host === 'x.com';
+  const isTwitter = host === 'twitter.com' || host === 'mobile.twitter.com';
+  if (!isX && !isTwitter) return null;
+
+  // /<user>/status/<id>
+  const match = url.pathname.match(/^\/([^/]+)\/status\/(\d+)/);
+  if (match?.[1] && match[2]) {
+    return { author: match[1], statusId: match[2] };
+  }
+  return null;
+}
+
+
+ *
+ * Accepted shapes:
+ *   instagram.com/p/<shortcode>
+ *   instagram.com/reel/<shortcode>
+ *   instagram.com/reels/<shortcode>
+ *   instagram.com/tv/<shortcode>       (IGTV legacy)
+ *   instagr.am/p/<shortcode>           (short-link redirect)
+ *   instagram.com/stories/<user>/<id>  (stories — not embeddable, return null)
+ */
+export function parseInstagramPostId(url: URL): string | null {
+  const host = url.hostname.replace(/^www\./, '').toLowerCase();
+  if (host !== 'instagram.com' && host !== 'instagr.am') return null;
+
+  const EMBEDDABLE = /^\/(p|reel|reels|tv)\//;
+  const match = url.pathname.match(/^\/(p|reel|reels|tv)\/([A-Za-z0-9_-]+)/);
+  if (match?.[2]) {
+    // Validate shortcode: at least 8 chars, only base64url characters
+    const shortcode = match[2];
+    if (/^[A-Za-z0-9_-]{8,}$/.test(shortcode)) return shortcode;
+  }
+  // Stories are intentionally not embeddable
+  if (/^\/stories\//.test(url.pathname)) return null;
+  // Profile pages, explore, etc.
+  if (!EMBEDDABLE.test(url.pathname)) return null;
+  return null;
+}
+
+export function isInstagramUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    const host = parsed.hostname.replace(/^www\./, '').toLowerCase();
+    return host === 'instagram.com' || host === 'instagr.am';
+  } catch {
+    return false;
+  }
+}
+
 export function parseEmbed(url: string): ParsedEmbed | null {
   try {
     const parsed = new URL(url);
@@ -188,6 +278,21 @@ export function parseEmbed(url: string): ParsedEmbed | null {
       };
     }
 
+    const instagramPostId = parseInstagramPostId(parsed);
+    if (instagramPostId) {
+      return { url, kind: 'instagram', instagramPostId };
+    }
+
+    const tiktok = parseTikTokVideo(parsed);
+    if (tiktok) {
+      return { url, kind: 'tiktok', tiktokVideoId: tiktok.videoId, tiktokAuthor: tiktok.author };
+    }
+
+    const xStatus = parseXStatus(parsed);
+    if (xStatus) {
+      return { url, kind: 'x', xStatusId: xStatus.statusId, xAuthor: xStatus.author };
+    }
+
     if (isDirectImageUrl(parsed)) {
       return { url, kind: 'image', imageUrl: resolveImageUrl(parsed) };
     }
@@ -215,6 +320,9 @@ const EMBED_KIND_PRIORITY: Record<EmbedKind, number> = {
   spotify: 7,
   giphy: 6,
   tenor: 5,
+  instagram: 5,
+  tiktok: 5,
+  x: 5,
   video: 4,
   audio: 3,
   image: 2,
