@@ -284,7 +284,7 @@ export function FloatingCallWidget({
       surface.style.top = '0px';
       surface.style.width = `${window.innerWidth}px`;
       surface.style.height = `${window.innerHeight}px`;
-      surface.style.zIndex = '9998';
+      surface.style.zIndex = '9999';
       surface.style.pointerEvents = 'auto';
       return;
     }
@@ -478,13 +478,10 @@ export function FloatingCallWidget({
 
   const live = connectionState === 'connected';
 
+  // Avatar overlay for PiP mode only (fullscreen uses fullscreenOverlay below).
   const avatarOverlay =
-    !showVideoSurface ? (
-      <div
-        className={`pointer-events-none absolute inset-0 flex items-center justify-center gap-1.5 bg-[#0b0b0b] p-2 ${
-          isFullscreen ? 'z-[10001]' : 'z-[25]'
-        }`}
-      >
+    !isFullscreen && !showVideoSurface ? (
+      <div className="pointer-events-none absolute inset-0 z-[25] flex items-center justify-center gap-1.5 bg-[#0b0b0b] p-2">
         {displayParticipants.length > 0 ? (
           <div className="flex items-center justify-center gap-1.5">
             {displayParticipants.slice(0, 2).map((participant) => {
@@ -497,13 +494,7 @@ export function FloatingCallWidget({
                   <PipAvatar
                     participant={participant}
                     isSpeaking={Boolean(isSpeaking)}
-                    sizeClass={
-                      isFullscreen
-                        ? 'h-20 w-20 sm:h-24 sm:w-24'
-                        : solo
-                          ? 'h-16 w-16'
-                          : 'h-9 w-9'
-                    }
+                    sizeClass={solo ? 'h-16 w-16' : 'h-9 w-9'}
                     onOpenVolumeMenu={
                       participant.isLocal
                         ? undefined
@@ -517,6 +508,64 @@ export function FloatingCallWidget({
         ) : null}
       </div>
     ) : null;
+
+  // Fullscreen overlay — rendered INSIDE jitsiSurface via the overlay prop so everything
+  // lives in a single stacking context (no cross-context z-index confusion).
+  const fullscreenOverlay = isFullscreen ? (
+    <>
+      {!showVideoSurface && (
+        <div className="pointer-events-none absolute inset-0 z-[1] flex items-center justify-center bg-[#0b0b0b]">
+          {displayParticipants.length > 0 && (
+            <div className="flex items-center justify-center gap-1.5">
+              {displayParticipants.slice(0, 2).map((participant) => {
+                const isSpeaking =
+                  speakingParticipantId === participant.id ||
+                  speakingParticipantId === participant.jitsiParticipantId;
+                return (
+                  <div key={participant.id} data-pip-avatar>
+                    <PipAvatar
+                      participant={participant}
+                      isSpeaking={Boolean(isSpeaking)}
+                      sizeClass="h-20 w-20 sm:h-24 sm:w-24"
+                      onOpenVolumeMenu={
+                        participant.isLocal
+                          ? undefined
+                          : (event) => openPipVolumeMenu(participant, event)
+                      }
+                    />
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+      <div
+        data-call-controls
+        className="pointer-events-none absolute inset-x-0 bottom-6 z-[2] flex justify-center px-4"
+      >
+        <CallControlBar
+          live={live}
+          isMuted={isMuted}
+          isCameraEnabled={isCameraEnabled}
+          isScreenShareEnabled={isScreenShareEnabled}
+          mediaActive={hasStream}
+          onToggleMute={onToggleMute}
+          onToggleCamera={onToggleCamera}
+          onToggleScreenShare={onToggleScreenShare}
+          onHangUp={onHangUp}
+        />
+      </div>
+      <button
+        type="button"
+        onClick={onMinimizeFullscreen}
+        className="absolute right-4 top-4 z-[2] flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-[#1e1f22]/95 text-white shadow-lg transition-colors hover:bg-[#2f3136]"
+        aria-label={t('call.minimizeVideo')}
+      >
+        <Minimize2 className="h-4 w-4" />
+      </button>
+    </>
+  ) : null;
 
   const jitsiMeetingProps = {
     sessionId,
@@ -532,7 +581,7 @@ export function FloatingCallWidget({
     isMuted,
     isCameraEnabled,
     isScreenShareEnabled,
-    overlay: null,
+    overlay: fullscreenOverlay,
     onRemoteStreamActiveChange: setRemoteStreamActive,
     onExpandedChange: isEmbedded ? onExpandedChange : undefined,
     onMinimizeToPip: isEmbedded ? onMinimizeToPip : undefined,
@@ -574,107 +623,62 @@ export function FloatingCallWidget({
       >
         <PersistentJitsiMeeting {...jitsiMeetingProps} />
       </div>
-      {showPipChrome ? (
+      {/* PiP chrome — only rendered in pip mode; fullscreen UI lives inside jitsiSurface via overlay prop */}
+      {showPipChrome && !isFullscreen ? (
         <div
-        className={isFullscreen ? 'fixed inset-0 z-[9999] select-none' : 'group/pip fixed z-[135] select-none'}
-          style={
-            isFullscreen
-              ? undefined
-              : { left: position.x, top: position.y, width: PIP_SIZE, height: PIP_SIZE }
-          }
-          onMouseEnter={!isFullscreen ? () => setPipHovered(true) : undefined}
-          onMouseLeave={!isFullscreen ? () => { setPipHovered(false); } : undefined}
-          onClick={
-            !isFullscreen
-              ? (event) => {
-                  if ((event.target as HTMLElement).closest('button, [data-call-controls], [data-pip-avatar]')) return;
-                  setPipControlsVisible((v) => !v);
-                }
-              : undefined
-          }
+          className="group/pip fixed z-[135] select-none"
+          style={{ left: position.x, top: position.y, width: PIP_SIZE, height: PIP_SIZE }}
+          onMouseEnter={() => setPipHovered(true)}
+          onMouseLeave={() => setPipHovered(false)}
+          onClick={(event) => {
+            if ((event.target as HTMLElement).closest('button, [data-call-controls], [data-pip-avatar]')) return;
+            setPipControlsVisible((v) => !v);
+          }}
         >
           <div
             ref={pipContentRef}
-            className={
-              isFullscreen
-                ? 'relative h-full w-full'
-                : 'relative h-full w-full overflow-hidden rounded-xl border border-white/15 bg-transparent shadow-2xl'
-            }
+            className="relative h-full w-full overflow-hidden rounded-xl border border-white/15 bg-transparent shadow-2xl"
           />
           {avatarOverlay}
-          {/* Controls bar rendered HERE inside chrome so it is always above the drag handle and jitsiSurface */}
-          {!isFullscreen ? (
-            <div
-              data-call-controls
-              className={`pointer-events-none absolute inset-x-0 bottom-1 z-[50] flex justify-center px-1 transition-opacity ${
-                pipControlsVisible || pipHovered || isMobile ? 'opacity-100' : 'opacity-0'
-              }`}
-            >
-              <CallControlBar
-                live={live}
-                isMuted={isMuted}
-                isCameraEnabled={isCameraEnabled}
-                isScreenShareEnabled={isScreenShareEnabled}
-                mediaActive={hasStream}
-                onToggleMute={onToggleMute}
-                onToggleCamera={onToggleCamera}
-                onToggleScreenShare={onToggleScreenShare}
-                onHangUp={onHangUp}
-                compact
-              />
-            </div>
-          ) : (
-            <div
-              data-call-controls
-              className="pointer-events-none absolute inset-x-0 bottom-6 z-[10002] flex justify-center px-4"
-            >
-              <CallControlBar
-                live={live}
-                isMuted={isMuted}
-                isCameraEnabled={isCameraEnabled}
-                isScreenShareEnabled={isScreenShareEnabled}
-                mediaActive={hasStream}
-                onToggleMute={onToggleMute}
-                onToggleCamera={onToggleCamera}
-                onToggleScreenShare={onToggleScreenShare}
-                onHangUp={onHangUp}
-              />
-            </div>
-          )}
-          {!isFullscreen ? (
-            <div
-              data-pip-drag-handle
-              className="absolute inset-0 z-[35] cursor-grab touch-manipulation active:cursor-grabbing"
-              onPointerDown={handleDragPointerDown}
-              onPointerMove={handleDragPointerMove}
-              onPointerUp={handleDragPointerUp}
-              onPointerCancel={handleDragPointerUp}
-              onDoubleClick={handlePipDoubleClick}
+          <div
+            data-call-controls
+            className={`pointer-events-none absolute inset-x-0 bottom-1 z-[50] flex justify-center px-1 transition-opacity ${
+              pipControlsVisible || pipHovered || isMobile ? 'opacity-100' : 'opacity-0'
+            }`}
+          >
+            <CallControlBar
+              live={live}
+              isMuted={isMuted}
+              isCameraEnabled={isCameraEnabled}
+              isScreenShareEnabled={isScreenShareEnabled}
+              mediaActive={hasStream}
+              onToggleMute={onToggleMute}
+              onToggleCamera={onToggleCamera}
+              onToggleScreenShare={onToggleScreenShare}
+              onHangUp={onHangUp}
+              compact
             />
-          ) : null}
-          {!isFullscreen ? (
-            <button
-              type="button"
-              onClick={(event) => {
-                event.stopPropagation();
-                onClosePip();
-              }}
-              className="absolute right-1 top-1 z-[40] flex h-6 w-6 items-center justify-center rounded-full border border-white/10 bg-black/70 text-white shadow-lg transition-colors hover:bg-black/90"
-              aria-label={t('groups.modalClose', { defaultValue: 'Close' })}
-            >
-              <X className="h-3.5 w-3.5" />
-            </button>
-          ) : null}
-          {isFullscreen ? (
-            <button
-              type="button"
-              onClick={onMinimizeFullscreen}
-              className="fixed right-4 top-4 z-[10000] flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-[#1e1f22]/95 text-white shadow-lg transition-colors hover:bg-[#2f3136]"
-              aria-label={t('call.minimizeVideo')}
-            >
-              <Minimize2 className="h-4 w-4" />
-            </button>
-          ) : null}
+          </div>
+          <div
+            data-pip-drag-handle
+            className="absolute inset-0 z-[35] cursor-grab touch-manipulation active:cursor-grabbing"
+            onPointerDown={handleDragPointerDown}
+            onPointerMove={handleDragPointerMove}
+            onPointerUp={handleDragPointerUp}
+            onPointerCancel={handleDragPointerUp}
+            onDoubleClick={handlePipDoubleClick}
+          />
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              onClosePip();
+            }}
+            className="absolute right-1 top-1 z-[40] flex h-6 w-6 items-center justify-center rounded-full border border-white/10 bg-black/70 text-white shadow-lg transition-colors hover:bg-black/90"
+            aria-label={t('groups.modalClose', { defaultValue: 'Close' })}
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
         </div>
       ) : null}
       {volumeMenu ? (
