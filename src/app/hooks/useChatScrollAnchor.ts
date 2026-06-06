@@ -17,11 +17,14 @@ export type ChatScrollAnchorRef = (node: HTMLElement | null) => void;
 /**
  * Keeps the message list pinned to the bottom while the composer / keyboard moves:
  * instant sync on resize, smooth scroll when the composer receives focus.
+ *
+ * Also observes endMarkerRef so that when child content grows (e.g. reaction bars
+ * loading after initial render), the scroll position is corrected automatically.
  */
 export function useChatScrollAnchor(
   containerRef: RefObject<HTMLElement | null>,
   enabled = true,
-  _endMarkerRef?: RefObject<HTMLElement | null>
+  endMarkerRef?: RefObject<HTMLElement | null>
 ): ChatScrollAnchorRef {
   const [containerEl, setContainerEl] = useState<HTMLElement | null>(null);
   const pinnedRef = useRef(true);
@@ -110,11 +113,24 @@ export function useChatScrollAnchor(
     const resizeObserver = new ResizeObserver(() => {
       scheduleResizeSync();
     });
+    // Observe the container itself (keyboard / window resize).
     resizeObserver.observe(containerEl);
 
+    // Observe the composer so focus / keyboard expansion also syncs.
     const composerEl = containerEl.parentElement?.querySelector('[data-chat-composer]');
     if (composerEl instanceof HTMLElement) {
       resizeObserver.observe(composerEl);
+    }
+
+    // Observe the end-marker element. Because ResizeObserver fires when an element's
+    // own size changes, and the end-marker is a zero-height div, we instead watch its
+    // parent (the messages list inner wrapper) if available, or fall back to the
+    // container's first child. The real goal is to catch scrollHeight growth from
+    // child content (e.g. reaction bars loading async after mount).
+    const endMarkerEl = endMarkerRef?.current;
+    const contentWrapper = endMarkerEl?.parentElement ?? containerEl.firstElementChild;
+    if (contentWrapper instanceof HTMLElement && contentWrapper !== containerEl) {
+      resizeObserver.observe(contentWrapper);
     }
 
     const unsubscribeViewport = subscribeMobileViewportFrame(() => {
@@ -162,7 +178,7 @@ export function useChatScrollAnchor(
         resizeRafRef.current = null;
       }
     };
-  }, [enabled, containerEl]);
+  }, [enabled, containerEl, endMarkerRef]);
 
   return assignContainerRef;
 }

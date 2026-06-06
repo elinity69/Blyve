@@ -48,11 +48,10 @@ export function MessageReactionBar({ summaries, isMe, onToggle }: MessageReactio
           {summaries.map((s) => (
             <motion.div
               key={s.emoji}
-              layout
-              initial={{ scale: 0.5, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.5, opacity: 0 }}
-              transition={{ type: 'spring', stiffness: 400, damping: 22 }}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.15 }}
             >
               <ReactionPill summary={s} onToggle={onToggle} />
             </motion.div>
