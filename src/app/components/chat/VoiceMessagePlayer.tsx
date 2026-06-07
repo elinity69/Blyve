@@ -181,10 +181,10 @@ export function VoiceMessagePlayer({ src, isMe = false }: VoiceMessagePlayerProp
     audio.addEventListener('ended', onEnded);
     audio.addEventListener('error', onError);
 
-    // Set crossOrigin before src so the browser does not cache a non-CORS
-    // response — matches what audioDuration.ts does to avoid cache mismatches
-    // that silently break playback on some CORS-restricted CDN configs (R2).
-    audio.crossOrigin = 'anonymous';
+    // Do NOT set crossOrigin — R2 does not return CORS headers for range
+    // requests, so setting crossOrigin='anonymous' triggers a CORS preflight
+    // that always fails.  Audio/video elements work fine without it because
+    // media loads bypass CORS by default (same as <img>).
     audio.src = src;
     audio.preload = 'metadata';
     audio.load();

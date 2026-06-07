@@ -110,9 +110,11 @@ export const navigationStackShellStyle = {
   top: `var(${MOBILE_VV_CSS.offsetTop}, 0px)`,
   left: 0,
   right: 0,
-  bottom: 0,
+  // Stop at the bottom navigation bar's top edge — the nav bar sits below this.
+  // MOBILE_BOTTOM_NAV_HEIGHT_PX (64px) matches the `h-12` tab row + generous padding.
+  bottom: `${MOBILE_BOTTOM_NAV_HEIGHT_PX}px`,
   boxSizing: 'border-box' as const,
-  paddingBottom: `var(${MOBILE_VV_CSS.bottomInset}, 0px)`,
+  paddingBottom: 0,
   zIndex: 55,
   backgroundColor: 'var(--color-background, #0d0d0d)',
   boxShadow: '-5px 0 20px rgba(0,0,0,0.15)',

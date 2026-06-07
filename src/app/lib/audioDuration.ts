@@ -14,10 +14,10 @@ function probeWithAudioElement(src: string): Promise<number> {
   return new Promise((resolve) => {
     const audio = document.createElement('audio');
     audio.preload = 'auto';
-    // crossOrigin must be set before src to avoid a second preflight on CORS
-    // resources (R2 buckets); omitting it causes Safari to cache a no-CORS
-    // response and refuse subsequent credentialed requests.
-    audio.crossOrigin = 'anonymous';
+    // Do NOT set crossOrigin — R2 does not send CORS headers for range/media
+    // requests, so setting crossOrigin='anonymous' triggers a preflight that
+    // always fails with our CDN setup.  Media elements load cross-origin
+    // audio/video by default without any CORS requirement (same as <img>).
     audio.src = src;
 
     let settled = false;

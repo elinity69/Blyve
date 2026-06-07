@@ -117,9 +117,9 @@ export async function handleLinkPreview(c: Context) {
     if (contentType.startsWith("image/")) {
       return c.json({
         preview: {
-          url: parsed.toString(),
+          url: response.url || parsed.toString(),
           title: parsed.hostname,
-          image: parsed.toString(),
+          image: response.url || parsed.toString(),
           siteName: parsed.hostname.replace(/^www\./, ""),
         },
       });
@@ -160,7 +160,7 @@ export async function handleLinkPreview(c: Context) {
 
     return c.json({
       preview: {
-        url: parsed.toString(),
+        url: response.url || parsed.toString(),
         title,
         description,
         image,

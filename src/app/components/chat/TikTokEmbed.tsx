@@ -161,8 +161,7 @@ export function TikTokEmbed({ videoId, url, inBubble = false }: TikTokEmbedProps
           src={tiktokEmbedUrl(videoId)}
           title="TikTok video"
           className="absolute inset-0 h-full w-full border-0"
-          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-          allowFullScreen
+          allow="accelerometer; autoplay; clipboard-write; encrypted-media; fullscreen; gyroscope; picture-in-picture"
           onError={() => setState('fallback')}
         />
       </div>

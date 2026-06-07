@@ -175,7 +175,7 @@ export function XEmbed({ statusId, author, url, inBubble = false }: XEmbedProps)
           style={{ minHeight: 200, height: 550 }}
           scrolling="no"
           frameBorder={0}
-          allowFullScreen
+          allow="fullscreen"
           onError={() => setState('fallback')}
         />
       </div>

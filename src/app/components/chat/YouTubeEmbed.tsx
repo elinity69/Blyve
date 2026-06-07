@@ -34,7 +34,6 @@ export function YouTubeEmbed({ videoId, inBubble = false }: YouTubeEmbedProps) {
             title="YouTube video"
             className="h-full w-full border-0"
             allow={MEDIA_EMBED_IFRAME_ALLOW}
-            allowFullScreen
           />
         ) : (
           <button

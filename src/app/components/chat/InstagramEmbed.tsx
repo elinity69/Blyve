@@ -14,7 +14,10 @@ const probeCache = new Map<string, boolean | null>(); // null = inflight
 const probeInflight = new Map<string, Promise<boolean>>();
 
 async function probeInstagramUrl(postUrl: string): Promise<boolean> {
-  if (probeCache.has(postUrl)) return probeCache.get(postUrl) ?? false;
+  const cached = probeCache.get(postUrl);
+  if (cached === true) return true;
+  if (cached === false) return false;
+  // null = inflight — join the existing in-flight promise instead of returning false
   const pending = probeInflight.get(postUrl);
   if (pending) return pending;
 
@@ -123,32 +126,41 @@ interface InstagramEmbedProps {
  * This means public posts show the real embed with only the iframe's own
  * network time as latency. Private/deleted posts fall back cleanly.
  */
+// ─── Per-URL iframe load cache (survives re-mounts within the same session) ──────
+// Tracks whether the iframe for a given URL has ever fired onLoad in this session.
+// Unlike probeCache (server embeddability), this is purely a client render-state cache
+// so that when the component re-mounts (navigate away + back), we don't flash a skeleton
+// for an embed the browser has already rendered and cached.
+const iframeLoadedCache = new Set<string>();
+
 export function InstagramEmbed({ postId, url, inBubble = false }: InstagramEmbedProps) {
-  // Skip skeleton if we already know from a previous visit that this URL is embeddable
-  const [iframeLoaded, setIframeLoaded] = useState(() => probeCache.get(url) === true);
-  const [showFallback, setShowFallback] = useState(() => probeCache.get(url) === false);
-  const iframeLoadedRef = useRef(false);
+  const cacheVal = probeCache.get(url); // true | false | null (inflight) | undefined (not started)
+  const probeKnownGood = cacheVal === true;
+  const probeKnownBad = cacheVal === false;
+
+  // Show skeleton until the iframe fires onLoad. The exception: if the iframe
+  // already loaded in a previous mount this session (iframeLoadedCache), skip
+  // the skeleton immediately so navigation-back feels instant.
+  const alreadyLoaded = iframeLoadedCache.has(url);
+  const [iframeLoaded, setIframeLoaded] = useState(alreadyLoaded);
+  const [showFallback, setShowFallback] = useState(probeKnownBad);
+  const iframeLoadedRef = useRef(alreadyLoaded);
 
   useEffect(() => {
-    // If we already know from cache it's not embeddable, stop here
-    if (probeCache.get(url) === false) {
-      setShowFallback(true);
-      return;
-    }
-    // If the cache says it IS embeddable (true), nothing to do — iframe is already rendering
-    if (probeCache.get(url) === true) return;
+    // Already know from cache it's not embeddable
+    if (probeKnownBad) { setShowFallback(true); return; }
+    // Already confirmed embeddable — nothing to probe
+    if (probeKnownGood) return;
 
-    // Otherwise run the probe in parallel with the iframe
     let cancelled = false;
     void probeInstagramUrl(url).then((ok) => {
       if (cancelled) return;
       if (!ok && !iframeLoadedRef.current) {
-        // Probe says not embeddable and iframe hasn't loaded yet → fallback
         setShowFallback(true);
       }
     });
     return () => { cancelled = true; };
-  }, [url]);
+  }, [url, probeKnownBad, probeKnownGood]);
 
   if (showFallback) {
     return <InstagramFallbackCard url={url} inBubble={inBubble} />;
@@ -170,6 +182,11 @@ export function InstagramEmbed({ postId, url, inBubble = false }: InstagramEmbed
        */}
       <div className="relative w-full" style={{ minHeight: 400 }}>
         {!iframeLoaded && <InstagramSkeletonOverlay />}
+        {import.meta.env.DEV && (
+          <div className="pointer-events-none absolute right-1 top-1 z-20 rounded bg-black/70 px-1.5 py-0.5 font-mono text-[9px] text-white/90">
+            cache:{String(probeCache.get(url))} loaded:{String(iframeLoaded)} lc:{String(iframeLoadedCache.has(url))} fallback:{String(showFallback)}
+          </div>
+        )}
         <iframe
           key={postId}
           src={instagramEmbedUrl(postId)}
@@ -185,9 +202,10 @@ export function InstagramEmbed({ postId, url, inBubble = false }: InstagramEmbed
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             WebkitOverflowScrolling: 'touch' as any,
           }}
-          allow="encrypted-media"
+          allow="autoplay; encrypted-media; fullscreen; unload"
           onLoad={() => {
             iframeLoadedRef.current = true;
+            iframeLoadedCache.add(url);
             setIframeLoaded(true);
           }}
           onError={() => setShowFallback(true)}

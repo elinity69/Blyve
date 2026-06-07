@@ -211,7 +211,7 @@ function MessageEmbedItem({
     case 'spotify':
       content =
         embed.spotifyType && embed.spotifyId ? (
-          <SpotifyEmbed type={embed.spotifyType} id={embed.spotifyId} inBubble={inBubble} />
+          <SpotifyEmbed type={embed.spotifyType} id={embed.spotifyId} inBubble={inBubble} isMe={isMe} />
         ) : null;
       break;
     case 'instagram':

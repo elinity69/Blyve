@@ -14,6 +14,8 @@ export type EmbedKind =
 
 export interface ParsedEmbed {
   url: string;
+  /** The original raw URL from the message text, if it was normalised/redirected to a different canonical URL (e.g. l.instagram.com → instagram.com). Used for deduplication. */
+  originalUrl?: string;
   kind: EmbedKind;
   imageUrl?: string;
   youtubeId?: string;
@@ -91,8 +93,19 @@ function parseYouTubeId(url: URL): string | null {
 
 function parseSpotify(url: URL): { type: ParsedEmbed['spotifyType']; id: string } | null {
   const host = url.hostname.replace(/^www\./, '');
+
+  // spotify.link/xxx — iOS/mobile short share links. Store the full URL in id
+  // prefixed with "short:" so SpotifyEmbed can resolve it via getLinkPreview.
+  if (host === 'spotify.link') {
+    const code = url.pathname.split('/').filter(Boolean)[0];
+    if (code) return { type: 'track', id: `short:${url.href}` };
+    return null;
+  }
+
   if (host !== 'open.spotify.com') return null;
-  const parts = url.pathname.split('/').filter(Boolean);
+  let parts = url.pathname.split('/').filter(Boolean);
+  // Skip locale prefix, e.g. /intl-de/track/... or /intl-en/album/...
+  if (parts[0]?.startsWith('intl-')) parts = parts.slice(1);
   if (parts.length < 2) return null;
   const type = parts[0] as ParsedEmbed['spotifyType'];
   const id = parts[1]?.split('?')[0];
@@ -308,7 +321,8 @@ export function parseEmbed(url: string): ParsedEmbed | null {
     if (instagramPostId) {
       // Normalise l.instagram.com share links to canonical instagram.com URL
       const canonicalUrl = resolveInstagramRedirect(parsed).href;
-      return { url: canonicalUrl, kind: 'instagram', instagramPostId };
+      const originalUrl = canonicalUrl !== url ? url : undefined;
+      return { url: canonicalUrl, originalUrl, kind: 'instagram', instagramPostId };
     }
 
     const tiktok = parseTikTokVideo(parsed);
@@ -366,14 +380,26 @@ export function parseMessageEmbeds(content: string): ParsedEmbed[] {
     const embed = parseEmbed(url);
     if (!embed) continue;
 
+    // Use both the canonical URL and the original raw URL as dedup keys so that
+    // e.g. l.instagram.com redirect links don't produce two separate embeds.
     const key = normalizeUrlForMatch(embed.url);
     const existing = byKey.get(key);
     if (!existing || EMBED_KIND_PRIORITY[embed.kind] > EMBED_KIND_PRIORITY[existing.kind]) {
       byKey.set(key, embed);
+      // Also register the original (pre-redirect) URL under the same canonical key
+      if (embed.originalUrl) {
+        byKey.set(normalizeUrlForMatch(embed.originalUrl), embed);
+      }
     }
   }
 
-  return Array.from(byKey.values());
+  // Deduplicate: if multiple raw URLs resolved to the same canonical embed, keep only one
+  const seen = new Set<ParsedEmbed>();
+  return Array.from(byKey.values()).filter((e) => {
+    if (seen.has(e)) return false;
+    seen.add(e);
+    return true;
+  });
 }
 
 export function normalizeUrlForMatch(url: string): string {
@@ -405,6 +431,10 @@ export function getSuppressedUrls(content: string, embeds: ParsedEmbed[]): Set<s
   const embeddedKeys = new Set<string>();
   for (const embed of embeds) {
     embeddedKeys.add(normalizeUrlForMatch(embed.url));
+    // Also suppress the original pre-redirect URL (e.g. l.instagram.com links)
+    if (embed.originalUrl) {
+      embeddedKeys.add(normalizeUrlForMatch(embed.originalUrl));
+    }
     if (embed.imageUrl) {
       embeddedKeys.add(normalizeUrlForMatch(embed.imageUrl));
     }
