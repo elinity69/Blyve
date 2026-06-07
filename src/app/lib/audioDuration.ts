@@ -14,9 +14,8 @@ function probeWithAudioElement(src: string): Promise<number> {
   return new Promise((resolve) => {
     const audio = document.createElement('audio');
     audio.preload = 'auto';
-    // Set crossOrigin before src so the browser uses the same CORS cache
-    // partition as VoiceMessagePlayer — avoids a double-fetch and cache mismatch.
-    audio.crossOrigin = 'anonymous';
+    // Do NOT set crossOrigin — the R2 public bucket does not send CORS headers.
+    // Setting crossOrigin='anonymous' triggers a CORS request that R2 rejects.
     audio.src = src;
 
     let settled = false;

@@ -181,12 +181,11 @@ export function VoiceMessagePlayer({ src, isMe = false }: VoiceMessagePlayerProp
     audio.addEventListener('ended', onEnded);
     audio.addEventListener('error', onError);
 
-    // Set crossOrigin before assigning src so the browser places the response
-    // in the CORS cache partition.  Omitting it causes a cache partition
-    // mismatch on Chrome/Safari: a prior CORS-mode fetch and a later no-CORS
-    // fetch are stored in separate partitions, so the second fetch always
-    // misses and may be refused, producing a silent error event.
-    audio.crossOrigin = 'anonymous';
+    // Do NOT set crossOrigin — the R2 public bucket does not send
+    // Access-Control-Allow-Origin headers.  Setting crossOrigin='anonymous'
+    // forces a CORS request that R2 rejects, producing an immediate error event.
+    // Audio elements load cross-origin resources in no-CORS mode by default
+    // (same as <img>), so playback works without the attribute.
     audio.src = src;
     audio.preload = 'metadata';
     audio.load();
