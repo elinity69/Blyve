@@ -114,10 +114,11 @@ export function SharedProfileView({
     return () => mq.removeEventListener('change', update);
   }, []);
 
-  // Reset dismissing flag on mount, and clear the sentinel on unmount.
+  // Reset dismissing flag on mount, animate card up from off-screen, and clear the sentinel on unmount.
   useEffect(() => {
     dismissingRef.current = false;
-    y.set(0);
+    y.set(typeof window !== 'undefined' ? window.innerHeight : 800);
+    animate(y, 0, { type: 'spring', damping: 38, stiffness: 320, mass: 1.1 });
     return () => {
       setSheetDragActive(false);
     };
@@ -259,18 +260,27 @@ export function SharedProfileView({
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
-        transition={{ duration: 0.2 }}
+        transition={{ duration: isDesktop ? 0.2 : 0.28 }}
         className="fixed inset-0 z-[9000] bg-black/50 backdrop-blur-sm"
         style={isDesktop ? undefined : { opacity: backdropOpacity }}
-        onClick={onClose}
+        onClick={
+          isDesktop
+            ? onClose
+            : () => {
+                if (dismissingRef.current) return;
+                dismissingRef.current = true;
+                animate(y, window.innerHeight, { ...DISMISS_EXIT_SPRING, onComplete: onClose });
+              }
+        }
       />
 
       {/* Centering wrapper (desktop) / full-screen wrapper (mobile) */}
       <motion.div
         key="shared-profile-modal-root"
-        initial={{ opacity: 0 }}
+        initial={{ opacity: isDesktop ? 0 : 1 }}
         animate={{ opacity: 1 }}
-        exit={{ opacity: 0 }}
+        exit={{ opacity: isDesktop ? 0 : 1 }}
+        transition={{ duration: 0.28 }}
         className={
           isDesktop
             ? 'fixed inset-0 z-[9001] flex items-center justify-center p-6 pointer-events-none'
@@ -281,10 +291,14 @@ export function SharedProfileView({
         <motion.div
           // ── Enter / exit animations ──────────────────────────────────
           ref={cardRef}
-          initial={isDesktop ? { opacity: 0, scale: 0.96, y: 0 } : { y: '100%' }}
-          animate={isDesktop ? { opacity: 1, scale: 1, y: 0 } : { y: 0 }}
-          exit={isDesktop ? { opacity: 0, scale: 0.96, y: 0 } : { y: '100%' }}
-          transition={{ type: 'spring', damping: 30, stiffness: 300 }}
+          initial={isDesktop ? { opacity: 0, scale: 0.96, y: 0 } : false}
+          animate={isDesktop ? { opacity: 1, scale: 1, y: 0 } : false}
+          exit={isDesktop ? { opacity: 0, scale: 0.96, y: 0 } : false}
+          transition={
+            isDesktop
+              ? { type: 'spring', damping: 30, stiffness: 300 }
+              : { type: 'spring', damping: 38, stiffness: 320, mass: 1.1 }
+          }
           className={
             isDesktop
               ? 'relative flex h-[min(88vh,660px)] w-[340px] max-w-[calc(100vw-3rem)] flex-col overflow-hidden rounded-2xl bg-white shadow-2xl dark:bg-black md:dark:bg-[#121212] pointer-events-auto'

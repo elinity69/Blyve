@@ -135,6 +135,7 @@ export function ChatScreen({
   const lastMessageIdRef = useRef<string | null>(null);
   const lastAppliedViewedAtRef = useRef<string | null>(null);
   const lastOwnReadAtRef = useRef<string | null>(null);
+  const lastMessageReactionKeyRef = useRef<string | null>(null);
   const readReceiptScrollSeededRef = useRef(false);
   const [scrollAnchorReady, setScrollAnchorReady] = useState(false);
 
@@ -241,6 +242,7 @@ export function ChatScreen({
     lastMessageIdRef.current = null;
     lastAppliedViewedAtRef.current = null;
     lastOwnReadAtRef.current = null;
+    lastMessageReactionKeyRef.current = null;
     readReceiptScrollSeededRef.current = false;
     setScrollAnchorReady(false);
   }, [conversationId]);
@@ -276,14 +278,44 @@ export function ChatScreen({
       lastMessageIdRef.current = messages[messages.length - 1]?.id ?? null;
       lastAppliedViewedAtRef.current = lastViewedAt;
       requestAnimationFrame(() => setScrollAnchorReady(true));
+
+      // Reactions render asynchronously after messages (separate per-message fetch).
+      // Set a short window where any scroll-container height growth causes a re-pin,
+      // so a reaction on the last visible message scrolls fully into view.
+      const container = messagesContainerRef.current;
+      if (container) {
+        let resizePinActive = true;
+        const stopTimeout = window.setTimeout(() => { resizePinActive = false; }, 1500);
+        const ro = new ResizeObserver(() => {
+          if (!resizePinActive) { ro.disconnect(); return; }
+          if (isNearBottom(container, container.clientHeight)) {
+            container.scrollTop = Math.max(0, container.scrollHeight - container.clientHeight);
+          }
+        });
+        ro.observe(container);
+        window.setTimeout(() => { resizePinActive = false; ro.disconnect(); clearTimeout(stopTimeout); }, 1500);
+      }
+
       return;
     }
 
     const lastMessage = messages[messages.length - 1];
     if (lastMessageIdRef.current !== lastMessage.id) {
       lastMessageIdRef.current = lastMessage.id;
+      lastMessageReactionKeyRef.current = JSON.stringify(lastMessage.reactions ?? null);
       if (isNearBottom(container)) {
         scrollContainerToBottomStable(container);
+      }
+      return;
+    }
+
+    // Re-pin when a reaction is added/removed on the last message and the user
+    // is already near the bottom (the reaction row height shifts the layout).
+    const reactionKey = JSON.stringify(lastMessage.reactions ?? null);
+    if (reactionKey !== lastMessageReactionKeyRef.current) {
+      lastMessageReactionKeyRef.current = reactionKey;
+      if (isNearBottom(container)) {
+        requestAnimationFrame(() => scrollContainerToBottomStable(container));
       }
       return;
     }

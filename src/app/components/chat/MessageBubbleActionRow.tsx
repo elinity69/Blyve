@@ -28,7 +28,7 @@ export function MessageBubbleActionRow({
   children,
 }: MessageBubbleActionRowProps) {
   const isMdUp = useIsMdUp();
-  const { offsetX, swipeProgress, swipeHandlers } = useSwipeToReply(onReply, !isMdUp);
+  const { offsetX, swipeProgress, swipeHandlers, callbackRef } = useSwipeToReply(onReply, !isMdUp);
   const [mobileMenu, setMobileMenu] = useState<{ x: number; y: number } | null>(null);
 
   const { bind: longPressBind } = useLongPress(
@@ -40,10 +40,11 @@ export function MessageBubbleActionRow({
 
   const bubble = (
     <div
+      ref={!isMdUp ? callbackRef : undefined}
       className="relative w-max min-w-0 shrink touch-pan-y"
       style={{
         transform: offsetX < 0 ? `translateX(${offsetX}px)` : undefined,
-        transition: offsetX < 0 ? 'none' : 'transform 0.2s ease-out',
+        transition: offsetX < 0 ? 'none' : 'transform 0.35s cubic-bezier(0.25, 0.46, 0.45, 0.94)',
         WebkitUserSelect: 'none',
         userSelect: 'none',
       }}

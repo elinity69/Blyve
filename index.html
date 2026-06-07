@@ -13,6 +13,14 @@
     <meta name="apple-mobile-web-app-title" content="Blyve" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black" />
     <link rel="manifest" href="/manifest.json" />
+    <!-- Preconnect to Spotify embed CDN so the iframe API script loads faster -->
+    <link rel="preconnect" href="https://open.spotify.com" crossorigin="anonymous" />
+    <link rel="dns-prefetch" href="https://open.spotify.com" />
+    <!-- Preconnect to Instagram embed domains -->
+    <link rel="preconnect" href="https://www.instagram.com" crossorigin="anonymous" />
+    <link rel="dns-prefetch" href="https://www.instagram.com" />
+    <link rel="preconnect" href="https://static.cdninstagram.com" crossorigin="anonymous" />
+    <link rel="dns-prefetch" href="https://static.cdninstagram.com" />
     <link rel="icon" href="/favicon.ico" sizes="any" />
     <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
     <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />

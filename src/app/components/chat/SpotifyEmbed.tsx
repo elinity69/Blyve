@@ -189,6 +189,8 @@ function SpotifyEmbedInner({ type, id, inBubble, isMe }: SpotifyEmbedProps) {
       type="button"
       onClick={(e) => { e.stopPropagation(); toggleMute(); }}
       onMouseDown={(e) => e.stopPropagation()}
+      onTouchEnd={(e) => { e.preventDefault(); e.stopPropagation(); toggleMute(); }}
+      onTouchStart={(e) => e.stopPropagation()}
       className={`absolute top-1/2 z-20 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full bg-neutral-600/90 text-white shadow-lg backdrop-blur-sm transition-colors hover:bg-neutral-500/90 ${
         isMe ? '-right-4' : '-left-[41px]'
       }`}

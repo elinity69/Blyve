@@ -202,7 +202,7 @@ export function InstagramEmbed({ postId, url, inBubble = false }: InstagramEmbed
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             WebkitOverflowScrolling: 'touch' as any,
           }}
-          allow="autoplay; encrypted-media; fullscreen; unload"
+          allow="autoplay; encrypted-media; fullscreen"
           onLoad={() => {
             iframeLoadedRef.current = true;
             iframeLoadedCache.add(url);

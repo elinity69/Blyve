@@ -24,6 +24,7 @@ import {
   upsertConversationLastViewedAt,
 } from '../lib/conversationViews';
 import { onAppForeground, shouldResubscribeRealtimeChannel } from '../lib/realtimeReconnect';
+import { toast } from '../lib/toast';
 
 export interface Message {
   id: string;
@@ -504,7 +505,7 @@ export function useChat(conversationId: string | null, onMessageSent?: (conversa
         return newMessage;
       } catch (err: any) {
         console.error('Error sending message:', err);
-        setError(err.message || 'Failed to send message');
+        toast.error('Failed to send message', err.message || 'Please try again.');
         return null;
       } finally {
         setSending(false);

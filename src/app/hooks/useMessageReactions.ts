@@ -43,6 +43,10 @@ interface ProfileRow {
 // Module-level name cache so all message rows share it (avoids N×profile fetches).
 const profileNameCache = new Map<string, string>();
 
+// Module-level reaction cache: messageId → rows fetched this session.
+// Lets re-mounts (navigate away + back) skip the network fetch and render instantly.
+const reactionRowCache = new Map<string, MessageReaction[]>();
+
 async function fetchNames(userIds: string[]): Promise<void> {
   const missing = userIds.filter((id) => !profileNameCache.has(id));
   if (!missing.length) return;
@@ -91,8 +95,11 @@ export function useMessageReactions(
   options: UseMessageReactionsOptions = {}
 ) {
   const { isOwnMessage = false } = options;
-  const [reactions, setReactions] = useState<MessageReaction[]>([]);
-  const [summaries, setSummaries] = useState<ReactionSummary[]>([]);
+  const cachedRows = messageId ? (reactionRowCache.get(messageId) ?? []) : [];
+  const [reactions, setReactions] = useState<MessageReaction[]>(cachedRows);
+  const [summaries, setSummaries] = useState<ReactionSummary[]>(() =>
+    cachedRows.length ? aggregate(cachedRows, getCachedUser()?.id ?? null) : []
+  );
   const currentUserIdRef = useRef<string | null>(null);
   const pendingRef = useRef<Set<string>>(new Set());
   // Track which (emoji, userId) combos we've already notified for.
@@ -123,6 +130,7 @@ export function useMessageReactions(
       .then(async ({ data }) => {
         if (cancelled || !data) return;
         const rows = data as MessageReaction[];
+        reactionRowCache.set(messageId, rows);
         // Pre-fetch all names so tooltip is ready immediately.
         const allIds = [...new Set(rows.map((r) => r.user_id))];
         await fetchNames(allIds);
@@ -162,6 +170,7 @@ export function useMessageReactions(
           setReactions((prev) => {
             if (prev.some((x) => x.id === r.id)) return prev;
             const next = [...prev, r];
+            reactionRowCache.set(messageId, next);
             setSummaries(aggregate(next, currentUserIdRef.current));
             return next;
           });
@@ -198,6 +207,7 @@ export function useMessageReactions(
           }
           setReactions((prev) => {
             const next = prev.filter((x) => x.id !== old.id);
+            reactionRowCache.set(messageId, next);
             setSummaries(aggregate(next, currentUserIdRef.current));
             return next;
           });

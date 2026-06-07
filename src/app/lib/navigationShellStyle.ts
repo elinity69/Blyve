@@ -35,7 +35,7 @@ export const NAV_ENTER_GRACE_MS = 720;
 export const NAV_POST_ENTER_GRACE_MS = 520;
 /** Extra px off-screen so preview/chat never peek through subpixel gaps. */
 export const NAV_PANEL_HIDE_OVERSHOOT_PX = 24;
-/** Fixed `BottomNavigation` row (`h-16`) — stack viewport stops above this band. */
+/** Fixed `BottomNavigation` base row (`h-12` = 48px, padded to 64px) — stack viewport stops above this band plus env(safe-area-inset-bottom). */
 export const MOBILE_BOTTOM_NAV_HEIGHT_PX = 64;
 
 /** Left bleed cover when the stack panel is fully open (hides preview edge peek). */
@@ -110,12 +110,13 @@ export const navigationStackShellStyle = {
   top: `var(${MOBILE_VV_CSS.offsetTop}, 0px)`,
   left: 0,
   right: 0,
-  // Stop at the bottom navigation bar's top edge — the nav bar sits below this.
-  // MOBILE_BOTTOM_NAV_HEIGHT_PX (64px) matches the `h-12` tab row + generous padding.
-  bottom: `${MOBILE_BOTTOM_NAV_HEIGHT_PX}px`,
+  // Extend to the very bottom of the screen — the chat is a full-screen overlay
+  // that covers the nav bar on mobile. The nav bar sits at z-[60]; this shell
+  // must be above it. The composer handles safe-area-inset-bottom internally.
+  bottom: 0,
   boxSizing: 'border-box' as const,
   paddingBottom: 0,
-  zIndex: 55,
+  zIndex: 65,
   backgroundColor: 'var(--color-background, #0d0d0d)',
   boxShadow: '-5px 0 20px rgba(0,0,0,0.15)',
   overflowX: 'hidden' as const,
