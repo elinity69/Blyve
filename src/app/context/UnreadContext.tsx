@@ -152,6 +152,74 @@ export const UnreadProvider = ({
     void refreshUnreadCount();
   }, [refreshUnreadCount]);
 
+  // Direct realtime safety-net: catches message inserts/read-updates that arrive
+  // when the window-event path is missed (reconnect, background tab, etc.)
+  useEffect(() => {
+    if (!currentUserId) return;
+
+    let cancelled = false;
+    let channelRef: ReturnType<typeof supabase.channel> | null = null;
+    const debounceRef: { current: number | null } = { current: null };
+
+    const triggerRefresh = () => {
+      if (debounceRef.current) window.clearTimeout(debounceRef.current);
+      debounceRef.current = window.setTimeout(() => {
+        debounceRef.current = null;
+        if (!cancelled) void refreshUnreadCount();
+      }, 600);
+    };
+
+    const setup = async () => {
+      const ids = await fetchConversationIds(currentUserId);
+      if (cancelled || ids.length === 0) return;
+
+      const ch = supabase.channel(`unread-sync:${currentUserId}`);
+
+      for (const conversationId of ids.slice(0, 100)) {
+        ch.on(
+          'postgres_changes',
+          {
+            event: 'INSERT',
+            schema: 'public',
+            table: 'messages',
+            filter: `conversation_id=eq.${conversationId}`,
+          },
+          (payload) => {
+            const row = payload.new as { sender_id?: string };
+            if (row?.sender_id === currentUserId) return;
+            triggerRefresh();
+          }
+        ).on(
+          'postgres_changes',
+          {
+            event: 'UPDATE',
+            schema: 'public',
+            table: 'messages',
+            filter: `conversation_id=eq.${conversationId}`,
+          },
+          () => {
+            triggerRefresh();
+          }
+        );
+      }
+
+      // Assign before subscribe so cleanup can always reach it
+      channelRef = ch;
+      ch.subscribe();
+    };
+
+    void setup();
+
+    return () => {
+      cancelled = true;
+      if (debounceRef.current) window.clearTimeout(debounceRef.current);
+      if (channelRef) {
+        supabase.removeChannel(channelRef);
+        channelRef = null;
+      }
+    };
+  }, [currentUserId, refreshUnreadCount]);
+
   useEffect(() => {
     if (!currentUserId) return;
 

@@ -31,9 +31,9 @@ export function getMessageBubbleRadius(
 
 export function getMessageBubbleColors(isMe: boolean): string {
   if (isMe) {
-    return 'bg-[#4a7db8] text-white dark:bg-[var(--chat-bubble-me,#243752)] dark:text-[var(--chat-bubble-me-text,#dce6ef)]';
+    return 'bg-[#3faf95] text-white dark:bg-[var(--chat-bubble-me,#243752)] dark:text-[var(--chat-bubble-me-text,#dce6ef)]';
   }
-  return 'bg-[#dfe7f0] text-gray-900 dark:bg-[var(--chat-bubble-other,#1a222d)] dark:text-[var(--chat-bubble-other-text,#b4c0cc)]';
+  return 'bg-[#e8eaed] text-gray-900 dark:bg-[var(--chat-bubble-other,#1a222d)] dark:text-[var(--chat-bubble-other-text,#b4c0cc)]';
 }
 
 export function getMessageBubbleTailClass(position: MessageGroupPosition, isMe: boolean): string {

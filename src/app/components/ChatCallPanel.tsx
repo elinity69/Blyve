@@ -2,7 +2,7 @@ import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 're
 import { Mic, PhoneOff, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useAppData } from '../context/AppDataContext';
-import { useCall } from '../context/CallStateContext';
+import { useCall, useCallCore, useCallMedia } from '../context/CallStateContext';
 import { isJitsiCallProvider } from '../lib/callProvider';
 import { getOptimizedImageUrl } from '../lib/images';
 import { shouldSkipJitsiPrejoin } from '../lib/jitsiMicStorage';
@@ -34,6 +34,17 @@ export function ChatCallPanel({ conversationId }: ChatCallPanelProps) {
   const {
     state,
     activeCall,
+    toggleMute,
+    hangUp,
+    isCallForConversation,
+    retryConnection,
+    registerEmbeddedCallHost,
+    embeddedCallConversationId,
+    callDisplayMode,
+    callPinned,
+    registerCallHostAnchor,
+  } = useCallCore();
+  const {
     connectionState,
     isMuted,
     isCameraEnabled,
@@ -43,22 +54,13 @@ export function ChatCallPanel({ conversationId }: ChatCallPanelProps) {
     participantVolumes,
     remoteParticipantCount,
     setParticipantVolume,
-    toggleMute,
-    hangUp,
-    isCallForConversation,
     errorMessage,
     canRetryConnection,
     retryAttempt,
     isAutoRetrying,
-    retryConnection,
-    registerEmbeddedCallHost,
-    embeddedCallConversationId,
-    callDisplayMode,
-    callPinned,
-    registerCallHostAnchor,
     speakingParticipantId,
     localIdentity,
-  } = useCall();
+  } = useCallMedia();
 
   const callHostAnchorRef = useRef<HTMLDivElement>(null);
 

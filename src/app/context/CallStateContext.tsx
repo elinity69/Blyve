@@ -219,6 +219,73 @@ interface CallContextValue {
 
 const CallContext = createContext<CallContextValue | undefined>(undefined);
 
+// ─── Stable core: call lifecycle + all action callbacks ──────────────────────
+interface CallCoreValue {
+  state: CallUiState;
+  activeCall: ActiveCall | null;
+  incomingCall: IncomingCall | null;
+  callDisplayMode: CallDisplayMode;
+  callPinned: boolean;
+  pinnedCallHostActive: boolean;
+  embeddedCallConversationId: string | null;
+  embeddedVoiceGroupId: string | null;
+  embeddedVoiceChannelId: string | null;
+  selfRole: CallSelfRole;
+  jitsiSession: CallContextValue['jitsiSession'];
+  jitsiMountKey: number;
+  jitsiHandlers: CallContextValue['jitsiHandlers'];
+  mediaCaptureAvailable: boolean;
+  debugTrail: string[];
+  setCallDisplayMode: (mode: CallDisplayMode) => void;
+  enterCallPip: (force?: boolean) => void;
+  expandCallToFullscreen: () => void;
+  minimizeCallFromFullscreen: () => void;
+  openCallInChat: () => void;
+  openCallInGroupPanel: () => void;
+  openCallInPanel: () => void;
+  registerEmbeddedCallHost: (conversationId: string | null) => void;
+  registerEmbeddedVoiceHost: (groupId: string | null, channelId: string | null) => void;
+  registerCallHostAnchor: (element: HTMLElement | null) => void;
+  toggleCallPinned: () => void;
+  registerPinnedCallHost: (active: boolean) => void;
+  startDirectCall: (input: StartDirectCallInput) => Promise<void>;
+  joinVoiceChannel: (input: JoinVoiceChannelInput) => Promise<void>;
+  leaveVoiceChannel: () => Promise<void>;
+  acceptIncomingCall: () => Promise<void>;
+  declineIncomingCall: () => Promise<void>;
+  hangUp: () => Promise<void>;
+  toggleMute: () => Promise<void>;
+  toggleCamera: () => Promise<void>;
+  toggleScreenShare: () => void;
+  retryConnection: () => Promise<void>;
+  joinCallViaInvite: (sessionId: string, inviteToken: string) => Promise<void>;
+  clearEndedState: () => void;
+  isCallForConversation: (conversationId: string) => boolean;
+  isVoiceChannelActive: (groupId: string, channelId: string) => boolean;
+}
+
+// ─── Volatile media: high-frequency live-call ticks ──────────────────────────
+interface CallMediaValue {
+  connectionState: string;
+  isMuted: boolean;
+  isCameraEnabled: boolean;
+  isScreenShareEnabled: boolean;
+  errorMessage: string | null;
+  canRetryConnection: boolean;
+  retryAttempt: number;
+  isAutoRetrying: boolean;
+  localIdentity: string | null;
+  remoteParticipantCount: number;
+  remoteVideoActive: boolean;
+  remoteScreenShareActive: boolean;
+  participantVolumes: Record<string, number>;
+  speakingParticipantId: string | null;
+  setParticipantVolume: (participantId: string, volume: number) => void;
+}
+
+const CallCoreContext = createContext<CallCoreValue | undefined>(undefined);
+const CallMediaContext = createContext<CallMediaValue | undefined>(undefined);
+
 function createTone(frequency = 700, durationMs = 180, volume = 0.02) {
   if (typeof window === 'undefined') return null;
   const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
@@ -2385,8 +2452,94 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     ]
   );
 
+  const coreValue = useMemo<CallCoreValue>(
+    () => ({
+      state,
+      activeCall,
+      incomingCall,
+      callDisplayMode,
+      callPinned,
+      pinnedCallHostActive,
+      embeddedCallConversationId,
+      embeddedVoiceGroupId,
+      embeddedVoiceChannelId,
+      selfRole,
+      jitsiSession: isJitsiCallProvider() && state === 'in_call' ? jitsiJoinRequest : null,
+      jitsiMountKey,
+      jitsiHandlers,
+      mediaCaptureAvailable: mediaCaptureSupported(),
+      debugTrail,
+      setCallDisplayMode,
+      enterCallPip,
+      expandCallToFullscreen,
+      minimizeCallFromFullscreen,
+      openCallInChat,
+      openCallInGroupPanel,
+      openCallInPanel,
+      registerEmbeddedCallHost,
+      registerEmbeddedVoiceHost,
+      registerCallHostAnchor,
+      toggleCallPinned,
+      registerPinnedCallHost,
+      startDirectCall,
+      joinVoiceChannel,
+      leaveVoiceChannel,
+      acceptIncomingCall,
+      declineIncomingCall,
+      hangUp,
+      toggleMute,
+      toggleCamera,
+      toggleScreenShare,
+      retryConnection,
+      joinCallViaInvite,
+      clearEndedState,
+      isCallForConversation,
+      isVoiceChannelActive,
+    }),
+    [
+      state, activeCall, incomingCall, callDisplayMode, callPinned, pinnedCallHostActive,
+      embeddedCallConversationId, embeddedVoiceGroupId, embeddedVoiceChannelId, selfRole,
+      jitsiJoinRequest, jitsiMountKey, jitsiHandlers, debugTrail,
+      setCallDisplayMode, enterCallPip, expandCallToFullscreen, minimizeCallFromFullscreen,
+      openCallInChat, openCallInGroupPanel, openCallInPanel,
+      registerEmbeddedCallHost, registerEmbeddedVoiceHost, registerCallHostAnchor,
+      toggleCallPinned, registerPinnedCallHost, startDirectCall, joinVoiceChannel,
+      leaveVoiceChannel, acceptIncomingCall, declineIncomingCall, hangUp,
+      toggleMute, toggleCamera, toggleScreenShare, retryConnection,
+      joinCallViaInvite, clearEndedState, isCallForConversation, isVoiceChannelActive,
+    ]
+  );
+
+  const mediaValue = useMemo<CallMediaValue>(
+    () => ({
+      connectionState,
+      isMuted,
+      isCameraEnabled,
+      isScreenShareEnabled,
+      errorMessage,
+      canRetryConnection,
+      retryAttempt,
+      isAutoRetrying,
+      localIdentity,
+      remoteParticipantCount,
+      remoteVideoActive,
+      remoteScreenShareActive,
+      participantVolumes,
+      speakingParticipantId,
+      setParticipantVolume,
+    }),
+    [
+      connectionState, isMuted, isCameraEnabled, isScreenShareEnabled, errorMessage,
+      canRetryConnection, retryAttempt, isAutoRetrying, localIdentity,
+      remoteParticipantCount, remoteVideoActive, remoteScreenShareActive,
+      participantVolumes, speakingParticipantId, setParticipantVolume,
+    ]
+  );
+
   return (
-    <CallContext.Provider value={value}>
+    <CallCoreContext.Provider value={coreValue}>
+      <CallMediaContext.Provider value={mediaValue}>
+        <CallContext.Provider value={value}>
       {children}
       <Suspense fallback={null}>
         <IncomingCallPopup />
@@ -2446,7 +2599,9 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
           onEnterFullscreen={expandCallToFullscreen}
         />
       ) : null}
-    </CallContext.Provider>
+        </CallContext.Provider>
+      </CallMediaContext.Provider>
+    </CallCoreContext.Provider>
   );
 }
 
@@ -2454,6 +2609,22 @@ export function useCall(): CallContextValue {
   const context = useContext(CallContext);
   if (!context) {
     throw new Error('useCall must be used within CallProvider');
+  }
+  return context;
+}
+
+export function useCallCore(): CallCoreValue {
+  const context = useContext(CallCoreContext);
+  if (!context) {
+    throw new Error('useCallCore must be used within CallProvider');
+  }
+  return context;
+}
+
+export function useCallMedia(): CallMediaValue {
+  const context = useContext(CallMediaContext);
+  if (!context) {
+    throw new Error('useCallMedia must be used within CallProvider');
   }
   return context;
 }

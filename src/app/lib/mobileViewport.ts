@@ -19,7 +19,7 @@ export const MOBILE_VV_CSS = {
 } as const;
 
 /** Inner padding for the composer row — safe area / keyboard are owned by the nav shell. */
-export const COMPOSER_INNER_PADDING_PX = 8;
+export const COMPOSER_INNER_PADDING_PX = 18;
 
 /**
  * Bottom padding for the chat message composer.
@@ -112,6 +112,17 @@ export function scheduleMobileViewportUpdate() {
 }
 
 function onViewportEvent() {
+  // Write offsetTop and height synchronously so the fixed navigation shell
+  // repositions and resizes in the same frame as the browser layout change —
+  // frame-by-frame tracking of the keyboard animation, no rAF lag.
+  if (typeof document !== 'undefined' && window.visualViewport) {
+    const vv = window.visualViewport;
+    const offsetTop = Math.max(0, vv.offsetTop);
+    const height = vv.height;
+    const root = document.documentElement;
+    root.style.setProperty(MOBILE_VV_CSS.offsetTop, `${offsetTop}px`);
+    root.style.setProperty(MOBILE_VV_CSS.height, `${height}px`);
+  }
   scheduleMobileViewportUpdate();
 }
 
@@ -123,7 +134,13 @@ function bindViewportListeners() {
   const vv = window.visualViewport;
   vv?.addEventListener('resize', onViewportEvent);
   vv?.addEventListener('scroll', onViewportEvent);
-  window.addEventListener('resize', onViewportEvent);
+  // Only use window.resize as a fallback when visualViewport is unavailable.
+  // On Android Chrome, window.resize fires only once after the keyboard is fully
+  // open (a single jump), while visualViewport.resize fires every animation frame.
+  // Using both would cause a redundant late-frame correction on Android.
+  if (!vv) {
+    window.addEventListener('resize', onViewportEvent);
+  }
   window.addEventListener('orientationchange', onViewportEvent);
 }
 
@@ -134,7 +151,9 @@ function unbindViewportListeners() {
   const vv = window.visualViewport;
   vv?.removeEventListener('resize', onViewportEvent);
   vv?.removeEventListener('scroll', onViewportEvent);
-  window.removeEventListener('resize', onViewportEvent);
+  if (!vv) {
+    window.removeEventListener('resize', onViewportEvent);
+  }
   window.removeEventListener('orientationchange', onViewportEvent);
 }
 

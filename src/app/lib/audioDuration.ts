@@ -14,10 +14,9 @@ function probeWithAudioElement(src: string): Promise<number> {
   return new Promise((resolve) => {
     const audio = document.createElement('audio');
     audio.preload = 'auto';
-    // Do NOT set crossOrigin — R2 does not send CORS headers for range/media
-    // requests, so setting crossOrigin='anonymous' triggers a preflight that
-    // always fails with our CDN setup.  Media elements load cross-origin
-    // audio/video by default without any CORS requirement (same as <img>).
+    // Set crossOrigin before src so the browser uses the same CORS cache
+    // partition as VoiceMessagePlayer — avoids a double-fetch and cache mismatch.
+    audio.crossOrigin = 'anonymous';
     audio.src = src;
 
     let settled = false;

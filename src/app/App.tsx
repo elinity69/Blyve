@@ -631,7 +631,7 @@ function AppContent({ onUserIdChange }: AppContentProps = {}) {
         paddingTop: '0px',
         paddingBottom: '0px',
         width: '100vw',
-        height: '100vh',
+        height: '100dvh',
       }}
     >
       {!isAuthenticated ? (

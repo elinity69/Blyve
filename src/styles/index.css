@@ -99,7 +99,7 @@ textarea {
 /* ZEMENTIERTER DARK BACKGROUND - Verhindert White Flash */
 html {
   background-color: #ffffff; /* Weiß im Light Mode */
-  min-height: 100vh;
+  min-height: 100dvh;
   width: 100%;
   overflow-x: hidden;
   overscroll-behavior: contain;
@@ -122,7 +122,7 @@ body {
   padding-top: env(safe-area-inset-top);
   padding-bottom: env(safe-area-inset-bottom);
   background-color: #ffffff; /* Weiß im Light Mode */
-  min-height: 100vh;
+  min-height: 100dvh;
   width: 100%;
   overflow-x: hidden;
   overscroll-behavior: contain;
@@ -139,7 +139,7 @@ body.dark {
   padding-top: env(safe-area-inset-top);
   padding-bottom: env(safe-area-inset-bottom);
   background-color: #ffffff; /* Weiß im Light Mode */
-  min-height: 100vh;
+  min-height: 100dvh;
   width: 100%;
   overflow-x: hidden;
   overscroll-behavior: contain;
@@ -279,7 +279,7 @@ button.bg-gradient-to-r {
   left: -5px;
   width: 10px;
   height: 10px;
-  background: #dfe7f0;
+  background: #e8eaed;
   clip-path: polygon(100% 0, 100% 100%, 0 100%);
 }
 
@@ -290,7 +290,7 @@ button.bg-gradient-to-r {
   right: -5px;
   width: 10px;
   height: 10px;
-  background: #4a7db8;
+  background: #3faf95;
   clip-path: polygon(0 0, 100% 100%, 0 100%);
 }
 
@@ -308,6 +308,10 @@ button.bg-gradient-to-r {
 
   .dark & {
     background-color: var(--blyve-screen-bg, #0d0d0d);
+  }
+
+  .oled & {
+    background-color: #000000;
   }
 }
 

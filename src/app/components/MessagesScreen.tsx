@@ -555,7 +555,7 @@ export function MessagesScreen({ isTabActive = true }: MessagesScreenProps) {
           display_name: otherUser.display_name,
           username: otherUser.username,
           imageUrl,
-          is_online: otherUser.is_online,
+          is_online: isOnline(otherUser.id),
           age: otherUser.age,
         };
         dmForwardCacheSeededRef.current = null;
@@ -574,7 +574,7 @@ export function MessagesScreen({ isTabActive = true }: MessagesScreenProps) {
           display_name: otherUser.display_name,
           username: otherUser.username,
           imageUrl,
-          is_online: otherUser.is_online,
+          is_online: isOnline(otherUser.id),
           age: otherUser.age,
         });
         void ensureFreshDmMessages(queryClient, conv.id);
@@ -582,7 +582,7 @@ export function MessagesScreen({ isTabActive = true }: MessagesScreenProps) {
 
       applyOpen();
     },
-    [isDesktop, queryClient]
+    [isDesktop, queryClient, isOnline]
   );
 
   const openConversationById = React.useCallback(
@@ -1733,7 +1733,7 @@ export function MessagesScreen({ isTabActive = true }: MessagesScreenProps) {
         <DmChatForwardPreview
           displayName={displayName}
           imageUrl={user.imageUrl}
-          isOnline={user.is_online}
+          isOnline={isOnline(user.id)}
           onBack={() => popScreenRef.current()}
         />,
         pushKey
@@ -1741,7 +1741,7 @@ export function MessagesScreen({ isTabActive = true }: MessagesScreenProps) {
       navDebug.log('messages', 'forwardCache:dm:preview', { conversationId, pushKey });
       void prefetchDmMessages(queryClient, conversationId);
     },
-    [isDesktop, queryClient]
+    [isDesktop, queryClient, isOnline]
   );
 
   const warmGroupForwardThreadCache = React.useCallback(

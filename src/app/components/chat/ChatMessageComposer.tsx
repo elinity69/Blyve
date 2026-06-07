@@ -55,17 +55,24 @@ export function ChatMessageComposer({
   onDropActiveChange,
 }: ChatMessageComposerProps) {
   const { t } = useTranslation();
-  const [inVisualViewportShell, setInVisualViewportShell] = useState(() =>
+  const inVisualViewportShellRef = useRef(
     typeof document !== 'undefined'
       ? !!document.querySelector('[data-visual-viewport-shell]')
       : false
   );
+  const inVisualViewportShell = inVisualViewportShellRef.current;
+  const assignRootRef = useCallback((node: HTMLDivElement | null) => {
+    if (node) inVisualViewportShellRef.current = !!node.closest('[data-visual-viewport-shell]');
+  }, []);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const voiceStreamRef = useRef<MediaStream | null>(null);
   const voiceChunksRef = useRef<Blob[]>([]);
   const isMobile = useIsMobile();
-  const viewportFrame = useMobileViewportInsets(isMobile);
+  // Only subscribe to viewport insets when they can actually change composerPaddingBottom.
+  // Inside data-visual-viewport-shell on mobile the result is always the constant '18px',
+  // so skip the subscription entirely to avoid a keyboard-open re-render.
+  const viewportFrame = useMobileViewportInsets(isMobile && !inVisualViewportShell);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [recording, setRecording] = useState(false);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
@@ -79,10 +86,6 @@ export function ChatMessageComposer({
   const busy = sending || mediaUploading;
   const showSendButton = (hasText || hasStagedMedia) && !recording;
   const showMicButton = !hasText && !hasStagedMedia && !recording && !mediaUploading;
-
-  const assignRootRef = useCallback((node: HTMLDivElement | null) => {
-    setInVisualViewportShell(!!node?.closest('[data-visual-viewport-shell]'));
-  }, []);
 
   useEffect(() => {
     if (!recording) {

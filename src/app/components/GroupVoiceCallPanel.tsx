@@ -2,7 +2,7 @@ import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 're
 import { Mic, PhoneOff } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useAppData } from '../context/AppDataContext';
-import { useCall } from '../context/CallStateContext';
+import { useCall, useCallCore, useCallMedia } from '../context/CallStateContext';
 import { isJitsiCallProvider } from '../lib/callProvider';
 import { getOptimizedImageUrl } from '../lib/images';
 import { shouldSkipJitsiPrejoin } from '../lib/jitsiMicStorage';
@@ -35,6 +35,18 @@ export function GroupVoiceCallPanel({ groupId, channelId, currentUserId }: Group
   const {
     state,
     activeCall,
+    toggleMute,
+    hangUp,
+    isVoiceChannelActive,
+    retryConnection,
+    registerEmbeddedVoiceHost,
+    embeddedVoiceGroupId,
+    embeddedVoiceChannelId,
+    callDisplayMode,
+    callPinned,
+    registerCallHostAnchor,
+  } = useCallCore();
+  const {
     connectionState,
     isMuted,
     isCameraEnabled,
@@ -44,23 +56,13 @@ export function GroupVoiceCallPanel({ groupId, channelId, currentUserId }: Group
     participantVolumes,
     remoteParticipantCount,
     setParticipantVolume,
-    toggleMute,
-    hangUp,
-    isVoiceChannelActive,
     errorMessage,
     canRetryConnection,
     retryAttempt,
     isAutoRetrying,
-    retryConnection,
-    registerEmbeddedVoiceHost,
-    embeddedVoiceGroupId,
-    embeddedVoiceChannelId,
-    callDisplayMode,
-    callPinned,
-    registerCallHostAnchor,
     speakingParticipantId,
     localIdentity,
-  } = useCall();
+  } = useCallMedia();
 
   const callHostAnchorRef = useRef<HTMLDivElement>(null);
 

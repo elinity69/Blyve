@@ -36,13 +36,13 @@ export const NAV_POST_ENTER_GRACE_MS = 520;
 /** Extra px off-screen so preview/chat never peek through subpixel gaps. */
 export const NAV_PANEL_HIDE_OVERSHOOT_PX = 24;
 /**
- * Mobile bottom nav reserved height — must equal the rendered `h-12` (48px) of
+ * Mobile bottom nav reserved height — must equal the rendered `h-[52px]` (52px) of
  * `BottomNavigation`. Used by:
  *   • mobilePreviewShellStyle `bottom` (useEdgeBackNavigation)
  *   • MessagesScreen scroll-container paddingBottom
  * Change only if BottomNavigation's base height changes.
  */
-export const MOBILE_BOTTOM_NAV_HEIGHT_PX = 48;
+export const MOBILE_BOTTOM_NAV_HEIGHT_PX = 52;
 
 /** Left bleed cover when the stack panel is fully open (hides preview edge peek). */
 export function stackPanelOpenBoxShadow(): string {
@@ -116,10 +116,10 @@ export const navigationStackShellStyle = {
   top: `var(${MOBILE_VV_CSS.offsetTop}, 0px)`,
   left: 0,
   right: 0,
-  // Extend to the very bottom of the screen — the chat is a full-screen overlay
-  // that covers the nav bar on mobile. The nav bar sits at z-[60]; this shell
-  // must be above it. The composer handles safe-area-inset-bottom internally.
-  bottom: 0,
+  // Size to the visual viewport height so the shell tracks the keyboard edge
+  // frame-by-frame. Both offsetTop and height are written synchronously in
+  // onViewportEvent — no rAF lag, no jump.
+  height: `var(${MOBILE_VV_CSS.height}, 100dvh)`,
   boxSizing: 'border-box' as const,
   paddingBottom: 0,
   zIndex: 65,

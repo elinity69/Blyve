@@ -510,6 +510,49 @@ export function ChatScreen({
     return () => { cancelled = true; };
   }, [profilePreviewUserId]);
 
+  useEffect(() => {
+    let pinning = false;
+    let pinRaf = 0;
+    let stopTimer = 0;
+
+    const pinToBottom = () => {
+      const container = messagesContainerRef.current;
+      if (container) container.scrollTop = container.scrollHeight;
+    };
+
+    const onViewportResize = () => {
+      if (!pinning) return;
+      cancelAnimationFrame(pinRaf);
+      pinRaf = requestAnimationFrame(pinToBottom);
+    };
+
+    const handleComposerFocus = () => {
+      const container = messagesContainerRef.current;
+      if (!container) return;
+      // Only pin when already at (or very near) the bottom.
+      const distFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
+      if (distFromBottom > 80) return;
+
+      pinToBottom();
+      pinning = true;
+      clearTimeout(stopTimer);
+      window.visualViewport?.addEventListener('resize', onViewportResize);
+      // Stop pinning after keyboard animation is done (~500ms).
+      stopTimer = window.setTimeout(() => {
+        pinning = false;
+        window.visualViewport?.removeEventListener('resize', onViewportResize);
+      }, 500);
+    };
+
+    window.addEventListener('chat-composer-focus', handleComposerFocus);
+    return () => {
+      window.removeEventListener('chat-composer-focus', handleComposerFocus);
+      window.visualViewport?.removeEventListener('resize', onViewportResize);
+      cancelAnimationFrame(pinRaf);
+      clearTimeout(stopTimer);
+    };
+  }, []);
+
   const focusMessageInput = useCallback(() => {
     if (!isMdUp) return;
     requestAnimationFrame(() => {
@@ -841,7 +884,7 @@ export function ChatScreen({
                           imageUrl={isMe ? meAvatarUrl : otherUser.imageUrl}
                           label={isMe ? meDisplay : otherDisplay}
                         />
-                        <div className={`flex min-w-0 flex-1 flex-col ${isMe ? 'items-end' : 'items-start'}`}>
+                        <div className={`flex min-w-0 max-w-[calc(100%-2.25rem)] flex-1 flex-col ${isMe ? 'items-end' : 'items-start'}`}>
                           {isGroupStart && (
                             <MessageGroupHeader
                               name={isMe ? meDisplay : otherDisplay}

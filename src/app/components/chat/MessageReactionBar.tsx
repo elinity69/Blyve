@@ -112,7 +112,7 @@ function ReactionPill({ summary, onToggle }: ReactionPillProps) {
             'border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blyve/60',
             summary.reactedByMe
               ? 'border-blyve/70 bg-blyve/15 text-blyve dark:bg-blyve/20 dark:border-blyve/50'
-              : 'border-white/10 bg-white/5 text-gray-200 hover:bg-white/10 dark:border-white/8 dark:bg-white/[0.06]',
+              : 'border-gray-300 bg-gray-100 text-gray-700 hover:bg-gray-200 dark:border-white/10 dark:bg-white/5 dark:text-gray-200 dark:hover:bg-white/10',
           ].join(' ')}
         >
           <span aria-hidden className="text-[15px] leading-none">{summary.emoji}</span>
@@ -167,9 +167,10 @@ const AddReactionButton = forwardRef<HTMLButtonElement, AddReactionButtonProps>(
       onClick={onClick}
       className={[
         'h-[26px] w-[26px] shrink-0 items-center justify-center rounded-full',
-        'border border-white/10 bg-white/5 text-gray-400',
+        'border border-gray-300 bg-gray-100 text-gray-500',
         'opacity-0 transition-opacity group-hover/bubble:opacity-100',
-        'hover:bg-white/10 hover:text-gray-100 active:scale-95',
+        'hover:bg-gray-200 hover:text-gray-700 active:scale-95',
+        'dark:border-white/10 dark:bg-white/5 dark:text-gray-400 dark:hover:bg-white/10 dark:hover:text-gray-100',
         'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blyve/60',
         // hidden on mobile (long-press menu handles it); always occupies space on md+
         'hidden md:flex',
