@@ -23,6 +23,15 @@ function destroyChannel(conversationId: string) {
     entry.partnerTimeoutId = null;
   }
 
+  // If partner was typing when the channel is torn down, clear the preview state.
+  if (entry.partnerTyping) {
+    window.dispatchEvent(
+      new CustomEvent('typing-status-changed', {
+        detail: { conversationId, isTyping: false },
+      })
+    );
+  }
+
   supabase.removeChannel(entry.channel);
   channels.delete(conversationId);
 }

@@ -9,6 +9,7 @@ import { api } from '../lib/api';
 import { toast } from '../lib/toast';
 import { REPORT_REASONS } from '../constants/report';
 import { useTyping } from '../hooks/useTyping';
+import { useOnlineStatus } from '../hooks/useOnlineStatus';
 import { useAppData } from '../context/AppDataContext';
 import { TypingBubble } from './TypingBubble';
 import { useIsMdUp, useIsMobile } from './ui/use-mobile';
@@ -88,6 +89,7 @@ export function ChatScreen({
   onConversationUpdated,
 }: ChatScreenProps) {
   const { t, i18n } = useTranslation();
+  const { isOnline: isUserOnline } = useOnlineStatus(currentUserId);
   const [conversationActionsMenu, setConversationActionsMenu] = useState<ConversationActionTarget | null>(null);
   const {
     messages,
@@ -280,20 +282,19 @@ export function ChatScreen({
       requestAnimationFrame(() => setScrollAnchorReady(true));
 
       // Reactions render asynchronously after messages (separate per-message fetch).
-      // Set a short window where any scroll-container height growth causes a re-pin,
-      // so a reaction on the last visible message scrolls fully into view.
-      const container = messagesContainerRef.current;
+      // Use MutationObserver to watch for new nodes being added to the message list
+      // (reaction bar DOM insertion) and immediately re-pin to true bottom.
       if (container) {
-        let resizePinActive = true;
-        const stopTimeout = window.setTimeout(() => { resizePinActive = false; }, 1500);
-        const ro = new ResizeObserver(() => {
-          if (!resizePinActive) { ro.disconnect(); return; }
-          if (isNearBottom(container, container.clientHeight)) {
-            container.scrollTop = Math.max(0, container.scrollHeight - container.clientHeight);
+        let pinActive = true;
+        const mo = new MutationObserver(() => {
+          if (!pinActive) { mo.disconnect(); return; }
+          const maxScroll = Math.max(0, container.scrollHeight - container.clientHeight);
+          if (container.scrollTop < maxScroll) {
+            container.scrollTop = maxScroll;
           }
         });
-        ro.observe(container);
-        window.setTimeout(() => { resizePinActive = false; ro.disconnect(); clearTimeout(stopTimeout); }, 1500);
+        mo.observe(container, { childList: true, subtree: true });
+        window.setTimeout(() => { pinActive = false; mo.disconnect(); }, 1500);
       }
 
       return;
@@ -698,7 +699,7 @@ export function ChatScreen({
                   {otherDisplay}
                 </h2>
                 <p className="text-xs text-gray-500 dark:text-gray-400">
-                  {otherUser.is_online ? t('chat.online') : t('chat.offline')}
+                  {isUserOnline(otherUser.id) ? t('chat.online') : t('chat.offline')}
                 </p>
               </div>
             </button>

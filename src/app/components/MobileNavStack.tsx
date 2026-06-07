@@ -115,7 +115,7 @@ const listLayerStyle: React.CSSProperties = {
 
   zIndex: 0,
 
-  backgroundColor: 'var(--color-background, #0d0d0d)',
+  backgroundColor: 'transparent',
 
   overflow: 'hidden',
 

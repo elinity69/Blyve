@@ -182,11 +182,6 @@ export function InstagramEmbed({ postId, url, inBubble = false }: InstagramEmbed
        */}
       <div className="relative w-full" style={{ minHeight: 400 }}>
         {!iframeLoaded && <InstagramSkeletonOverlay />}
-        {import.meta.env.DEV && (
-          <div className="pointer-events-none absolute right-1 top-1 z-20 rounded bg-black/70 px-1.5 py-0.5 font-mono text-[9px] text-white/90">
-            cache:{String(probeCache.get(url))} loaded:{String(iframeLoaded)} lc:{String(iframeLoadedCache.has(url))} fallback:{String(showFallback)}
-          </div>
-        )}
         <iframe
           key={postId}
           src={instagramEmbedUrl(postId)}

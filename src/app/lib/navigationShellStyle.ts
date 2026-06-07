@@ -35,8 +35,14 @@ export const NAV_ENTER_GRACE_MS = 720;
 export const NAV_POST_ENTER_GRACE_MS = 520;
 /** Extra px off-screen so preview/chat never peek through subpixel gaps. */
 export const NAV_PANEL_HIDE_OVERSHOOT_PX = 24;
-/** Fixed `BottomNavigation` base row (`h-12` = 48px, padded to 64px) — stack viewport stops above this band plus env(safe-area-inset-bottom). */
-export const MOBILE_BOTTOM_NAV_HEIGHT_PX = 64;
+/**
+ * Mobile bottom nav reserved height — must equal the rendered `h-12` (48px) of
+ * `BottomNavigation`. Used by:
+ *   • mobilePreviewShellStyle `bottom` (useEdgeBackNavigation)
+ *   • MessagesScreen scroll-container paddingBottom
+ * Change only if BottomNavigation's base height changes.
+ */
+export const MOBILE_BOTTOM_NAV_HEIGHT_PX = 48;
 
 /** Left bleed cover when the stack panel is fully open (hides preview edge peek). */
 export function stackPanelOpenBoxShadow(): string {

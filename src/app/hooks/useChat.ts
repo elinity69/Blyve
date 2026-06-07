@@ -410,6 +410,7 @@ export function useChat(conversationId: string | null, onMessageSent?: (conversa
             }
             resubscribeTimeoutRef.current = window.setTimeout(() => {
               resubscribeTimeoutRef.current = null;
+              void refetchMessages();
               subscribeMessagesChannel();
             }, 800);
           }

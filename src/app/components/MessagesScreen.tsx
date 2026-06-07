@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useQueryClient, useQuery } from '@tanstack/react-query';
 import { useEdgeBackNavigation } from '../hooks/useEdgeBackNavigation';
 import { navDebug } from '../lib/navDebug';
+import { MOBILE_BOTTOM_NAV_HEIGHT_PX } from '../lib/navigationShellStyle';
 import { useConversations } from '../hooks/useConversations';
 import { useOnlineStatus } from '../hooks/useOnlineStatus';
 import { ChatScreen } from './ChatScreen';
@@ -2106,7 +2107,8 @@ export function MessagesScreen({ isTabActive = true }: MessagesScreenProps) {
           </div>
           <div
             data-messages-preview-scroll
-            className="flex-1 min-h-0 overflow-y-auto overscroll-y-contain pb-16 md:pb-0 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]"
+            className="flex-1 min-h-0 overflow-y-auto overscroll-y-contain md:pb-0 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]"
+            style={{ paddingBottom: `${MOBILE_BOTTOM_NAV_HEIGHT_PX}px` }}
           >
           {!selectedGroup ? (
             conversations.length === 0 ? (
@@ -2440,7 +2442,7 @@ export function MessagesScreen({ isTabActive = true }: MessagesScreenProps) {
       <ChatScreen
         key={selectedConversationId}
         conversationId={selectedConversationId}
-        otherUser={{ ...selectedOtherUser, age: selectedOtherUser.age }}
+        otherUser={{ ...selectedOtherUser, age: selectedOtherUser.age, is_online: isOnline(selectedOtherUser.id) }}
         currentUserId={currentUserId}
         onBack={() => {
           navDebug.log('messages', 'chatHeaderBack', {

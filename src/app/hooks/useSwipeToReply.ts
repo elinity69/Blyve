@@ -30,7 +30,7 @@ export function useSwipeToReply(onReply: () => void, enabled = true) {
     const node = nodeRef.current;
     if (!node || nativeBlockRef.current) return;
     const handler = (e: TouchEvent) => {
-      if (draggingRef.current) e.preventDefault();
+      if (draggingRef.current && e.cancelable) e.preventDefault();
     };
     nativeBlockRef.current = handler;
     node.addEventListener('touchmove', handler, { passive: false });

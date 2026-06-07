@@ -53,7 +53,7 @@ export function SharedProfileView({
   // framer-motion's `drag` prop.  This bypasses the browser `touchAction`
   // restriction that the NavigationStack shell imposes (`pan-y`), which
   // was stealing the touch stream before framer-motion could see it.
-  const y = useMotionValue(0);
+  const y = useMotionValue(typeof window !== 'undefined' ? window.innerHeight : 800);
   const isDraggingRef = useRef(false);
   const startYRef = useRef(0);
   const startScrollTopRef = useRef(0);
@@ -117,7 +117,6 @@ export function SharedProfileView({
   // Reset dismissing flag on mount, animate card up from off-screen, and clear the sentinel on unmount.
   useEffect(() => {
     dismissingRef.current = false;
-    y.set(typeof window !== 'undefined' ? window.innerHeight : 800);
     animate(y, 0, { type: 'spring', damping: 38, stiffness: 320, mass: 1.1 });
     return () => {
       setSheetDragActive(false);

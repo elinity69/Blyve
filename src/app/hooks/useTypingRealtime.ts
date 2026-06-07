@@ -3,7 +3,7 @@ import { subscribeTypingBroadcast } from '../lib/typingBroadcast';
 import { debounce } from '../lib/requestThrottle';
 import { fetchConversationIds } from '../lib/conversationMembership';
 
-const MAX_TYPING_CHANNELS = 15;
+const MAX_TYPING_CHANNELS = 30;
 
 /**
  * Typing subscriptions for recent conversations only (not all 200).
