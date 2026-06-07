@@ -124,9 +124,8 @@ interface InstagramEmbedProps {
  * network time as latency. Private/deleted posts fall back cleanly.
  */
 export function InstagramEmbed({ postId, url, inBubble = false }: InstagramEmbedProps) {
-  // iframeLoaded: true once onLoad fires (keep embed permanently)
-  const [iframeLoaded, setIframeLoaded] = useState(false);
-  // showFallback: true when we know we should not show the iframe
+  // Skip skeleton if we already know from a previous visit that this URL is embeddable
+  const [iframeLoaded, setIframeLoaded] = useState(() => probeCache.get(url) === true);
   const [showFallback, setShowFallback] = useState(() => probeCache.get(url) === false);
   const iframeLoadedRef = useRef(false);
 

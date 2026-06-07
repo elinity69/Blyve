@@ -56,7 +56,7 @@ export function BottomNavigation({ activeTab, onTabChange }: BottomNavigationPro
 
   return (
     <div
-      className="fixed bottom-0 left-0 right-0 z-40 md:z-50 bg-white/80 dark:bg-black/80 md:dark:bg-[#121212]/80 backdrop-blur-md border-t border-white/20 dark:border-white/5 shadow-lg"
+      className="fixed bottom-0 left-0 right-0 z-[60] bg-white/80 dark:bg-black/80 md:dark:bg-[#121212]/80 backdrop-blur-md border-t border-white/20 dark:border-white/5 shadow-lg"
       style={{ paddingBottom: navPaddingBottom }}
     >
       <div className="w-full flex justify-around items-center h-12">
