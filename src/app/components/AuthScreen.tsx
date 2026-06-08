@@ -31,24 +31,42 @@ export function AuthScreen({ onAuthSuccess }: AuthScreenProps) {
     }
   };
 
-  const [email, setEmail] = useState('');
+  const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
+
+  /** Returns the email to use for sign-in, resolving a username if needed. */
+  const resolveEmail = async (raw: string): Promise<string> => {
+    const isEmail = raw.includes('@');
+    if (isEmail) return raw;
+
+    // Username lookup via security-definer RPC (readable by anon role).
+    const { data, error: rpcError } = await supabase.rpc('get_email_by_username', {
+      p_username: raw,
+    });
+    if (rpcError || !data) {
+      throw new Error('No account found for that username');
+    }
+    return data as string;
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     setLoading(true);
 
-    const cleanEmail = email.trim();
+    const cleanIdentifier = identifier.trim();
     const cleanPassword = password.trim();
 
-    if (!cleanEmail || !cleanPassword) {
-      setError('Email and password are required');
+    if (!cleanIdentifier || !cleanPassword) {
+      setError('Email (or username) and password are required');
       setLoading(false);
       return;
     }
 
     try {
+      // For sign-up always expect an email; username resolution only applies to sign-in.
+      const cleanEmail = isSignup ? cleanIdentifier : await resolveEmail(cleanIdentifier);
+
       if (isSignup) {
         const result = await api.signup({
           email: cleanEmail,
@@ -108,14 +126,15 @@ export function AuthScreen({ onAuthSuccess }: AuthScreenProps) {
 
         <form onSubmit={handleSubmit} className="space-y-4 relative z-10">
           <div className="relative z-10">
-            <Label htmlFor="email">Email</Label>
+            <Label htmlFor="identifier">{isSignup ? 'Email' : 'Email or username'}</Label>
             <Input
-              id="email"
-              type="email"
-              placeholder="you@example.com"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              id="identifier"
+              type={isSignup ? 'email' : 'text'}
+              placeholder={isSignup ? 'you@example.com' : 'you@example.com or username'}
+              value={identifier}
+              onChange={(e) => setIdentifier(e.target.value)}
               required
+              autoComplete={isSignup ? 'email' : 'username'}
               className="relative z-10"
               style={{ pointerEvents: 'auto' }}
             />

@@ -26,8 +26,10 @@ interface MessageWithReactionsProps {
   messageTime?: string;
   isRead?: boolean;
   readLabel?: string;
+  editedAt?: string | null;
   onReply: () => void;
   onDelete: () => void;
+  onEdit?: () => void;
 }
 
 export function MessageWithReactions({
@@ -41,8 +43,10 @@ export function MessageWithReactions({
   messageTime,
   isRead,
   readLabel,
+  editedAt,
   onReply,
   onDelete,
+  onEdit,
 }: MessageWithReactionsProps) {
   const { t } = useTranslation();
   const { summaries, toggleReaction } = useMessageReactions(messageId, { isOwnMessage: isMe });
@@ -53,6 +57,12 @@ export function MessageWithReactions({
     const media = embeds.find((e) => e.kind === 'image' || e.kind === 'video');
     if (!media) return null;
     return media.kind === 'image' ? (media.imageUrl || media.url) : media.url;
+  }, [content]);
+
+  // Edit is only available for my own text messages (not media-only).
+  const hasTextContent = useMemo(() => {
+    const stripped = content.replace(/\[.*?\]\(.*?\)/g, '').trim();
+    return stripped.length > 0;
   }, [content]);
 
   const handleReact = useCallback(
@@ -106,6 +116,7 @@ export function MessageWithReactions({
       onDelete={onDelete}
       onCopy={handleCopy}
       onDownload={downloadUrl ? handleDownload : undefined}
+      onEdit={isMe && hasTextContent ? onEdit : undefined}
       onReact={handleReact}
     >
       <ChatMessageBody
@@ -120,6 +131,7 @@ export function MessageWithReactions({
         readLabel={readLabel}
         summaries={summaries}
         onToggleReaction={toggleReaction}
+        editedAt={editedAt}
       />
     </MessageBubbleActionRow>
   );

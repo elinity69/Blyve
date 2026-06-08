@@ -461,6 +461,15 @@ export class ApiClient {
     };
   }
 
+  async editMessageSafe(messageId: string, content: string) {
+    const { data, error } = await supabase.rpc('update_message_safe', {
+      p_message_id: messageId,
+      p_content: content,
+    });
+    if (error) throw error;
+    return data as { success?: boolean; message?: string };
+  }
+
   /** Presigned R2 upload — credentials stay on the edge function only. */
   async requestUploadPresign(body: {
     mimeType: string;

@@ -35,6 +35,7 @@ export interface Message {
   is_read: boolean;
   read_at: string | null;
   reply_to_message_id?: string | null;
+  edited_at?: string | null;
 }
 
 export interface Conversation {

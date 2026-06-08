@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import { Copy, Download, Reply, SmilePlus, Trash2 } from 'lucide-react';
+import { Copy, Download, Pencil, Reply, SmilePlus, Trash2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useIsMdUp } from '../ui/use-mobile';
 import { CHAT_MESSAGE_BUBBLE_CONTEXT_TARGET_CLASS } from './chatMessageStyles';
@@ -21,6 +21,7 @@ interface MessageContextMenuProps {
   onClose: () => void;
   onCopy?: () => void;
   onDownload?: () => void;
+  onEdit?: () => void;
   onReact?: (emoji: string) => void;
 }
 
@@ -33,6 +34,7 @@ export function MessageContextMenu({
   onClose,
   onCopy,
   onDownload,
+  onEdit,
   onReact,
 }: MessageContextMenuProps) {
   const { t } = useTranslation();
@@ -145,6 +147,17 @@ export function MessageContextMenu({
         ) : null}
 
         <div className="py-1">
+          {onEdit ? (
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => { onEdit(); onClose(); }}
+              className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm text-gray-800 transition-colors hover:bg-gray-50 dark:text-gray-100 dark:hover:bg-white/5"
+            >
+              <Pencil className="h-4 w-4 shrink-0" aria-hidden />
+              <span>{t('chat.editMessage')}</span>
+            </button>
+          ) : null}
           <button
             type="button"
             role="menuitem"
@@ -225,6 +238,7 @@ interface MessageContextMenuWrapperProps {
   onDelete: () => void;
   onCopy?: () => void;
   onDownload?: () => void;
+  onEdit?: () => void;
   onReact?: (emoji: string) => void;
 }
 
@@ -236,6 +250,7 @@ export function MessageContextMenuWrapper({
   onDelete,
   onCopy,
   onDownload,
+  onEdit,
   onReact,
 }: MessageContextMenuWrapperProps) {
   const isMdUp = useIsMdUp();
@@ -273,6 +288,7 @@ export function MessageContextMenuWrapper({
           onDelete={onDelete}
           onCopy={onCopy}
           onDownload={onDownload}
+          onEdit={onEdit}
           onReact={onReact}
           onClose={() => setMenu(null)}
         />

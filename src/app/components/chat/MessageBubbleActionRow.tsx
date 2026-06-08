@@ -13,6 +13,7 @@ interface MessageBubbleActionRowProps {
   onDelete?: () => void;
   onCopy?: () => void;
   onDownload?: () => void;
+  onEdit?: () => void;
   onReact?: (emoji: string) => void;
   children: React.ReactNode;
 }
@@ -28,6 +29,7 @@ export function MessageBubbleActionRow({
   onDelete,
   onCopy,
   onDownload,
+  onEdit,
   onReact,
   children,
 }: MessageBubbleActionRowProps) {
@@ -73,6 +75,7 @@ export function MessageBubbleActionRow({
           onDelete={onDelete ?? onReply}
           onCopy={onCopy}
           onDownload={onDownload}
+          onEdit={onEdit}
           onReact={onReact}
         >
           {children}
@@ -105,6 +108,7 @@ export function MessageBubbleActionRow({
           onDelete={() => { onDelete?.(); setMobileMenu(null); }}
           onCopy={onCopy ? () => { onCopy(); setMobileMenu(null); } : undefined}
           onDownload={onDownload ? () => { onDownload(); setMobileMenu(null); } : undefined}
+          onEdit={onEdit ? () => { onEdit(); setMobileMenu(null); } : undefined}
           onReact={onReact ? (emoji) => { onReact(emoji); setMobileMenu(null); } : undefined}
           onClose={() => setMobileMenu(null)}
         />

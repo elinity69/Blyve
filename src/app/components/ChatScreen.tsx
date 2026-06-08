@@ -121,6 +121,7 @@ export function ChatScreen({
   const isMobile = useIsMobile();
   const [messageInput, setMessageInput] = useState('');
   const [replyTarget, setReplyTarget] = useState<ReplyTarget | null>(null);
+  const [editTarget, setEditTarget] = useState<{ id: string; originalContent: string } | null>(null);
   const messageInputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
@@ -597,6 +598,24 @@ export function ChatScreen({
     const trimmed = messageInput.trim();
     if (!trimmed || sending || mediaUploading) return;
 
+    // Edit mode: update the existing message instead of sending a new one.
+    if (editTarget) {
+      const { id, originalContent } = editTarget;
+      setEditTarget(null);
+      setMessageInput('');
+      if (trimmed === originalContent) return; // no change
+      try {
+        await api.editMessageSafe(id, trimmed);
+        // Realtime subscription in useChat will push the updated row automatically.
+      } catch {
+        toast.error(t('chat.editMessageFailed', 'Could not edit message'));
+        setMessageInput(trimmed);
+        setEditTarget({ id, originalContent });
+      }
+      focusMessageInput();
+      return;
+    }
+
     const replyToId = replyTarget?.id ?? null;
     const activeReply = replyTarget;
     setMessageInput('');
@@ -609,7 +628,7 @@ export function ChatScreen({
       }
     }
     focusMessageInput();
-  }, [messageInput, sending, mediaUploading, sendMessage, focusMessageInput, replyTarget]);
+  }, [messageInput, sending, mediaUploading, sendMessage, focusMessageInput, replyTarget, editTarget, t]);
 
   const handleSendFiles = useCallback(
     async (files: File[], caption?: string) => {
@@ -913,6 +932,12 @@ export function ChatScreen({
                                   if (!ok) toast.error(t('chat.deleteMessageFailedTitle'));
                                 });
                               }}
+                              onEdit={() => {
+                                setEditTarget({ id: msg.id, originalContent: msg.content });
+                                setReplyTarget(null);
+                                setMessageInput(msg.content);
+                                focusMessageInput();
+                              }}
                               content={msg.content}
                               isBundled={isBundled}
                               replyQuote={replyQuote}
@@ -920,6 +945,7 @@ export function ChatScreen({
                               messageTime={messageTime}
                               isRead={isOutgoingMessageRead(msg, messages, currentUserId)}
                               readLabel={readLabel}
+                              editedAt={msg.edited_at}
                             />
                           </div>
                         </div>
@@ -953,7 +979,22 @@ export function ChatScreen({
         onDropActiveChange={setDropActive}
         inputRef={messageInputRef}
         replyBar={
-          replyTarget ? (
+          editTarget ? (
+            <div className="flex items-center gap-2 border-t border-gray-200 px-4 py-2 dark:border-white/10">
+              <div className="min-w-0 flex-1">
+                <p className="text-xs font-medium" style={{ color: '#3faf95' }}>{t('chat.editingMessage', 'Editing message')}</p>
+                <p className="truncate text-xs text-gray-500 dark:text-gray-400">{editTarget.originalContent}</p>
+              </div>
+              <button
+                type="button"
+                aria-label={t('common.cancel', 'Cancel')}
+                onClick={() => { setEditTarget(null); setMessageInput(''); }}
+                className="shrink-0 rounded-full p-1 text-gray-400 transition-colors hover:text-gray-600 dark:hover:text-gray-200"
+              >
+                <X className="h-4 w-4" aria-hidden />
+              </button>
+            </div>
+          ) : replyTarget ? (
             <MessageReplyComposerBar target={replyTarget} onCancel={() => setReplyTarget(null)} />
           ) : null
         }

@@ -13,7 +13,7 @@ const PREFETCH_STALE_MS = 1000 * 60 * 10;
 export const DM_MESSAGES_PAGE_SIZE = 50;
 
 const MESSAGE_COLUMNS =
-  'id, conversation_id, sender_id, content, created_at, is_read, read_at, reply_to_message_id';
+  'id, conversation_id, sender_id, content, created_at, is_read, read_at, reply_to_message_id, edited_at';
 
 export const dmMessagesQueryKey = (conversationId: string) =>
   ['messages', conversationId] as const;
@@ -87,7 +87,10 @@ export async function ensureFreshDmMessages(
   conversationId: string,
 ): Promise<Message[]> {
   dmPrefetchRegistry.clearKey(`dm:${conversationId}`);
-  await queryClient.invalidateQueries({ queryKey: dmMessagesQueryKey(conversationId) });
+  // Do NOT await invalidateQueries — it can throw CancelledError when the
+  // triggered refetch is superseded by the fetchQuery call below.
+  // fetchQuery with staleTime:0 already forces a fresh network request.
+  void queryClient.invalidateQueries({ queryKey: dmMessagesQueryKey(conversationId) });
   return queryClient.fetchQuery({
     queryKey: dmMessagesQueryKey(conversationId),
     queryFn: () => fetchDmMessages(conversationId),

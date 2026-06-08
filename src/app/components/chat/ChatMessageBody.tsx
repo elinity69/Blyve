@@ -29,6 +29,8 @@ interface ChatMessageBodyProps {
   summaries?: ReactionSummary[];
   /** Toggle reaction callback — provided by parent MessageWithReactions */
   onToggleReaction?: (emoji: string) => void;
+  /** ISO timestamp of last edit — renders the subtle "edited" label if present. */
+  editedAt?: string | null;
 }
 
 export function ChatMessageBody({
@@ -43,6 +45,7 @@ export function ChatMessageBody({
   readLabel,
   summaries = [],
   onToggleReaction,
+  editedAt,
 }: ChatMessageBodyProps) {
   const { embeds, suppressUrls, showText } = useMessageContentParts(content);
   const textClassName = isBundled
@@ -115,6 +118,11 @@ export function ChatMessageBody({
           />
         ) : null}
         {embeds.length > 0 ? <MessageEmbedList embeds={embeds} inBubble isMe={isMe} /> : null}
+        {editedAt ? (
+          <span className="mt-0.5 block text-[0.65rem] italic leading-none opacity-50">
+            edited
+          </span>
+        ) : null}
       </MessageBubble>
       {reactionBar}
     </div>
