@@ -2108,7 +2108,7 @@ export function MessagesScreen({ isTabActive = true }: MessagesScreenProps) {
           <div
             data-messages-preview-scroll
             className="flex-1 min-h-0 overflow-y-auto overscroll-y-contain md:pb-0 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]"
-            style={{ paddingBottom: `${MOBILE_BOTTOM_NAV_HEIGHT_PX}px` }}
+            style={{ paddingBottom: `calc(${MOBILE_BOTTOM_NAV_HEIGHT_PX}px + max(8px, env(safe-area-inset-bottom, 0px)))` }}
           >
           {!selectedGroup ? (
             conversations.length === 0 ? (
@@ -2249,6 +2249,7 @@ export function MessagesScreen({ isTabActive = true }: MessagesScreenProps) {
               conversationId={selectedConversationId}
               otherUser={{ ...selectedOtherUser, age: selectedOtherUser.age, is_online: isOnline(selectedOtherUser.id) }}
               currentUserId={currentUserId}
+              isOnline={isOnline}
               onBack={() => handleLeaveChat(selectedConversationId!)}
               onOpenProfilePreview={setProfilePreviewUserId}
               onConversationUpdated={() => void reload()}
@@ -2444,6 +2445,7 @@ export function MessagesScreen({ isTabActive = true }: MessagesScreenProps) {
         conversationId={selectedConversationId}
         otherUser={{ ...selectedOtherUser, age: selectedOtherUser.age, is_online: isOnline(selectedOtherUser.id) }}
         currentUserId={currentUserId}
+        isOnline={isOnline}
         onBack={() => {
           navDebug.log('messages', 'chatHeaderBack', {
             conversationId: selectedConversationId,

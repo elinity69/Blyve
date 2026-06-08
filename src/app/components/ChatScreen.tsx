@@ -9,7 +9,7 @@ import { api } from '../lib/api';
 import { toast } from '../lib/toast';
 import { REPORT_REASONS } from '../constants/report';
 import { useTyping } from '../hooks/useTyping';
-import { useOnlineStatus } from '../hooks/useOnlineStatus';
+// useOnlineStatus is intentionally NOT called here — see comment at the usage site below.
 import { useAppData } from '../context/AppDataContext';
 import { TypingBubble } from './TypingBubble';
 import { useIsMdUp, useIsMobile } from './ui/use-mobile';
@@ -76,6 +76,8 @@ interface ChatScreenProps {
     is_online?: boolean;
   };
   currentUserId: string;
+  /** Live presence checker from the parent's single useOnlineStatus instance. */
+  isOnline?: (userId: string) => boolean;
   onOpenProfilePreview?: (userId: string) => void;
   onConversationUpdated?: () => void;
 }
@@ -85,11 +87,16 @@ export function ChatScreen({
   conversationId,
   otherUser,
   currentUserId,
+  isOnline: isOnlineProp,
   onOpenProfilePreview,
   onConversationUpdated,
 }: ChatScreenProps) {
   const { t, i18n } = useTranslation();
-  const { isOnline: isUserOnline } = useOnlineStatus(currentUserId);
+  // Online status comes from the parent via otherUser.is_online, which is
+  // kept live by MessagesScreen's single useOnlineStatus instance.
+  // Do NOT create a second useOnlineStatus here — a second subscriber on the
+  // same channel starts with an empty presence snapshot and shows the peer
+  // as offline until it re-syncs, causing a flicker/mismatch with the preview.
   const [conversationActionsMenu, setConversationActionsMenu] = useState<ConversationActionTarget | null>(null);
   const {
     messages,
@@ -742,7 +749,7 @@ export function ChatScreen({
                   {otherDisplay}
                 </h2>
                 <p className="text-xs text-gray-500 dark:text-gray-400">
-                  {isUserOnline(otherUser.id) ? t('chat.online') : t('chat.offline')}
+                  {(isOnlineProp ? isOnlineProp(otherUser.id) : otherUser.is_online) ? t('chat.online') : t('chat.offline')}
                 </p>
               </div>
             </button>

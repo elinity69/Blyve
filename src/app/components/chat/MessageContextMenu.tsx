@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import { Reply, SmilePlus, Trash2 } from 'lucide-react';
+import { Copy, Download, Reply, SmilePlus, Trash2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useIsMdUp } from '../ui/use-mobile';
 import { CHAT_MESSAGE_BUBBLE_CONTEXT_TARGET_CLASS } from './chatMessageStyles';
@@ -19,6 +19,8 @@ interface MessageContextMenuProps {
   onReply: () => void;
   onDelete: () => void;
   onClose: () => void;
+  onCopy?: () => void;
+  onDownload?: () => void;
   onReact?: (emoji: string) => void;
 }
 
@@ -29,6 +31,8 @@ export function MessageContextMenu({
   onReply,
   onDelete,
   onClose,
+  onCopy,
+  onDownload,
   onReact,
 }: MessageContextMenuProps) {
   const { t } = useTranslation();
@@ -153,6 +157,34 @@ export function MessageContextMenu({
             <Reply className="h-4 w-4 shrink-0" aria-hidden />
             <span>{t('chat.replyToMessage')}</span>
           </button>
+          {onCopy ? (
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                onCopy();
+                onClose();
+              }}
+              className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm text-gray-800 transition-colors hover:bg-gray-50 dark:text-gray-100 dark:hover:bg-white/5"
+            >
+              <Copy className="h-4 w-4 shrink-0" aria-hidden />
+              <span>{t('chat.copyMessage')}</span>
+            </button>
+          ) : null}
+          {onDownload ? (
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                onDownload();
+                onClose();
+              }}
+              className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm text-gray-800 transition-colors hover:bg-gray-50 dark:text-gray-100 dark:hover:bg-white/5"
+            >
+              <Download className="h-4 w-4 shrink-0" aria-hidden />
+              <span>{t('chat.downloadMedia', 'Download')}</span>
+            </button>
+          ) : null}
           {canDelete ? (
             <button
               type="button"
@@ -191,6 +223,8 @@ interface MessageContextMenuWrapperProps {
   canDelete: boolean;
   onReply: () => void;
   onDelete: () => void;
+  onCopy?: () => void;
+  onDownload?: () => void;
   onReact?: (emoji: string) => void;
 }
 
@@ -200,6 +234,8 @@ export function MessageContextMenuWrapper({
   canDelete,
   onReply,
   onDelete,
+  onCopy,
+  onDownload,
   onReact,
 }: MessageContextMenuWrapperProps) {
   const isMdUp = useIsMdUp();
@@ -235,6 +271,8 @@ export function MessageContextMenuWrapper({
           canDelete={canDelete}
           onReply={onReply}
           onDelete={onDelete}
+          onCopy={onCopy}
+          onDownload={onDownload}
           onReact={onReact}
           onClose={() => setMenu(null)}
         />
