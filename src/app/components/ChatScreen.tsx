@@ -92,7 +92,8 @@ export function ChatScreen({
   onConversationUpdated,
 }: ChatScreenProps) {
   const { t, i18n } = useTranslation();
-  // Online status comes from the parent via otherUser.is_online, which is
+
+// Online status comes from the parent via otherUser.is_online, which is
   // kept live by MessagesScreen's single useOnlineStatus instance.
   // Do NOT create a second useOnlineStatus here — a second subscriber on the
   // same channel starts with an empty presence snapshot and shows the peer
@@ -108,6 +109,7 @@ export function ChatScreen({
     error,
     sendMessage,
     deleteMessage,
+    markAsRead,
     loadOlderMessages,
   } = useChat(conversationId);
   const { currentUserProfile } = useAppData();
@@ -163,7 +165,7 @@ export function ChatScreen({
 
   const assignMessagesContainer = useChatScrollAnchor(
     messagesContainerRef,
-    isMobile && scrollAnchorReady,
+    scrollAnchorReady,
     messagesEndRef
   );
 
@@ -287,7 +289,9 @@ export function ChatScreen({
       initialScrollDoneRef.current = true;
       lastMessageIdRef.current = messages[messages.length - 1]?.id ?? null;
       lastAppliedViewedAtRef.current = lastViewedAt;
-      requestAnimationFrame(() => setScrollAnchorReady(true));
+      requestAnimationFrame(() => {
+        setScrollAnchorReady(true);
+      });
 
       // Reactions render asynchronously after messages (separate per-message fetch).
       // Use MutationObserver to watch for new nodes being added to the message list
@@ -297,7 +301,9 @@ export function ChatScreen({
         const mo = new MutationObserver(() => {
           if (!pinActive) { mo.disconnect(); return; }
           const maxScroll = Math.max(0, container.scrollHeight - container.clientHeight);
-          if (container.scrollTop < maxScroll) {
+          // Only re-pin if already near the bottom — do not override a user scroll.
+          const dist = container.scrollHeight - container.scrollTop - container.clientHeight;
+          if (dist < 96 && container.scrollTop < maxScroll) {
             container.scrollTop = maxScroll;
           }
         });
@@ -312,6 +318,8 @@ export function ChatScreen({
     if (lastMessageIdRef.current !== lastMessage.id) {
       lastMessageIdRef.current = lastMessage.id;
       lastMessageReactionKeyRef.current = JSON.stringify(lastMessage.reactions ?? null);
+      const dist = container.scrollHeight - container.scrollTop - container.clientHeight;
+      console.log('[scroll-snap] new-message branch', { dist, nearBottom: isNearBottom(container) });
       if (isNearBottom(container)) {
         scrollContainerToBottomStable(container);
       }
@@ -323,6 +331,8 @@ export function ChatScreen({
     const reactionKey = JSON.stringify(lastMessage.reactions ?? null);
     if (reactionKey !== lastMessageReactionKeyRef.current) {
       lastMessageReactionKeyRef.current = reactionKey;
+      const dist = container.scrollHeight - container.scrollTop - container.clientHeight;
+      console.log('[scroll-snap] reaction branch', { dist, nearBottom: isNearBottom(container) });
       if (isNearBottom(container)) {
         requestAnimationFrame(() => scrollContainerToBottomStable(container));
       }
@@ -334,25 +344,24 @@ export function ChatScreen({
       lastAppliedViewedAtRef.current !== lastViewedAt &&
       !findFirstUnreadMessageId(messages, currentUserId, lastViewedAt)
     ) {
+      // Only update the ref — do NOT scroll. markAsRead fires continuously with
+      // fresh ISO strings, so this branch fires on every read-receipt update.
+      // Initial scroll-to-bottom is already handled by applyInitialScrollPosition.
       lastAppliedViewedAtRef.current = lastViewedAt;
-      scrollContainerToBottomStable(container);
     }
   }, [loading, messages, lastViewedAt, currentUserId, applyInitialScrollPosition]);
 
   useLayoutEffect(() => {
     if (!isPartnerTyping) {
       setTypingClearance(0);
-      // Re-pin scroll to bottom after the spacer is removed. The browser
-      // clamps scrollTop automatically, but scrollContainerToBottomStable
-      // also fires the end-marker scrollIntoView to guarantee correctness.
       if (initialScrollDoneRef.current) {
         requestAnimationFrame(() => {
           const container = messagesContainerRef.current;
           if (!container) return;
-          // Only snap if the user was near bottom (typing spacer was visible).
           const distance =
             container.scrollHeight - container.scrollTop - container.clientHeight;
-          if (distance < 160) {
+          console.log('[scroll-snap] typing-stop branch', { distance, willSnap: distance < 96 });
+          if (distance < 96) {
             scrollContainerToBottomStable(container);
           }
         });
@@ -457,10 +466,17 @@ export function ChatScreen({
     }
   }, [loadOlderAndPreserveScroll, loadingMore, hasMore, scrollToBottomHandleScroll]);
 
+  // Ref tracks the timestamp of the last typing=true broadcast to throttle sends.
+  const lastTypingTrueRef = useRef(0);
   useEffect(() => {
     if (messageInput.trim().length > 0) {
-      void sendTyping(true);
+      const now = Date.now();
+      if (now - lastTypingTrueRef.current >= 300) {
+        lastTypingTrueRef.current = now;
+        void sendTyping(true);
+      }
     } else {
+      lastTypingTrueRef.current = 0;
       void sendTyping(false);
     }
   }, [messageInput, sendTyping]);
@@ -518,48 +534,52 @@ export function ChatScreen({
     return () => { cancelled = true; };
   }, [profilePreviewUserId]);
 
+  // ──────────────────────────────────────────────────────────────────────────
+  // Mark incoming messages as read only when the user is actively viewing
+  // the bottom of the message list (i.e. they can actually see the messages).
+  // Stable ref so tryMark always sees the latest markAsRead without being a dep.
+  const markAsReadRef = useRef(markAsRead);
+  markAsReadRef.current = markAsRead;
   useEffect(() => {
-    let pinning = false;
-    let pinRaf = 0;
-    let stopTimer = 0;
+    const container = messagesContainerRef.current;
+    if (!container || !conversationId) return;
 
-    const pinToBottom = () => {
-      const container = messagesContainerRef.current;
-      if (container) container.scrollTop = container.scrollHeight;
+    const tryMark = () => {
+      // Only fire when the tab/window is visible.
+      if (document.visibilityState !== 'visible') return;
+      // Only fire when the user is near the bottom (messages are visible).
+      const dist = container.scrollHeight - container.scrollTop - container.clientHeight;
+      if (dist > 96) return;
+      void markAsReadRef.current();
     };
 
-    const onViewportResize = () => {
-      if (!pinning) return;
-      cancelAnimationFrame(pinRaf);
-      pinRaf = requestAnimationFrame(pinToBottom);
-    };
+    // IntersectionObserver — fires when the container enters/exits the viewport
+    // (covers cases like switching apps, minimising, or chat sliding out of view).
+    const io = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting) tryMark();
+      },
+      { threshold: 0.1 }
+    );
+    io.observe(container);
 
-    const handleComposerFocus = () => {
-      const container = messagesContainerRef.current;
-      if (!container) return;
-      // Only pin when already at (or very near) the bottom.
-      const distFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
-      if (distFromBottom > 80) return;
+    // Scroll listener — fires while the user scrolls towards the bottom.
+    container.addEventListener('scroll', tryMark, { passive: true });
 
-      pinToBottom();
-      pinning = true;
-      clearTimeout(stopTimer);
-      window.visualViewport?.addEventListener('resize', onViewportResize);
-      // Stop pinning after keyboard animation is done (~500ms).
-      stopTimer = window.setTimeout(() => {
-        pinning = false;
-        window.visualViewport?.removeEventListener('resize', onViewportResize);
-      }, 500);
-    };
+    // Visibility change — re-evaluate when the tab becomes active again.
+    document.addEventListener('visibilitychange', tryMark);
 
-    window.addEventListener('chat-composer-focus', handleComposerFocus);
+    // Run once immediately in case the chat opens already scrolled to the bottom.
+    tryMark();
+
     return () => {
-      window.removeEventListener('chat-composer-focus', handleComposerFocus);
-      window.visualViewport?.removeEventListener('resize', onViewportResize);
-      cancelAnimationFrame(pinRaf);
-      clearTimeout(stopTimer);
+      io.disconnect();
+      container.removeEventListener('scroll', tryMark);
+      document.removeEventListener('visibilitychange', tryMark);
     };
-  }, []);
+    // messages intentionally omitted: messagesRef.current is read inside tryMark
+    // via markAsReadRef, so the observers don't need to be recreated per message.
+  }, [conversationId]);
 
   const focusMessageInput = useCallback(() => {
     if (!isMdUp) return;
@@ -726,7 +746,7 @@ export function ChatScreen({
     activeCall?.conversationId === conversationId;
   const isCallButtonDisabled = isThisChatBusyForMe;
   return (
-    <div className="relative flex h-full min-h-0 w-full max-w-full flex-col overflow-hidden blyve-screen-bg">
+    <div className="relative flex h-full min-h-0 w-full max-w-full flex-col blyve-screen-bg">
       {/* Header */}
       <div 
         className="flex items-center justify-between px-4 py-3 border-b border-gray-200 blyve-border-subtle blyve-screen-bg"
@@ -809,12 +829,13 @@ export function ChatScreen({
       </div>
       <ChatEmbeddedCallBar conversationId={conversationId} currentUserId={currentUserId} />
 
-      {/* Messages */}
-      <div
-        data-chat-messages-scroll
-        className={`${CHAT_MESSAGE_LIST_CLASS} ${dropActive ? 'ring-2 ring-inset ring-blyve/40' : ''}`}
-        ref={assignMessagesContainer}
-        onScroll={handleMessagesScroll}
+      {/* Messages — relative wrapper so ScrollToBottomButton anchors above the composer */}
+      <div className="relative min-h-0 flex-1 flex flex-col">
+        <div
+          data-chat-messages-scroll
+          className={`${CHAT_MESSAGE_LIST_CLASS} ${dropActive ? 'ring-2 ring-inset ring-blyve/40' : ''}`}
+          ref={assignMessagesContainer}
+          onScroll={handleMessagesScroll}
         onDragOver={(e) => {
           e.preventDefault();
           e.stopPropagation();
@@ -960,9 +981,9 @@ export function ChatScreen({
             <div ref={messagesEndRef} data-chat-scroll-end aria-hidden />
           </>
         )}
+        </div>
+        <ScrollToBottomButton show={showScrollToBottom} onClick={scrollToBottom} />
       </div>
-
-      <ScrollToBottomButton show={showScrollToBottom} onClick={scrollToBottom} />
 
       <ChatMessageComposer
         value={messageInput}

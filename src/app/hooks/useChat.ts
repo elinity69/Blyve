@@ -125,8 +125,8 @@ export function useChat(conversationId: string | null, onMessageSent?: (conversa
     const readAt = new Date().toISOString();
 
     if (lastPatchedUnreadKeyRef.current === syncedKey) {
-      await upsertConversationLastViewedAt(conversationId, userId, readAt);
-      setLastViewedAt(readAt);
+      // Nothing new to mark as read — skip the DB write and state update to
+      // prevent the lastViewedAt layout effect from firing on every scroll.
       return;
     }
 
@@ -288,13 +288,8 @@ export function useChat(conversationId: string | null, onMessageSent?: (conversa
     };
   }, [conversationId]);
 
-  // One initial mark-as-read per conversation after the first page is in local state.
-  useEffect(() => {
-    if (!conversationId || isPending || !isFetched) return;
-    if (initialMarkDoneRef.current === conversationId) return;
-    initialMarkDoneRef.current = conversationId;
-    void markAsReadRef.current();
-  }, [conversationId, isPending, isFetched]);
+  // markAsRead is intentionally NOT auto-called on open or on incoming message.
+  // ChatScreen calls it only after confirming the message list is visible in the viewport.
 
   // Realtime subscription — only tied to conversationId.
   useEffect(() => {
@@ -345,7 +340,7 @@ export function useChat(conversationId: string | null, onMessageSent?: (conversa
 
             if (newMessage.sender_id !== currentUserIdRef.current) {
               lastPatchedUnreadKeyRef.current = '';
-              void markAsReadRef.current();
+              // Do NOT auto-mark as read here — ChatScreen decides based on viewport visibility.
               dispatchUnreadRefreshRequest({ exceptConversationId: conversationId });
             }
           }
@@ -470,7 +465,7 @@ export function useChat(conversationId: string | null, onMessageSent?: (conversa
 
         const { data: newMessage, error: fetchError } = await supabase
           .from('messages')
-          .select('id, conversation_id, sender_id, content, created_at, is_read, read_at, reply_to_message_id')
+          .select('id, conversation_id, sender_id, content, created_at, is_read, read_at, reply_to_message_id, edited_at')
           .eq('id', result.message_id)
           .single();
 
@@ -525,7 +520,7 @@ export function useChat(conversationId: string | null, onMessageSent?: (conversa
       setLoadingMore(true);
       const { data, error: fetchError } = await supabase
         .from('messages')
-        .select('id, conversation_id, sender_id, content, created_at, is_read, read_at, reply_to_message_id')
+        .select('id, conversation_id, sender_id, content, created_at, is_read, read_at, reply_to_message_id, edited_at')
         .eq('conversation_id', conversationId)
         .lt('created_at', oldestMessage.created_at)
         .order('created_at', { ascending: false })

@@ -80,8 +80,7 @@ export function clearNavSwipeLocks(shell?: HTMLDivElement | null) {
   if (typeof document === 'undefined') return;
   delete document.documentElement.dataset.swipeBackLock;
   delete document.documentElement.dataset.forwardSwipeLock;
-  document.body.style.overflowX = '';
-  document.body.style.overflowY = '';
+  delete document.documentElement.dataset.navEdgeTouch;
   if (shell) shell.style.touchAction = '';
 }
 
@@ -89,14 +88,24 @@ export function setNavSwipeBackLock(locked: boolean, shell?: HTMLDivElement | nu
   if (typeof document === 'undefined') return;
   if (locked) {
     document.documentElement.dataset.swipeBackLock = '1';
-    document.body.style.overflowX = 'hidden';
-    document.body.style.overflowY = 'hidden';
     if (shell) shell.style.touchAction = 'none';
   } else {
     delete document.documentElement.dataset.swipeBackLock;
-    document.body.style.overflowX = '';
-    document.body.style.overflowY = '';
     if (shell) shell.style.touchAction = '';
+  }
+}
+
+/**
+ * Written at touchstart the moment NavigationStack accepts a potential back/forward swipe.
+ * Cleared when the gesture resolves (commit, cancel, or direction rejected).
+ * useSwipeToReply reads this to suppress reply swipes that share the same touch event.
+ */
+export function setNavEdgeTouchActive(active: boolean) {
+  if (typeof document === 'undefined') return;
+  if (active) {
+    document.documentElement.dataset.navEdgeTouch = '1';
+  } else {
+    delete document.documentElement.dataset.navEdgeTouch;
   }
 }
 
@@ -116,15 +125,17 @@ export const navigationStackShellStyle = {
   top: `var(${MOBILE_VV_CSS.offsetTop}, 0px)`,
   left: 0,
   right: 0,
-  // Size to the visual viewport height so the shell tracks the keyboard edge
-  // frame-by-frame. Both offsetTop and height are written synchronously in
-  // onViewportEvent — no rAF lag, no jump.
-  height: `var(${MOBILE_VV_CSS.height}, 100dvh)`,
+  // Extend to the screen bottom so no preview bleeds through the gap when
+  // the keyboard shrinks the visual viewport. The inner [data-visual-viewport-shell]
+  // div is explicitly sized to --blyve-vv-height to keep content above the keyboard.
+  bottom: 0,
   boxSizing: 'border-box' as const,
   paddingBottom: 0,
   zIndex: 65,
   backgroundColor: 'var(--color-background, #0d0d0d)',
-  boxShadow: '-5px 0 20px rgba(0,0,0,0.15)',
+  // NO box-shadow here — shadows on will-change:transform layers are not GPU-composited
+  // and force a pixel repaint on every swipe frame. The left-edge depth effect is
+  // achieved via the [data-nav-shell-shadow] sibling element in NavigationStack.
   overflowX: 'hidden' as const,
   overflowY: 'hidden' as const,
   overscrollBehavior: 'contain' as const,

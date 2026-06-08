@@ -6,32 +6,19 @@ import {
   type MutableRefObject,
   type RefObject,
 } from 'react';
-import { subscribeMobileViewportFrame } from '../lib/mobileViewport';
 
 const NEAR_BOTTOM_PX = 96;
-/** One follow-up after the mobile keyboard finishes its resize animation (iOS Safari). */
-const KEYBOARD_SETTLE_MS = 320;
+
+const sd = (..._args: unknown[]) => {};
 
 export type ChatScrollAnchorRef = (node: HTMLElement | null) => void;
 
-/**
- * Keeps the message list pinned to the bottom while the composer / keyboard moves:
- * instant sync on resize, smooth scroll when the composer receives focus.
- *
- * Also observes endMarkerRef so that when child content grows (e.g. reaction bars
- * loading after initial render), the scroll position is corrected automatically.
- */
 export function useChatScrollAnchor(
   containerRef: RefObject<HTMLElement | null>,
   enabled = true,
   endMarkerRef?: RefObject<HTMLElement | null>
 ): ChatScrollAnchorRef {
   const [containerEl, setContainerEl] = useState<HTMLElement | null>(null);
-  const pinnedRef = useRef(true);
-  const adjustingRef = useRef(false);
-  const prevClientHeightRef = useRef(0);
-  const keyboardTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const resizeRafRef = useRef<number | null>(null);
 
   const assignContainerRef = useCallback(
     (node: HTMLElement | null) => {
@@ -41,142 +28,112 @@ export function useChatScrollAnchor(
     [containerRef]
   );
 
+  const pinnedRef = useRef(true);
+  const prevClientHeightRef = useRef(0);
+
   useLayoutEffect(() => {
     if (!enabled || !containerEl) return;
 
-    const getContainer = () => containerEl;
+    sd('MOUNT enabled=true', {
+      scrollHeight: containerEl.scrollHeight,
+      clientHeight: containerEl.clientHeight,
+      scrollTop: containerEl.scrollTop,
+    });
 
-    const distanceFromBottom = (container: HTMLElement) =>
-      container.scrollHeight - container.scrollTop - container.clientHeight;
+    let rafId = 0;
 
-    const scrollToEnd = (smooth = false) => {
-      const container = getContainer();
-      if (!container) return;
+    const distanceFromBottom = () =>
+      containerEl.scrollHeight - containerEl.scrollTop - containerEl.clientHeight;
 
-      adjustingRef.current = true;
-      pinnedRef.current = true;
-
-      const maxScroll = Math.max(0, container.scrollHeight - container.clientHeight);
-
-      if (smooth && typeof container.scrollTo === 'function') {
-        container.scrollTo({ top: maxScroll, behavior: 'smooth' });
-      } else {
-        container.scrollTop = maxScroll;
-      }
-
-      requestAnimationFrame(() => {
-        adjustingRef.current = false;
-      });
-    };
-
-    const syncScrollPosition = (opts?: { smooth?: boolean }) => {
-      const container = getContainer();
-      if (!container) return;
-
-      const distance = distanceFromBottom(container);
+    const syncScrollPosition = () => {
+      const distance = distanceFromBottom();
       const nearBottom = distance < NEAR_BOTTOM_PX;
+
+      sd('syncScrollPosition', {
+        pinned: pinnedRef.current,
+        distance,
+        nearBottom,
+        scrollTop: containerEl.scrollTop,
+        scrollHeight: containerEl.scrollHeight,
+        clientHeight: containerEl.clientHeight,
+      });
 
       if (pinnedRef.current || nearBottom) {
         pinnedRef.current = true;
-        scrollToEnd(opts?.smooth ?? false);
+        const before = containerEl.scrollTop;
+        containerEl.scrollTop = Math.max(0, containerEl.scrollHeight - containerEl.clientHeight);
+        sd('syncScrollPosition → SNAPPED', before, '→', containerEl.scrollTop);
       } else {
-        const prevHeight = prevClientHeightRef.current;
-        const heightDelta = container.clientHeight - prevHeight;
+        const heightDelta = containerEl.clientHeight - prevClientHeightRef.current;
         if (heightDelta !== 0) {
-          container.scrollTop = Math.max(0, container.scrollTop + heightDelta);
+          const before = containerEl.scrollTop;
+          containerEl.scrollTop = Math.max(0, containerEl.scrollTop + heightDelta);
+          sd('syncScrollPosition → adjust by delta', heightDelta, before, '→', containerEl.scrollTop);
+        } else {
+          sd('syncScrollPosition → no-op (not pinned, no delta)');
         }
       }
 
-      prevClientHeightRef.current = container.clientHeight;
+      prevClientHeightRef.current = containerEl.clientHeight;
     };
 
-    const scheduleResizeSync = (opts?: { smooth?: boolean }) => {
-      if (resizeRafRef.current !== null) {
-        cancelAnimationFrame(resizeRafRef.current);
-      }
-      resizeRafRef.current = requestAnimationFrame(() => {
-        resizeRafRef.current = null;
-        syncScrollPosition(opts);
-      });
+    const scheduleSync = (reason: string) => {
+      sd('scheduleSync', reason, { pinned: pinnedRef.current });
+      cancelAnimationFrame(rafId);
+      rafId = requestAnimationFrame(syncScrollPosition);
     };
 
     const onScroll = () => {
-      if (adjustingRef.current) return;
-      const container = getContainer();
-      if (!container) return;
-      pinnedRef.current = distanceFromBottom(container) < NEAR_BOTTOM_PX;
+      const wasPinned = pinnedRef.current;
+      pinnedRef.current = distanceFromBottom() < NEAR_BOTTOM_PX;
+      if (wasPinned !== pinnedRef.current) {
+        sd('onScroll pinnedRef', wasPinned, '→', pinnedRef.current, {
+          scrollTop: containerEl.scrollTop,
+          dist: distanceFromBottom(),
+        });
+      }
     };
 
     prevClientHeightRef.current = containerEl.clientHeight;
     containerEl.addEventListener('scroll', onScroll, { passive: true });
 
-    const resizeObserver = new ResizeObserver(() => {
-      scheduleResizeSync();
-    });
-    // Observe the container itself (keyboard / window resize).
+    const resizeObserver = new ResizeObserver(() => scheduleSync('ResizeObserver'));
     resizeObserver.observe(containerEl);
+    sd('ResizeObserver: observing containerEl');
 
-    // Observe the composer so focus / keyboard expansion also syncs.
     const composerEl = containerEl.parentElement?.querySelector('[data-chat-composer]');
     if (composerEl instanceof HTMLElement) {
       resizeObserver.observe(composerEl);
+      sd('ResizeObserver: also observing composer');
+    } else {
+      sd('ResizeObserver: composer NOT found via [data-chat-composer]');
     }
 
-    // Observe the end-marker element. Because ResizeObserver fires when an element's
-    // own size changes, and the end-marker is a zero-height div, we instead watch its
-    // parent (the messages list inner wrapper) if available, or fall back to the
-    // container's first child. The real goal is to catch scrollHeight growth from
-    // child content (e.g. reaction bars loading async after mount).
-    const endMarkerEl = endMarkerRef?.current;
-    const contentWrapper = endMarkerEl?.parentElement ?? containerEl.firstElementChild;
-    if (contentWrapper instanceof HTMLElement && contentWrapper !== containerEl) {
-      resizeObserver.observe(contentWrapper);
-    }
+    // Do NOT observe contentWrapper — it fires ResizeObserver on every DOM
+    // mutation (reactions, read ticks, re-renders) and snaps the user back
+    // to bottom mid-scroll. New messages are handled via containerEl resize.
+    sd('ResizeObserver: NOT observing contentWrapper (prevents mid-scroll snap)');
 
-    const unsubscribeViewport = subscribeMobileViewportFrame(() => {
-      scheduleResizeSync();
-    });
-
-    const vv = window.visualViewport;
-    const onVisualViewportChange = () => scheduleResizeSync();
-    vv?.addEventListener('resize', onVisualViewportChange);
-    vv?.addEventListener('scroll', onVisualViewportChange);
-
-    const onComposerFocus = (event: Event) => {
-      const detail = (event as CustomEvent<{ smooth?: boolean }>).detail;
-      const smooth = detail?.smooth !== false;
-
-      pinnedRef.current = true;
-
-      syncScrollPosition({ smooth: false });
-      scheduleResizeSync({ smooth: false });
-
-      if (keyboardTimerRef.current) {
-        clearTimeout(keyboardTimerRef.current);
+    const onComposerFocus = () => {
+      const dist = distanceFromBottom();
+      sd('chat-composer-focus event', { dist, pinned: pinnedRef.current, scrollTop: containerEl.scrollTop });
+      if (dist < NEAR_BOTTOM_PX) {
+        pinnedRef.current = true;
+        sd('chat-composer-focus → setting pinnedRef=true');
+      } else {
+        sd('chat-composer-focus → user scrolled up, NOT pinning');
       }
-      keyboardTimerRef.current = setTimeout(() => {
-        keyboardTimerRef.current = null;
-        syncScrollPosition({ smooth });
-      }, KEYBOARD_SETTLE_MS);
+      scheduleSync('composerFocus');
     };
 
     window.addEventListener('chat-composer-focus', onComposerFocus);
 
     return () => {
+      sd('UNMOUNT');
       containerEl.removeEventListener('scroll', onScroll);
       resizeObserver.disconnect();
-      unsubscribeViewport();
-      vv?.removeEventListener('resize', onVisualViewportChange);
-      vv?.removeEventListener('scroll', onVisualViewportChange);
       window.removeEventListener('chat-composer-focus', onComposerFocus);
-      if (keyboardTimerRef.current) {
-        clearTimeout(keyboardTimerRef.current);
-        keyboardTimerRef.current = null;
-      }
-      if (resizeRafRef.current !== null) {
-        cancelAnimationFrame(resizeRafRef.current);
-        resizeRafRef.current = null;
-      }
+      cancelAnimationFrame(rafId);
     };
   }, [enabled, containerEl, endMarkerRef]);
 

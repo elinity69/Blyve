@@ -9,7 +9,10 @@ const BACK_EDGE_INSET_RATIO = 0.18;
 
 /** Returns true if the NavigationStack is currently handling a back-swipe gesture. */
 function isNavSwipeActive(): boolean {
-  return document.documentElement.dataset.swipeBackLock === '1';
+  return (
+    document.documentElement.dataset.swipeBackLock === '1' ||
+    document.documentElement.dataset.navEdgeTouch === '1'
+  );
 }
 
 export function useSwipeToReply(onReply: () => void, enabled = true) {

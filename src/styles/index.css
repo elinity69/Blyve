@@ -413,3 +413,18 @@ html[data-forward-swipe-lock='1'] [data-messages-preview-scroll] {
   border-radius: 9999px;
   max-height: 2.25rem;
 }
+
+/*
+ * The outer navigation shell (motion.div[data-nav-shell]) now uses bottom:0
+ * instead of height:var(--blyve-vv-height), so it always covers the full screen.
+ * The ::before backdrop below is kept as an extra safety net for the 1-2 frame
+ * window before the CSS vars first settle on old iOS.
+ */
+[data-visual-viewport-shell]::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background-color: var(--color-background, #0d0d0d);
+  pointer-events: none;
+}

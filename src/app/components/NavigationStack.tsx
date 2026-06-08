@@ -18,11 +18,12 @@ import {
   NAV_SWIPE_VELOCITY_THRESHOLD,
   navigationStackShellStyle,
   navigationStackShellStyleDesktop,
-  stackPanelOpenBoxShadow,
+  setNavEdgeTouchActive,
   setNavForwardSwipeLock,
   setNavSwipeBackLock,
   isSheetDragActive,
 } from '../lib/navigationShellStyle';
+import { MOBILE_VV_CSS } from '../lib/mobileViewport';
 
 interface NavigationStackProps {
   children: React.ReactNode;
@@ -222,10 +223,10 @@ export function NavigationStack({
     panelX.set(px);
     panelXRef.current = px;
     cancelPendingTranslateFrame();
-    pendingTranslateFrameRef.current = requestAnimationFrame(() => {
-      setTranslateX(translateXRef.current);
-      pendingTranslateFrameRef.current = null;
-    });
+    // DO NOT call setTranslateX here — it was causing a full React re-render
+    // on every swipe frame. translateX state is only used for logPose (debug),
+    // so we read translateXRef.current directly there instead.
+    pendingTranslateFrameRef.current = null;
   };
 
   const stopSnapAnimation = () => {
@@ -606,6 +607,7 @@ export function NavigationStack({
     directionLockedRef.current = false;
     isVerticalScrollRef.current = false;
     isDraggingRef.current = false;
+    setNavEdgeTouchActive(false);
     setSwipeBackLock(false);
     setNavForwardSwipeLock(false, forwardShellRef?.current);
     if (navPhase === 'drag') {
@@ -651,6 +653,7 @@ export function NavigationStack({
     }
 
     touchStartedOnEdgeRef.current = true;
+    setNavEdgeTouchActive(true);
 
     const now = performance.now();
     startXRef.current = startX;
@@ -699,11 +702,13 @@ export function NavigationStack({
           const isRightEdgeSwipe = startXRef.current > width * FORWARD_EDGE_RATIO && deltaX < 0;
           if (absDeltaY > absDeltaX * 1.65 || !isRightEdgeSwipe) {
             isVerticalScrollRef.current = true;
+            setNavEdgeTouchActive(false);
             setSwipeBackLock(false);
             return;
           }
         } else if (absDeltaY > absDeltaX * 1.65 || deltaX <= 0) {
           isVerticalScrollRef.current = true;
+          setNavEdgeTouchActive(false);
           setSwipeBackLock(false);
           return;
         }
@@ -888,13 +893,6 @@ export function NavigationStack({
     navPhase === 'drag' || navPhase === 'snap' || isDraggingRef.current;
   const isForwardHidden = isForwardPull && !isGestureActive;
   const isEnterSliding = enterCssActiveRef.current || navPhase === 'enter';
-  const isStackFullyOpen =
-    !isForwardPull &&
-    !isGestureActive &&
-    !isEnterSliding &&
-    enterAnimationStopRef.current === null &&
-    translateXRef.current <= NAV_SWIPE_OFFSCREEN_EPSILON_PX &&
-    Math.abs(panelXRef.current) <= NAV_SWIPE_OFFSCREEN_EPSILON_PX;
 
   useLayoutEffect(() => {
     const node = viewportShellRef.current;
@@ -916,11 +914,8 @@ export function NavigationStack({
     const mobileShellStyle: React.CSSProperties = {
       ...navigationStackShellStyle,
       zIndex: stackAboveTabBar ? navigationStackShellStyle.zIndex : 5,
-      boxShadow: isForwardHidden
-        ? 'none'
-        : isStackFullyOpen || navPhase === 'enter'
-          ? stackPanelOpenBoxShadow()
-          : navigationStackShellStyle.boxShadow,
+      // No box-shadow on the moving layer — shadows on will-change:transform
+      // elements force per-frame repaint and are not GPU-composited.
       touchAction: isForwardPull ? 'none' : swipeBackLocked ? 'none' : 'pan-y',
       pointerEvents: isForwardPull ? 'none' : 'auto',
       visibility: isForwardHidden ? 'hidden' : 'visible',
@@ -930,35 +925,43 @@ export function NavigationStack({
       WebkitBackfaceVisibility: 'hidden',
     };
     return (
-      <motion.div
-        ref={shellRef}
-        initial={false}
-        style={{ x: panelX, ...mobileShellStyle }}
-        exit={{ x: offscreenX }}
-        transition={{ duration: 0 }}
-      >
-        <div
-          ref={viewportShellRef}
-          data-visual-viewport-shell
-          data-nav-phase={navPhase}
-          data-nav-screen-id={screenId}
-          className="flex h-full min-h-0 w-full flex-col overflow-hidden"
-          style={{
-            boxSizing: 'border-box',
-            pointerEvents: isForwardHidden ? 'none' : 'auto',
-          }}
-          aria-hidden={isForwardHidden}
+      <>
+        <motion.div
+          ref={shellRef}
+          data-nav-shell
+          initial={false}
+          style={{ x: panelX, ...mobileShellStyle }}
+          exit={{ x: offscreenX }}
+          transition={{ duration: 0 }}
         >
-          {children}
-          {enterTouchShield ? (
-            <div
-              className="absolute inset-0 z-[200] touch-none pointer-events-none"
-              aria-hidden
-              data-nav-enter-shield
-            />
-          ) : null}
-        </div>
-      </motion.div>
+          <div
+            ref={viewportShellRef}
+            data-visual-viewport-shell
+            data-nav-phase={navPhase}
+            data-nav-screen-id={screenId}
+            className="flex min-h-0 w-full flex-col overflow-hidden"
+            style={{
+              boxSizing: 'border-box',
+              // Explicitly sized to the visual viewport height so chat content
+              // (header + messages + composer) stays above the keyboard.
+              // The outer motion.div extends to screen bottom (bottom:0) so its
+              // opaque background covers the gap — no preview bleed.
+              height: `var(${MOBILE_VV_CSS.height}, 100dvh)`,
+              pointerEvents: isForwardHidden ? 'none' : 'auto',
+            }}
+            aria-hidden={isForwardHidden}
+          >
+            {children}
+            {enterTouchShield ? (
+              <div
+                className="absolute inset-0 z-[200] touch-none pointer-events-none"
+                aria-hidden
+                data-nav-enter-shield
+              />
+            ) : null}
+          </div>
+        </motion.div>
+      </>
     );
   }
 

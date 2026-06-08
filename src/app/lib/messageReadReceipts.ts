@@ -1,4 +1,5 @@
 export interface ReadReceiptMessage {
+  id: string;
   sender_id: string;
   read_at?: string | null;
   is_read?: boolean | null;
@@ -17,6 +18,7 @@ export function isMessageReadReceiptUpdate(
     'conversation_id',
     'created_at',
     'reply_to_message_id',
+    'edited_at',
   ] as const;
 
   for (const key of stableKeys) {

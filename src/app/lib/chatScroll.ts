@@ -72,7 +72,7 @@ export function findFirstUnreadMessageId(
   return null;
 }
 
-export function isNearBottom(container: HTMLElement, thresholdPx = 120): boolean {
+export function isNearBottom(container: HTMLElement, thresholdPx = 96): boolean {
   return (
     container.scrollHeight - container.scrollTop - container.clientHeight < thresholdPx
   );

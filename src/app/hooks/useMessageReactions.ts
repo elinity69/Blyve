@@ -111,6 +111,12 @@ export function useMessageReactions(
     currentUserIdRef.current = getCachedUser()?.id ?? null;
   }, []);
 
+  // Derive summaries from reactions state. Replaces all inline setSummaries calls
+  // inside setReactions updaters — those were nested state-setter side effects.
+  useEffect(() => {
+    setSummaries(aggregate(reactions, currentUserIdRef.current));
+  }, [reactions]);
+
   // Initial fetch
   useEffect(() => {
     if (!messageId) {
@@ -171,7 +177,6 @@ export function useMessageReactions(
             if (prev.some((x) => x.id === r.id)) return prev;
             const next = [...prev, r];
             reactionRowCache.set(messageId, next);
-            setSummaries(aggregate(next, currentUserIdRef.current));
             return next;
           });
 
@@ -208,7 +213,6 @@ export function useMessageReactions(
           setReactions((prev) => {
             const next = prev.filter((x) => x.id !== old.id);
             reactionRowCache.set(messageId, next);
-            setSummaries(aggregate(next, currentUserIdRef.current));
             return next;
           });
         }
@@ -235,7 +239,6 @@ export function useMessageReactions(
         const removed = reactions[existingIdx];
         setReactions((prev) => {
           const next = prev.filter((r) => r.id !== removed.id);
-          setSummaries(aggregate(next, userId));
           return next;
         });
         const { error } = await supabase
@@ -246,7 +249,6 @@ export function useMessageReactions(
         if (error) {
           setReactions((prev) => {
             const next = [...prev, removed];
-            setSummaries(aggregate(next, userId));
             return next;
           });
         }
@@ -262,7 +264,6 @@ export function useMessageReactions(
         await fetchNames([userId]);
         setReactions((prev) => {
           const next = [...prev, optimistic];
-          setSummaries(aggregate(next, userId));
           return next;
         });
         recordRecentReactionEmoji(emoji);
@@ -281,7 +282,6 @@ export function useMessageReactions(
         if (error) {
           setReactions((prev) => {
             const next = prev.filter((r) => r.id !== optimistic.id);
-            setSummaries(aggregate(next, userId));
             return next;
           });
         } else if (data) {
@@ -289,7 +289,6 @@ export function useMessageReactions(
             const next = prev.map((r) =>
               r.id === optimistic.id ? (data as MessageReaction) : r
             );
-            setSummaries(aggregate(next, userId));
             return next;
           });
         }

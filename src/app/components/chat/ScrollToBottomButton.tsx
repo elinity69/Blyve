@@ -78,9 +78,9 @@ export function ScrollToBottomButton({ show, onClick }: ScrollToBottomButtonProp
           exit={{ opacity: 0, y: 8, scale: 0.9 }}
           transition={{ duration: 0.15, ease: 'easeOut' }}
           className={[
-            'pointer-events-auto absolute bottom-3 left-1/2 z-30',
+            'pointer-events-auto absolute bottom-4 left-1/2 z-30',
             '-translate-x-1/2',
-            'flex h-8 w-8 items-center justify-center rounded-full',
+            'flex h-9 w-9 items-center justify-center rounded-full',
             'bg-[#1e1f22]/80 backdrop-blur-sm',
             'border border-white/10 shadow-lg',
             'text-gray-200 hover:text-white hover:bg-[#1e1f22]',
