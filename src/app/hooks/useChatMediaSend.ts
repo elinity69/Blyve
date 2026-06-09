@@ -89,7 +89,11 @@ export function useChatMediaSend(
       // MediaRecorder so the upload URL, Content-Type, and playback all match.
       // Safari records audio/mp4 (AAC); Chromium records audio/webm (Opus).
       const mimeType = blob.type || 'audio/webm';
-      const ext = mimeType.includes('mp4') || mimeType.includes('m4a') ? 'm4a' : 'webm';
+      // Safari/iOS records audio/mp4, audio/aac, or audio/x-m4a — all need .m4a
+      const ext =
+        mimeType.includes('mp4') || mimeType.includes('m4a') || mimeType.includes('aac')
+          ? 'm4a'
+          : 'webm';
       const file = new File([blob], `voice-${Date.now()}.${ext}`, { type: mimeType });
       return sendFiles([file], { replyToMessageId: replyToMessageId ?? null });
     },

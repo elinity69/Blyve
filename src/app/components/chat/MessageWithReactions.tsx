@@ -27,6 +27,8 @@ interface MessageWithReactionsProps {
   isRead?: boolean;
   readLabel?: string;
   editedAt?: string | null;
+  /** True when this message is the active reply target in the composer. */
+  isReplyTarget?: boolean;
   onReply: () => void;
   onDelete: () => void;
   onEdit?: () => void;
@@ -44,6 +46,7 @@ export function MessageWithReactions({
   isRead,
   readLabel,
   editedAt,
+  isReplyTarget = false,
   onReply,
   onDelete,
   onEdit,
@@ -112,6 +115,7 @@ export function MessageWithReactions({
     <MessageBubbleActionRow
       isMe={isMe}
       canDelete={canDelete}
+      isReplyTarget={isReplyTarget}
       onReply={onReply}
       onDelete={onDelete}
       onCopy={handleCopy}

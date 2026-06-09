@@ -258,15 +258,21 @@ export function ChatMessageComposer({
     voiceStreamRef.current = stream;
     try {
       // Prefer Opus-in-WebM (Chromium/Firefox); fall back to AAC-in-MP4 (Safari/iOS).
-      // Always resolve a concrete mimeType so sendVoiceMemo names the file correctly.
+      // iOS 15 Safari supports audio/mp4 and audio/aac but not audio/webm.
+      // The candidates are ordered so the best quality format wins on each platform.
       const CANDIDATES = [
         'audio/webm;codecs=opus',
         'audio/webm',
         'audio/mp4;codecs=mp4a.40.2',
         'audio/mp4',
+        'audio/aac',
+        'audio/x-m4a',
         'audio/ogg;codecs=opus',
       ];
-      const mimeType = CANDIDATES.find((m) => MediaRecorder.isTypeSupported(m)) ?? '';
+      // isTypeSupported may throw on some browsers — guard it.
+      const mimeType = CANDIDATES.find((m) => {
+        try { return MediaRecorder.isTypeSupported(m); } catch { return false; }
+      }) ?? '';
       const recorder = mimeType
         ? new MediaRecorder(stream, { mimeType })
         : new MediaRecorder(stream);

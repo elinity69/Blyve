@@ -1,13 +1,13 @@
 import { MOBILE_VV_CSS } from './mobileViewport';
 
 /** Static enter/exit when not finger-tracking. */
-export const NAV_SWIPE_COMPLETE_S = 0.32;
+export const NAV_SWIPE_COMPLETE_S = 0.26;
 export const NAV_SWIPE_EASE = [0.22, 0.61, 0.36, 1] as const;
 /** Framer spring for partial snap-back cancel only (never for forward-open commit). */
 export const NAV_SWIPE_SPRING = {
   type: 'spring' as const,
-  stiffness: 420,
-  damping: 42,
+  stiffness: 380,
+  damping: 38,
   mass: 0.8,
   restDelta: 0.5,
   restSpeed: 0.5,
@@ -23,9 +23,19 @@ export const NAV_ENTER_EASE = [0.25, 0.46, 0.45, 0.94] as const;
 export const NAV_ENTER_DURATION_S = 0.4;
 export const NAV_ENTER_SETTLE_MS = Math.round(NAV_ENTER_DURATION_S * 1000);
 export const NAV_SWIPE_CANCEL_MS = 280;
+/** Minimum velocity (px/ms) for any flick path to succeed. */
 export const NAV_SWIPE_VELOCITY_THRESHOLD = 0.28;
-export const NAV_SWIPE_DISTANCE_RATIO = 0.33;
-export const NAV_SWIPE_MIN_DISTANCE_PX = 56;
+/** Fraction of screen width the panel must travel for a slow drag to succeed. */
+export const NAV_SWIPE_DISTANCE_RATIO = 0.22;
+/** Absolute minimum px for a slow drag (lower bound for narrow screens). */
+export const NAV_SWIPE_MIN_DISTANCE_PX = 44;
+/**
+ * Fast-flick path: if velocity ≥ this AND distance ≥ NAV_SWIPE_FLICK_MIN_PX,
+ * the gesture completes regardless of NAV_SWIPE_DISTANCE_RATIO.
+ * Lets short decisive swipes succeed like native iOS.
+ */
+export const NAV_SWIPE_FLICK_VELOCITY = 0.45;
+export const NAV_SWIPE_FLICK_MIN_PX = 28;
 /** Snap / hide threshold so the panel never rests slightly on-screen. */
 export const NAV_SWIPE_OFFSCREEN_EPSILON_PX = 0.5;
 /** Ignore touches right after push — blocks tap ghost from the list row. */

@@ -214,7 +214,7 @@ export const Toast = ({
               isDark ? 'text-gray-300/95' : 'text-slate-600'
             }`}
           >
-            {message}
+            {message || null}
           </p>
         </div>
 

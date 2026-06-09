@@ -36,7 +36,6 @@ import {
   CHAT_MESSAGE_ROW_INNER_CLASS,
   CHAT_MESSAGE_ROW_INNER_GROUPED_CLASS,
   getChatMessageRowClass,
-  getChatMessageBubbleRowAlignClass,
   measureTypingIndicatorClearance,
 } from './chat/chatMessageStyles';
 import { MessageRowAvatarSlot } from './chat/MessageRowAvatarSlot';
@@ -612,11 +611,12 @@ export function GroupThreadScreen({
                           align={mine ? 'end' : 'start'}
                         />
                       )}
-                      <div className={getChatMessageBubbleRowAlignClass(mine)}>
+                      <div className="w-full min-w-0">
                         <MessageWithReactions
                           messageId={m.id}
                           isMe={mine}
                           canDelete={false}
+                          isReplyTarget={replyTarget?.id === m.id}
                           onReply={() =>
                             setReplyTarget(buildReplyTarget(m, getSenderLabel(m.sender_id, m)))
                           }

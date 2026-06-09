@@ -43,7 +43,6 @@ import {
   CHAT_MESSAGE_ROW_INNER_CLASS,
   CHAT_MESSAGE_ROW_INNER_GROUPED_CLASS,
   getChatMessageRowClass,
-  getChatMessageBubbleRowAlignClass,
 } from './chat/chatMessageStyles';
 import { MessageRowAvatarSlot } from './chat/MessageRowAvatarSlot';
 import { MessageGroupHeader } from './chat/MessageGroupHeader';
@@ -938,11 +937,12 @@ export function ChatScreen({
                               align={isMe ? 'end' : 'start'}
                             />
                           )}
-                          <div className={getChatMessageBubbleRowAlignClass(isMe)}>
+                          <div className="w-full min-w-0">
                             <MessageWithReactions
                               messageId={msg.id}
                               isMe={isMe}
                               canDelete={isMe}
+                              isReplyTarget={replyTarget?.id === msg.id}
                               onReply={() =>
                                 setReplyTarget(buildReplyTarget(msg, getSenderLabel(msg.sender_id)))
                               }

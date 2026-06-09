@@ -55,9 +55,12 @@ export function scrollToMessage(messageId: string): void {
   const el = document.querySelector(`[data-message-id="${messageId}"]`);
   if (el instanceof HTMLElement) {
     el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    el.classList.add('ring-2', 'ring-blyve/60', 'rounded-xl');
-    window.setTimeout(() => {
-      el.classList.remove('ring-2', 'ring-blyve/60', 'rounded-xl');
-    }, 1200);
+    // Remove then re-add the attribute so re-tapping the same quote re-triggers.
+    el.removeAttribute('data-reply-flash');
+    // rAF ensures the attribute removal flushes before we re-add it.
+    requestAnimationFrame(() => {
+      el.setAttribute('data-reply-flash', '');
+      window.setTimeout(() => el.removeAttribute('data-reply-flash'), 1100);
+    });
   }
 }

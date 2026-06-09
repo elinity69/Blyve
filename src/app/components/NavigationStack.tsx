@@ -4,10 +4,13 @@ import { useMobileViewportDriver } from '../hooks/useMobileViewportInsets';
 import { navDebug } from '../lib/navDebug';
 import {
   clearNavSwipeLocks,
+  BACK_EDGE_INSET_RATIO,
   FORWARD_EDGE_RATIO,
   NAV_SWIPE_COMPLETE_S,
   NAV_SWIPE_DISTANCE_RATIO,
   NAV_SWIPE_MIN_DISTANCE_PX,
+  NAV_SWIPE_FLICK_VELOCITY,
+  NAV_SWIPE_FLICK_MIN_PX,
   NAV_SWIPE_EASE,
   NAV_ENTER_GRACE_MS,
   NAV_POST_ENTER_GRACE_MS,
@@ -647,13 +650,22 @@ export function NavigationStack({
     }
     touchStartedOnEdgeRef.current = false;
 
+    const width = getViewportWidth();
+
     if (isForwardPull) {
-      const width = getViewportWidth();
       if (startX <= width * FORWARD_EDGE_RATIO) return;
     }
+    // For back-swipe: accept touches anywhere on screen, but only set
+    // navEdgeTouch (which suppresses swipe-to-reply) when the touch genuinely
+    // started in the reserved left-edge zone.  Mid-screen back-swipes proceed
+    // normally — the reply hook won't be suppressed for them.
 
     touchStartedOnEdgeRef.current = true;
-    setNavEdgeTouchActive(true);
+    if (!isForwardPull && startX <= width * BACK_EDGE_INSET_RATIO) {
+      setNavEdgeTouchActive(true);
+    } else if (isForwardPull) {
+      setNavEdgeTouchActive(true);
+    }
 
     const now = performance.now();
     startXRef.current = startX;
@@ -783,13 +795,23 @@ export function NavigationStack({
     const distance = translateXRef.current;
     const distanceThreshold = Math.max(NAV_SWIPE_MIN_DISTANCE_PX, width * NAV_SWIPE_DISTANCE_RATIO);
 
-    const shouldComplete = isForwardPull
-      ? pullVelocity > NAV_SWIPE_VELOCITY_THRESHOLD ||
-        fingerVelocity < -NAV_SWIPE_VELOCITY_THRESHOLD ||
-        distance > distanceThreshold
-      : pullVelocity > NAV_SWIPE_VELOCITY_THRESHOLD ||
-        fingerVelocity > NAV_SWIPE_VELOCITY_THRESHOLD ||
-        distance > distanceThreshold;
+    // Fast-flick path: short decisive swipe at high velocity succeeds regardless
+    // of the distance ratio.  Both the panel velocity and the raw finger velocity
+    // are checked so either a slowly-accelerating drag or a crisp wrist-flick wins.
+    const isFlick = isForwardPull
+      ? (pullVelocity > NAV_SWIPE_FLICK_VELOCITY || fingerVelocity < -NAV_SWIPE_FLICK_VELOCITY) &&
+        distance >= NAV_SWIPE_FLICK_MIN_PX
+      : (pullVelocity > NAV_SWIPE_FLICK_VELOCITY || fingerVelocity > NAV_SWIPE_FLICK_VELOCITY) &&
+        distance >= NAV_SWIPE_FLICK_MIN_PX;
+
+    const shouldComplete = isFlick ||
+      (isForwardPull
+        ? pullVelocity > NAV_SWIPE_VELOCITY_THRESHOLD ||
+          fingerVelocity < -NAV_SWIPE_VELOCITY_THRESHOLD ||
+          distance > distanceThreshold
+        : pullVelocity > NAV_SWIPE_VELOCITY_THRESHOLD ||
+          fingerVelocity > NAV_SWIPE_VELOCITY_THRESHOLD ||
+          distance > distanceThreshold);
 
     const wasDraggingForward = isForwardPull;
 

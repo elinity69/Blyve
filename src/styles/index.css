@@ -388,6 +388,17 @@ html[data-forward-swipe-lock='1'] [data-messages-preview-scroll] {
   overscroll-behavior: none;
 }
 
+/* Reply jump-to highlight flash */
+@keyframes reply-jump-flash {
+  0%   { background-color: rgba(63, 175, 149, 0); }
+  20%  { background-color: rgba(63, 175, 149, 0.18); }
+  100% { background-color: rgba(63, 175, 149, 0); }
+}
+[data-reply-flash] {
+  border-radius: 0.5rem;
+  animation: reply-jump-flash 1000ms cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+}
+
 /* Mobile messages preview: fixed shell, scroll only inside the list column */
 [data-messages-preview-shell] {
   overscroll-behavior: none;

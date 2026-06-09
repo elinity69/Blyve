@@ -15,10 +15,10 @@ export function MessageReplyQuote({ quote, isMe }: MessageReplyQuoteProps) {
     <button
       type="button"
       onClick={() => scrollToMessage(quote.messageId)}
-      className={`mb-1 w-full rounded-md border-l-2 px-1.5 py-0.5 text-left transition-opacity hover:opacity-80 ${
+      className={`mb-1 w-full rounded-md border-l-2 px-1.5 py-0.5 text-left transition-all duration-150 active:scale-[0.98] ${
         isMe
-          ? 'border-white/50 bg-white/10 dark:border-white/20 dark:bg-black/20'
-          : 'border-blyve/80 bg-black/[0.04] dark:border-blyve/50 dark:bg-black/30'
+          ? 'border-white/50 bg-white/10 active:bg-white/20 dark:border-white/20 dark:bg-black/20 dark:active:bg-blyve/10'
+          : 'border-blyve/80 bg-black/[0.04] active:bg-blyve/10 dark:border-blyve/50 dark:bg-black/30 dark:active:bg-blyve/10'
       }`}
     >
       <p className={`text-[10px] font-medium leading-tight ${isMe ? 'text-white/90 dark:text-[#c5d4e3]' : 'text-blyve/80'}`}>

@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-const SWIPE_THRESHOLD = 36;
-const SWIPE_MAX = 52;
-const VELOCITY_THRESHOLD = 0.3; // px/ms — fast flick triggers reply even under distance threshold
+const SWIPE_THRESHOLD = 40;
+const SWIPE_MAX = 56;
 
 /** Left-edge ratio that the NavigationStack reserves for swipe-back (mirrors BACK_EDGE_INSET_RATIO). */
 const BACK_EDGE_INSET_RATIO = 0.18;
@@ -15,30 +14,48 @@ function isNavSwipeActive(): boolean {
   );
 }
 
+export interface SwipeToReplyState {
+  /** Negative px while dragging left, 0 at rest. */
+  offsetX: number;
+  /** 0–1 progress toward threshold. */
+  swipeProgress: number;
+  /** True once progress hits 1 (threshold reached). Reverts if finger comes back. */
+  armed: boolean;
+  /** True for one render tick after a successful release — drives confirmation flash. */
+  fired: boolean;
+}
+
 export function useSwipeToReply(onReply: () => void, enabled = true) {
   const startXRef = useRef(0);
   const startYRef = useRef(0);
   const draggingRef = useRef(false);
-  const offsetRef = useRef(0);
-  const lastMoveTimeRef = useRef(0);
-  const lastMoveXRef = useRef(0);
-  const hapticFiredRef = useRef(false);
-  // Set to true for touches that start inside the nav back-swipe zone or while
-  // a back-swipe is in progress — prevents accidental reply after partial back swipe.
   const suppressedRef = useRef(false);
-  const [offsetX, setOffsetX] = useState(0);
-  // Ref to the DOM node that swipeHandlers are spread onto (set via callbackRef).
+  const offsetRef = useRef(0);
+  const hapticFiredRef = useRef(false);
+  const replyFiredRef = useRef(false);
   const nodeRef = useRef<HTMLElement | null>(null);
+
+  const [state, setState] = useState<SwipeToReplyState>({
+    offsetX: 0,
+    swipeProgress: 0,
+    armed: false,
+    fired: false,
+  });
+
+  const patchState = useCallback((patch: Partial<SwipeToReplyState>) => {
+    setState((prev) => ({ ...prev, ...patch }));
+  }, []);
 
   const reset = useCallback(() => {
     draggingRef.current = false;
+    suppressedRef.current = false;
     offsetRef.current = 0;
     hapticFiredRef.current = false;
-    suppressedRef.current = false;
-    setOffsetX((prev) => (prev === 0 ? prev : 0));
+    replyFiredRef.current = false;
+    setState({ offsetX: 0, swipeProgress: 0, armed: false, fired: false });
   }, []);
 
-  // Non-passive native touchmove to block vertical scroll once horizontal lock is confirmed.
+  // Non-passive native touchmove to block vertical scroll once horizontal is confirmed.
   const nativeBlockRef = useRef<((e: TouchEvent) => void) | null>(null);
 
   const attachScrollBlock = useCallback(() => {
@@ -58,27 +75,7 @@ export function useSwipeToReply(onReply: () => void, enabled = true) {
     nativeBlockRef.current = null;
   }, []);
 
-  // Detach on unmount.
   useEffect(() => detachScrollBlock, [detachScrollBlock]);
-
-  const onTouchStart = useCallback(
-    (event: React.TouchEvent) => {
-      if (!enabled) return;
-      const touch = event.touches[0];
-      const x = touch?.clientX ?? 0;
-      // Suppress if a back-swipe is already active, or if the touch starts
-      // inside the left-edge zone reserved for back-swipe navigation.
-      const inBackEdge = x < window.innerWidth * BACK_EDGE_INSET_RATIO;
-      suppressedRef.current = isNavSwipeActive() || inBackEdge;
-      startXRef.current = x;
-      startYRef.current = touch?.clientY ?? 0;
-      lastMoveXRef.current = startXRef.current;
-      lastMoveTimeRef.current = event.timeStamp;
-      draggingRef.current = false;
-      hapticFiredRef.current = false;
-    },
-    [enabled]
-  );
 
   const onTouchMove = useCallback(
     (event: React.TouchEvent) => {
@@ -89,54 +86,75 @@ export function useSwipeToReply(onReply: () => void, enabled = true) {
       const dx = touch.clientX - startXRef.current;
       const dy = touch.clientY - startYRef.current;
 
-      // Direction not yet locked — wait for enough movement to decide.
       if (!draggingRef.current) {
-        if (Math.abs(dx) < 6 && Math.abs(dy) < 6) return;
-        if (Math.abs(dy) > Math.abs(dx)) {
-          // Vertical — let native scroll handle it, never engage swipe.
-          return;
-        }
-        // Confirmed horizontal swipe — lock direction and block native scroll.
+        if (Math.abs(dx) < 5 && Math.abs(dy) < 5) return;
+
+        if (Math.abs(dy) > Math.abs(dx) * 1.2) return;
+
+        if (dx >= 0) return;
+
         draggingRef.current = true;
         attachScrollBlock();
       }
 
-      lastMoveXRef.current = touch.clientX;
-      lastMoveTimeRef.current = event.timeStamp;
-
-      if (dx < -8) {
-        const next = Math.max(dx, -SWIPE_MAX);
-        const abs = Math.abs(next);
+      if (dx < 0) {
+        const clamped = Math.max(dx, -SWIPE_MAX);
+        const abs = Math.abs(clamped);
         offsetRef.current = abs;
-        setOffsetX(next);
+        const progress = Math.min(abs / SWIPE_THRESHOLD, 1);
+        const nowArmed = progress >= 1;
 
-        // Fire haptic once when crossing the success threshold.
-        if (!hapticFiredRef.current && abs >= SWIPE_THRESHOLD) {
+        if (!hapticFiredRef.current && nowArmed) {
           hapticFiredRef.current = true;
           navigator.vibrate?.(10);
         }
+
+        patchState({ offsetX: clamped, swipeProgress: progress, armed: nowArmed });
       } else {
         offsetRef.current = 0;
-        setOffsetX(0);
+        patchState({ offsetX: 0, swipeProgress: 0, armed: false });
       }
     },
-    [enabled, attachScrollBlock]
+    [enabled, attachScrollBlock, patchState]
+  );
+
+  const onTouchStart = useCallback(
+    (event: React.TouchEvent) => {
+      reset();
+      if (!enabled) return;
+      const touch = event.touches[0];
+      const x = touch?.clientX ?? 0;
+      const screenW = window.innerWidth;
+      const inBackEdge = x < screenW * BACK_EDGE_INSET_RATIO;
+      const navActive = isNavSwipeActive();
+      if (navActive || inBackEdge) {
+        suppressedRef.current = true;
+        return;
+      }
+      startXRef.current = x;
+      startYRef.current = touch?.clientY ?? 0;
+    },
+    [enabled, reset]
   );
 
   const onTouchEnd = useCallback(
-    (event: React.TouchEvent) => {
-      if (!enabled) return;
+    (_event: React.TouchEvent) => {
       detachScrollBlock();
-      if (suppressedRef.current || !draggingRef.current) { reset(); return; }
-      const elapsed = event.timeStamp - lastMoveTimeRef.current;
-      const dx = lastMoveXRef.current - startXRef.current;
-      const velocity = elapsed > 0 ? Math.abs(dx) / elapsed : 0;
-      if (offsetRef.current >= SWIPE_THRESHOLD || velocity >= VELOCITY_THRESHOLD) {
-        onReply();
+      if (!enabled || suppressedRef.current || !draggingRef.current) {
+        reset();
+        return;
       }
-      reset();
+      if (offsetRef.current >= SWIPE_THRESHOLD && !replyFiredRef.current) {
+        replyFiredRef.current = true;
+        // Flash the fired state briefly, then reset.
+        patchState({ fired: true, offsetX: 0, armed: false });
+        setTimeout(() => reset(), 300);
+        onReply();
+      } else {
+        reset();
+      }
     },
-    [enabled, onReply, reset, detachScrollBlock]
+    [enabled, onReply, reset, detachScrollBlock, patchState]
   );
 
   const callbackRef = useCallback((node: HTMLElement | null) => {
@@ -144,8 +162,7 @@ export function useSwipeToReply(onReply: () => void, enabled = true) {
   }, []);
 
   return {
-    offsetX,
-    swipeProgress: Math.min(Math.abs(offsetX) / SWIPE_THRESHOLD, 1),
+    ...state,
     callbackRef,
     swipeHandlers: {
       onTouchStart,

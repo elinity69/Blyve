@@ -69,22 +69,22 @@ export function BottomNavigation({ activeTab, onTabChange }: BottomNavigationPro
             <div 
               className="relative flex items-center justify-center mb-0.5" 
               style={{ 
-                width: '24px',
-                height: '24px',
-                minWidth: '24px',
-                minHeight: '24px',
-                maxWidth: '24px',
-                maxHeight: '24px'
+                width: '28px',
+                height: '28px',
+                minWidth: '28px',
+                minHeight: '28px',
+                maxWidth: '28px',
+                maxHeight: '28px'
               }}
             >
               <Icon
-                className="w-5 h-5"
+                className="w-7 h-7"
                 style={{
-                  width: '20px',
-                  height: '20px',
-                  minWidth: '20px',
-                  minHeight: '20px',
-                  transform: activeTab === id ? 'scale(1.2)' : 'scale(1)',
+                  width: '24px',
+                  height: '24px',
+                  minWidth: '24px',
+                  minHeight: '24px',
+                  transform: activeTab === id ? 'scale(1.15)' : 'scale(1)',
                   transition: 'transform 0.3s ease',
                 }}
               />
