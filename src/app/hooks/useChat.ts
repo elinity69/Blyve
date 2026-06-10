@@ -105,10 +105,13 @@ export function useChat(conversationId: string | null, onMessageSent?: (conversa
     queryKey: dmMessagesQueryKey(conversationId!),
     enabled: !!conversationId,
     queryFn: () => fetchDmMessages(conversationId!),
-    staleTime: 0,
+    // Realtime keeps the cache current — treat data as fresh for 30s so
+    // TanStack Query does not issue a background re-fetch on every re-render.
+    staleTime: 30_000,
     refetchOnWindowFocus: false,
     refetchOnReconnect: true,
-    refetchOnMount: 'always',
+    // Only refetch on first mount, not on every re-subscription.
+    refetchOnMount: true,
     retry: 2,
   });
 
@@ -184,6 +187,11 @@ export function useChat(conversationId: string | null, onMessageSent?: (conversa
 
   const markAsReadRef = useRef(markAsRead);
   markAsReadRef.current = markAsRead;
+
+  // Stable ref so the realtime useEffect below never re-runs just because
+  // TanStack Query issued a new refetch function reference.
+  const refetchMessagesRef = useRef(refetchMessages);
+  refetchMessagesRef.current = refetchMessages;
 
   // Sync query results into local state (single effect — no separate clear effect that races).
   useEffect(() => {
@@ -406,7 +414,7 @@ export function useChat(conversationId: string | null, onMessageSent?: (conversa
             }
             resubscribeTimeoutRef.current = window.setTimeout(() => {
               resubscribeTimeoutRef.current = null;
-              void refetchMessages();
+              void refetchMessagesRef.current();
               subscribeMessagesChannel();
             }, 800);
           }
@@ -418,7 +426,7 @@ export function useChat(conversationId: string | null, onMessageSent?: (conversa
     subscribeMessagesChannel();
 
     const unsubscribeForeground = onAppForeground(() => {
-      void refetchMessages();
+      void refetchMessagesRef.current();
       subscribeMessagesChannel();
     });
 
@@ -434,7 +442,7 @@ export function useChat(conversationId: string | null, onMessageSent?: (conversa
         channelRef.current = null;
       }
     };
-  }, [conversationId, queryClient, refetchMessages]);
+  }, [conversationId, queryClient]);
 
   const sendMessage = useCallback(
     async (
