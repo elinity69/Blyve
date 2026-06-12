@@ -62,6 +62,7 @@ import {
   scrollContainerToMessage,
 } from '../lib/chatScroll';
 import { ScrollToBottomButton, useScrollToBottom } from './chat/ScrollToBottomButton';
+import { useStickyDateOverlay } from '../hooks/useStickyDateOverlay';
 
 interface ChatScreenProps {
   onBack: () => void;
@@ -132,6 +133,7 @@ export function ChatScreen({
   const optionsMenuRef = useRef<HTMLDivElement>(null);
   const optionsButtonRef = useRef<HTMLButtonElement>(null);
   const { show: showScrollToBottom, handleScroll: scrollToBottomHandleScroll, scrollToBottom } = useScrollToBottom(messagesContainerRef);
+  const { label: stickyDateLabel, visible: stickyDateVisible } = useStickyDateOverlay(messagesContainerRef, messages);
   const [showOptionsMenu, setShowOptionsMenu] = useState(false);
   const [showReportModal, setShowReportModal] = useState(false);
   const [showBlockModal, setShowBlockModal] = useState(false);
@@ -830,6 +832,21 @@ export function ChatScreen({
 
       {/* Messages — relative wrapper so ScrollToBottomButton anchors above the composer */}
       <div className="relative min-h-0 flex-1 flex flex-col">
+        {/* Sticky date pill overlay */}
+        {stickyDateLabel ? (
+          <div
+            aria-hidden
+            className="pointer-events-none absolute inset-x-0 top-2 z-20 flex justify-center"
+            style={{
+              opacity: stickyDateVisible ? 1 : 0,
+              transition: 'opacity 0.2s ease',
+            }}
+          >
+            <span className="rounded-full bg-black/40 px-3 py-1 text-[11px] font-medium leading-tight text-white backdrop-blur-sm dark:bg-black/55">
+              {stickyDateLabel}
+            </span>
+          </div>
+        ) : null}
         <div
           data-chat-messages-scroll
           className={`${CHAT_MESSAGE_LIST_CLASS} ${dropActive ? 'ring-2 ring-inset ring-blyve/40' : ''}`}
