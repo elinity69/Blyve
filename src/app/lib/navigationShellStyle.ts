@@ -132,17 +132,22 @@ export function setNavForwardSwipeLock(locked: boolean, shell?: HTMLDivElement |
 
 export const navigationStackShellStyle = {
   position: 'fixed' as const,
-  // top: 0 keeps the shell anchored to the visual viewport top regardless of
-  // vv.offsetTop. On iOS resize-mode (iOS 15+) offsetTop is always 0.
-  // Using the offsetTop CSS var was causing the header to visually shift up/down
-  // during keyboard open because offsetTop briefly oscillates on some devices.
+  // top: 0 — anchored to visual viewport top.
+  // On iOS 15+ (resize-mode), vv.offsetTop is always 0 so this is safe.
+  // The offsetTop CSS var caused header jumps when offsetTop briefly oscillated.
   top: 0,
   left: 0,
   right: 0,
-  // Extend to the screen bottom so no preview bleeds through the gap when
-  // the keyboard shrinks the visual viewport. The inner [data-visual-viewport-shell]
-  // div is explicitly sized to --blyve-vv-height to keep content above the keyboard.
-  bottom: 0,
+  // Use explicit height instead of `bottom: 0`.
+  // `position: fixed; bottom: 0` combined with `will-change: transform` (applied
+  // by framer-motion on this element) is a known iOS Safari compositor bug:
+  // composited layers do not re-evaluate `bottom` positioning when innerHeight
+  // changes due to the keyboard, so the shell stayed at the old height (664px)
+  // while the inner viewport-shell correctly shrank to 441px — producing the
+  // large black gap the user sees below the composer.
+  // Using var(--blyve-vv-height) directly is a style value, not layout-dependent,
+  // and updates correctly on composited layers.
+  height: `var(${MOBILE_VV_CSS.height}, 100dvh)`,
   boxSizing: 'border-box' as const,
   paddingBottom: 0,
   zIndex: 65,

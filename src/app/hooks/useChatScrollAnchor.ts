@@ -134,6 +134,20 @@ export function useChatScrollAnchor(
     const resizeObserver = new ResizeObserver(() => {
       cancelAnimationFrame(rafId);
       rafId = 0;
+      if (containerEl.clientHeight === 0) return;
+
+      // iOS can fire onScroll during the keyboard-open transition (before this
+      // ResizeObserver callback) which resets pinnedRef to false. Re-check using
+      // the PREVIOUS clientHeight to detect if the user was at the bottom before
+      // the resize. If so, force pinnedRef=true so we always snap on keyboard open.
+      if (!pinnedRef.current && prevClientHeightRef.current > 0) {
+        const oldDistance =
+          containerEl.scrollHeight - containerEl.scrollTop - prevClientHeightRef.current;
+        if (oldDistance < NEAR_BOTTOM_PX) {
+          pinnedRef.current = true;
+        }
+      }
+
       syncScrollPosition();
     });
     resizeObserver.observe(containerEl);
