@@ -71,6 +71,10 @@ export function useChatScrollAnchor(
       containerEl.scrollHeight - containerEl.scrollTop - containerEl.clientHeight;
 
     const syncScrollPosition = () => {
+      // Skip sync entirely when the container has no size — this prevents the
+      // hidden forward-pull ChatScreen (0×0 container) from running and logging.
+      if (containerEl.clientHeight === 0) return;
+
       const distance = distanceFromBottom();
       const nearBottom = distance < NEAR_BOTTOM_PX;
 
@@ -99,6 +103,8 @@ export function useChatScrollAnchor(
       prevClientHeightRef.current = containerEl.clientHeight;
     };
 
+    // scheduleSync via RAF is used only for the composer-focus event, where we
+    // intentionally defer to after the keyboard has begun animating.
     const scheduleSync = (reason: string) => {
       logScrollAnchorDebug('scheduleSync', containerEl, { reason, pinned: pinnedRef.current });
       cancelAnimationFrame(rafId);
@@ -120,7 +126,16 @@ export function useChatScrollAnchor(
     prevClientHeightRef.current = containerEl.clientHeight;
     containerEl.addEventListener('scroll', onScroll, { passive: true });
 
-    const resizeObserver = new ResizeObserver(() => scheduleSync('ResizeObserver'));
+    // ResizeObserver callbacks fire AFTER layout but BEFORE paint, in the same
+    // rendering frame. Calling syncScrollPosition() directly here (not via RAF)
+    // means the scroll adjustment lands in the SAME frame as the container resize.
+    // This eliminates the 1-frame gap that caused the visible "jump" when the iOS
+    // keyboard opens and shrinks the chat container height.
+    const resizeObserver = new ResizeObserver(() => {
+      cancelAnimationFrame(rafId);
+      rafId = 0;
+      syncScrollPosition();
+    });
     resizeObserver.observe(containerEl);
     logScrollAnchorDebug('ResizeObserver_observing_containerEl', containerEl);
 

@@ -132,7 +132,11 @@ export function setNavForwardSwipeLock(locked: boolean, shell?: HTMLDivElement |
 
 export const navigationStackShellStyle = {
   position: 'fixed' as const,
-  top: `var(${MOBILE_VV_CSS.offsetTop}, 0px)`,
+  // top: 0 keeps the shell anchored to the visual viewport top regardless of
+  // vv.offsetTop. On iOS resize-mode (iOS 15+) offsetTop is always 0.
+  // Using the offsetTop CSS var was causing the header to visually shift up/down
+  // during keyboard open because offsetTop briefly oscillates on some devices.
+  top: 0,
   left: 0,
   right: 0,
   // Extend to the screen bottom so no preview bleeds through the gap when
