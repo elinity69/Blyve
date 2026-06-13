@@ -63,6 +63,7 @@ interface UserProfile {
   theme_mode?: string | null;
   ghost_mode?: boolean | null;
   onboarding_complete?: boolean | null;
+  imageUrl?: string | null;
 }
 
 interface AppDataContextType {

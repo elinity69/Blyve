@@ -36,6 +36,7 @@ export interface Message {
   read_at: string | null;
   reply_to_message_id?: string | null;
   edited_at?: string | null;
+  reactions?: Record<string, string[]> | null;
 }
 
 export interface Conversation {

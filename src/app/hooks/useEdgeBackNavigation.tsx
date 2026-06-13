@@ -16,7 +16,7 @@ interface StackScreen {
 
 interface UseEdgeBackNavigationProps {
   baseContent: React.ReactNode;
-  onStackChange?: (stackDepth: number) => void;
+  onStackChange?: (stackDepth: number, topScreenId: string | null) => void;
   /** Swipe right on the preview layer to reopen the last chat (Discord-style). */
   onForwardSwipe?: () => void;
   /** When false, hides the forward-pull cache (e.g. messages tab not active). */
@@ -143,7 +143,7 @@ export function useEdgeBackNavigation({
 
     if (lastReportedStackDepthRef.current !== stackDepth) {
       lastReportedStackDepthRef.current = stackDepth;
-      onStackChangeRef.current?.(stackDepth);
+      onStackChangeRef.current?.(stackDepth, stack[stackDepth - 1]?.id ?? null);
     }
 
     if (stackDepth > 0) {
@@ -300,6 +300,13 @@ export function useEdgeBackNavigation({
       onForwardSwipeRef.current != null;
     const overlayScreen = topStack ?? (canForwardPull ? cachedScreen : null);
     const isForwardPull = canForwardPull;
+
+    console.log('[useEdgeBackNavigation DEBUG] renderLayers', {
+      topId: topStack?.id ?? null,
+      overlayId: overlayScreen?.id ?? null,
+      cachedId: cachedScreen?.id ?? null,
+      isForwardPull
+    });
 
     const renderKey = `${stack.length}|${topStack?.id ?? ''}|${overlayScreen?.id ?? ''}|${isForwardPull}|${topStack?.skipEnterAnimation ?? true}`;
     if (lastRenderLogRef.current !== renderKey) {

@@ -931,6 +931,10 @@ export function NavigationStack({
     }
   }, [isForwardHidden, isForwardPull]);
 
+  const content = React.isValidElement(children) && screenId?.startsWith('chat-')
+    ? React.cloneElement(children as React.ReactElement<any>, { isActiveTopScreen: !isForwardHidden })
+    : children;
+
   if (isMobile) {
     const stackAboveTabBar = !isForwardHidden;
     const mobileShellStyle: React.CSSProperties = {
@@ -973,7 +977,7 @@ export function NavigationStack({
             }}
             aria-hidden={isForwardHidden}
           >
-            {children}
+            {content}
             {enterTouchShield ? (
               <div
                 className="absolute inset-0 z-[200] touch-none pointer-events-none"
@@ -999,7 +1003,7 @@ export function NavigationStack({
       }}
       style={navigationStackShellStyleDesktop}
     >
-      {children}
+      {content}
     </motion.div>
   );
 }

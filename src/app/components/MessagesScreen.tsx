@@ -2253,6 +2253,7 @@ export function MessagesScreen({ isTabActive = true }: MessagesScreenProps) {
               onBack={() => handleLeaveChat(selectedConversationId!)}
               onOpenProfilePreview={setProfilePreviewUserId}
               onConversationUpdated={() => void reload()}
+              isDesktop={isDesktop}
             />
           ) : (
             <div className="flex flex-1 flex-col items-center justify-center text-center px-6 text-gray-500 dark:text-gray-400">
@@ -2455,6 +2456,7 @@ export function MessagesScreen({ isTabActive = true }: MessagesScreenProps) {
           popScreenRef.current();
         }}
         onConversationUpdated={() => void reload()}
+        isDesktop={false}
       />,
       `chat-${selectedConversationId}`,
       { skipEnterAnimation: skipEnter }
