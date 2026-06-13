@@ -138,16 +138,21 @@ export const navigationStackShellStyle = {
   top: 0,
   left: 0,
   right: 0,
-  // Use explicit height instead of `bottom: 0`.
-  // `position: fixed; bottom: 0` combined with `will-change: transform` (applied
-  // by framer-motion on this element) is a known iOS Safari compositor bug:
-  // composited layers do not re-evaluate `bottom` positioning when innerHeight
-  // changes due to the keyboard, so the shell stayed at the old height (664px)
-  // while the inner viewport-shell correctly shrank to 441px — producing the
-  // large black gap the user sees below the composer.
-  // Using var(--blyve-vv-height) directly is a style value, not layout-dependent,
-  // and updates correctly on composited layers.
-  height: `var(${MOBILE_VV_CSS.height}, 100dvh)`,
+  // `bottom: 0` + `will-change: transform` (framer-motion) = iOS Safari compositor
+  // bug: composited layers don't re-evaluate bottom-positioning when innerHeight
+  // changes. Using `height: 100vh` instead fixes both problems:
+  //
+  // 1. No black gap: outer shell is sized via a CSS unit, not layout-dependent
+  //    `bottom`, so it updates correctly on composited layers.
+  //
+  // 2. No preview bleed: on iOS 15+, `100vh` = large viewport ≥ window.innerHeight,
+  //    so the outer shell always covers the area below the inner viewport-shell
+  //    even when the keyboard shrinks the inner shell to 441px.
+  //
+  // The inner [data-visual-viewport-shell] is still sized to var(--blyve-vv-height)
+  // which correctly tracks the space above the keyboard. The outer shell just needs
+  // to be tall enough to cover the rest — 100vh satisfies this.
+  height: '100vh',
   boxSizing: 'border-box' as const,
   paddingBottom: 0,
   zIndex: 65,
