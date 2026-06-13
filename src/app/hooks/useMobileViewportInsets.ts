@@ -61,15 +61,9 @@ export function useMobileViewportInsets(enabled = true) {
   );
 
   useEffect(() => {
-    logMobileViewportDebug('useMobileViewportInsets_effect_run', frame, { enabled });
     if (!enabled) return;
-    const cleanup = acquireMobileViewportTracking();
-    logMobileViewportDebug('useMobileViewportInsets_tracking_acquired', frame, { enabled });
-    return () => {
-      logMobileViewportDebug('useMobileViewportInsets_tracking_released', frame, { enabled });
-      cleanup();
-    };
-  }, [enabled, frame]);
+    return acquireMobileViewportTracking();
+  }, [enabled]);
 
   useEffect(() => {
     logMobileViewportDebug('useMobileViewportInsets_frame_change', frame, { enabled });
