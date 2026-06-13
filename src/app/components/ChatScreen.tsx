@@ -154,6 +154,10 @@ export function ChatScreen({
   const [scrollAnchorReady, setScrollAnchorReady] = useState(false);
   const headerPortalRef = useRef<HTMLDivElement>(null);
   const [headerHeight, setHeaderHeight] = useState(56);
+  // Portal is only active while this ChatScreen is the top of the nav stack.
+  // mobile-chat-stack-close fires when stack depth drops to 0 (forward-pull cached
+  // screens stay mounted with display:none — portal must not escape to body then).
+  const [isPortalActive, setIsPortalActive] = useState(true);
 
   const applyInitialScrollPosition = useCallback(() => {
     const container = messagesContainerRef.current;
@@ -204,6 +208,17 @@ export function ChatScreen({
     const ro = new ResizeObserver(() => setHeaderHeight(el.offsetHeight));
     ro.observe(el);
     return () => ro.disconnect();
+  }, []);
+
+  useEffect(() => {
+    const onOpen = () => setIsPortalActive(true);
+    const onClose = () => setIsPortalActive(false);
+    window.addEventListener('mobile-chat-stack-open', onOpen);
+    window.addEventListener('mobile-chat-stack-close', onClose);
+    return () => {
+      window.removeEventListener('mobile-chat-stack-open', onOpen);
+      window.removeEventListener('mobile-chat-stack-close', onClose);
+    };
   }, []);
 
   const openProfileActions = useCallback(
@@ -766,16 +781,18 @@ export function ChatScreen({
       {/* Header + CallBar rendered via portal so it sits outside the will-change:transform
           nav shell. position:fixed children of transformed ancestors are fixed relative to
           that ancestor, not the viewport — the portal breaks this coupling. */}
-      {createPortal(
+      {isPortalActive && createPortal(
         <div
           ref={headerPortalRef}
           style={{
             position: 'fixed',
-            top: 0,
+            // Match the nav shell's top so the header aligns with the visual
+            // viewport offset. This eliminates the gap between portal bottom
+            // and the messages paddingTop when vv.offsetTop > 0.
+            top: 'var(--blyve-vv-offset-top, 0px)',
             left: 0,
             right: 0,
             zIndex: 66,
-            paddingTop: 'env(safe-area-inset-top, 0px)',
           }}
           className="blyve-screen-bg border-b border-gray-200 blyve-border-subtle"
         >
