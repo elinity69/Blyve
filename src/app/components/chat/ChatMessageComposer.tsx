@@ -1,4 +1,4 @@
-import {
+import React, {
   useCallback,
   useEffect,
   useRef,
@@ -577,4 +577,5 @@ export const ChatMessageComposer = React.forwardRef<HTMLDivElement, ChatMessageC
       ) : null}
     </div>
   );
-}
+});
+
