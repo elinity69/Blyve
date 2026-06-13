@@ -120,13 +120,23 @@ export function scheduleMobileViewportUpdate() {
 
 function applyScreenHeight() {
   if (typeof document === 'undefined' || typeof window === 'undefined') return;
-  // outerHeight = browser window height = physical screen minus OS chrome.
-  // It does NOT shrink when the on-screen keyboard opens (unlike innerHeight /
-  // 100vh on iOS resize-mode). Using it as the outer nav-shell height guarantees
-  // full-screen coverage in both resize-mode and pan-mode.
+  // Use window.innerHeight (content area only, no browser chrome) as the outer
+  // nav-shell height. outerHeight (844px) was tried but extends into the browser
+  // chrome area (status bar + URL bar + bottom nav = 180px), which on a GPU
+  // compositing layer (will-change:transform) is not properly clipped → visible
+  // black bar extending beyond the keyboard.
+  //
+  // innerHeight when keyboard is CLOSED (664px on this device) = exactly the
+  // right coverage: large enough to fill the screen, small enough that no GPU
+  // layer overflow bleeds through.
+  //
+  // IMPORTANT: this must only be called when the keyboard is NOT open.
+  // In iOS resize-mode, innerHeight drops to 441px when keyboard opens.
+  // We capture it once at bind time and refresh only on orientationchange —
+  // never on visualViewport.resize / window.resize (= keyboard events).
   document.documentElement.style.setProperty(
     MOBILE_VV_CSS.screenHeight,
-    `${window.outerHeight}px`,
+    `${window.innerHeight}px`,
   );
 }
 
@@ -142,14 +152,24 @@ function onViewportEvent() {
     root.style.setProperty(MOBILE_VV_CSS.offsetTop, `${offsetTop}px`);
     root.style.setProperty(MOBILE_VV_CSS.height, `${height}px`);
   }
-  // Refresh screen height on orientationchange (outerHeight flips in landscape).
-  applyScreenHeight();
+  // Do NOT call applyScreenHeight here: visualViewport.resize fires during the
+  // keyboard animation. In iOS resize-mode innerHeight is already shrunk, so we
+  // would store 441px as the screen height — exactly the bug we are fixing.
   scheduleMobileViewportUpdate();
+}
+
+function onOrientationChange() {
+  // Device was rotated — innerHeight now reflects the new orientation.
+  // A short delay lets the browser finish the rotation animation so we read
+  // the settled value, not the transitional one.
+  setTimeout(applyScreenHeight, 300);
+  onViewportEvent();
 }
 
 function bindViewportListeners() {
   if (bound || typeof window === 'undefined') return;
   bound = true;
+  // Capture keyboard-closed innerHeight before any keyboard can open.
   applyScreenHeight();
   flushViewportFrame();
 
@@ -163,7 +183,7 @@ function bindViewportListeners() {
   if (!vv) {
     window.addEventListener('resize', onViewportEvent);
   }
-  window.addEventListener('orientationchange', onViewportEvent);
+  window.addEventListener('orientationchange', onOrientationChange);
 }
 
 function unbindViewportListeners() {
@@ -176,7 +196,7 @@ function unbindViewportListeners() {
   if (!vv) {
     window.removeEventListener('resize', onViewportEvent);
   }
-  window.removeEventListener('orientationchange', onViewportEvent);
+  window.removeEventListener('orientationchange', onOrientationChange);
 }
 
 export function acquireMobileViewportTracking() {
