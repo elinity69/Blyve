@@ -1,4 +1,4 @@
-import React, {
+import {
   useCallback,
   useEffect,
   useRef,
@@ -19,34 +19,6 @@ import { validateChatMediaFile } from '../../lib/mediaTypes';
 import { toast } from '../../lib/toast';
 import { acquireVoiceMemoStream, releaseVoiceMemoStream } from '../../lib/voiceMemoMedia';
 
-const getComposerMetrics = (rootRef?: React.RefObject<HTMLDivElement>, inputRef?: RefObject<HTMLInputElement | null>) => {
-  const root = rootRef?.current;
-  const input = inputRef?.current;
-
-  return {
-    composerRootHeight: root?.offsetHeight ?? null,
-    composerInputHeight: input?.offsetHeight ?? null,
-    windowInnerHeight: window.innerHeight,
-    windowOuterHeight: window.outerHeight,
-    vvHeight: window.visualViewport?.height ?? null,
-    vvOffsetTop: window.visualViewport?.offsetTop ?? null,
-    vvPageTop: window.visualViewport?.pageTop ?? null,
-    activeElementTag: document.activeElement?.tagName ?? null,
-    activeElementId: document.activeElement?.id ?? null,
-    activeElementName: (document.activeElement as HTMLInputElement)?.name ?? null,
-  };
-};
-
-const logComposerDebug = (event: string, additionalMetrics: Record<string, any> = {}, rootRef?: React.RefObject<HTMLDivElement>, inputRef?: RefObject<HTMLInputElement | null>) => {
-  const metrics = getComposerMetrics(rootRef, inputRef);
-  console.log('[BLYVE_CHAT_COMPOSER_DEBUG]', {
-    event,
-    ts: Date.now(),
-    ...metrics,
-    ...additionalMetrics,
-  });
-};
-
 interface ChatMessageComposerProps {
   value: string;
   onChange: (value: string) => void;
@@ -65,54 +37,33 @@ interface ChatMessageComposerProps {
   onDropActiveChange?: (active: boolean) => void;
 }
 
-export const ChatMessageComposer = React.forwardRef<HTMLDivElement, ChatMessageComposerProps>(
-  ({
-    value,
-    onChange,
-    onSend,
-    onSendUrl,
-    onSendFiles,
-    onSendVoiceMemo,
-    placeholder,
-    sending,
-    mediaUploading = false,
-    mediaUploadLabel,
-    inputRef,
-    replyBar,
-    typingIndicator,
-    dropActive = false,
-    onDropActiveChange,
-  }, ref) => {
-    const { t } = useTranslation();
-    const rootRef = useRef<HTMLDivElement>(null);
-    const inVisualViewportShellRef = useRef(
-      typeof document !== 'undefined'
-        ? !!document.querySelector('[data-visual-viewport-shell]')
-        : false
-    );
-    const inVisualViewportShell = inVisualViewportShellRef.current;
-    const assignRootRef = useCallback((node: HTMLDivElement | null) => {
-      // This is a custom assignRef that also handles the forwarded ref
-      if (rootRef) {
-        (rootRef as React.MutableRefObject<HTMLDivElement>).current = node;
-      }
-      if (ref) {
-        if (typeof ref === 'function') {
-          ref(node);
-        } else {
-          (ref as React.MutableRefObject<HTMLDivElement>).current = node;
-        }
-      }
-      if (node) inVisualViewportShellRef.current = !!node.closest('[data-visual-viewport-shell]');
-    }, [ref]);
-
-    useEffect(() => {
-      logComposerDebug('mount', {}, rootRef, inputRef);
-      return () => {
-        logComposerDebug('unmount', {}, rootRef, inputRef);
-      };
-    }, []);
-
+export function ChatMessageComposer({
+  value,
+  onChange,
+  onSend,
+  onSendUrl,
+  onSendFiles,
+  onSendVoiceMemo,
+  placeholder,
+  sending,
+  mediaUploading = false,
+  mediaUploadLabel,
+  inputRef,
+  replyBar,
+  typingIndicator,
+  dropActive = false,
+  onDropActiveChange,
+}: ChatMessageComposerProps) {
+  const { t } = useTranslation();
+  const inVisualViewportShellRef = useRef(
+    typeof document !== 'undefined'
+      ? !!document.querySelector('[data-visual-viewport-shell]')
+      : false
+  );
+  const inVisualViewportShell = inVisualViewportShellRef.current;
+  const assignRootRef = useCallback((node: HTMLDivElement | null) => {
+    if (node) inVisualViewportShellRef.current = !!node.closest('[data-visual-viewport-shell]');
+  }, []);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const voiceStreamRef = useRef<MediaStream | null>(null);
@@ -158,10 +109,6 @@ export const ChatMessageComposer = React.forwardRef<HTMLDivElement, ChatMessageC
     inVisualViewportShell,
     frame: viewportFrame,
   });
-
-  useEffect(() => {
-    logComposerDebug('composer_padding_bottom_change', { composerPaddingBottom }, rootRef, inputRef);
-  }, [composerPaddingBottom]);
 
   const clearStaged = useCallback(() => {
     stagedPreviews.forEach((url) => URL.revokeObjectURL(url));
@@ -497,13 +444,9 @@ export const ChatMessageComposer = React.forwardRef<HTMLDivElement, ChatMessageC
             }
           }}
           onFocus={() => {
-            logComposerDebug('input_focus', {}, rootRef, inputRef);
             window.dispatchEvent(
               new CustomEvent('chat-composer-focus', { detail: { smooth: isMobile } }),
             );
-          }}
-          onBlur={() => {
-            logComposerDebug('input_blur', {}, rootRef, inputRef);
           }}
           placeholder={placeholder}
           className="min-w-0 flex-1 rounded-full bg-gray-100 px-4 py-2 text-gray-900 focus:outline-none dark:bg-[#1a1a1a] dark:text-[#dce6ef]"
@@ -577,5 +520,4 @@ export const ChatMessageComposer = React.forwardRef<HTMLDivElement, ChatMessageC
       ) : null}
     </div>
   );
-});
-
+}

@@ -64,56 +64,6 @@ import {
 import { ScrollToBottomButton, useScrollToBottom } from './chat/ScrollToBottomButton';
 import { useStickyDateOverlay } from '../hooks/useStickyDateOverlay';
 
-interface Window {
-  visualViewport?: VisualViewport;
-}
-
-const getMetrics = (conversationId: string, messagesContainerRef?: React.RefObject<HTMLDivElement>, headerRef?: React.RefObject<HTMLDivElement>, composerRef?: React.RefObject<HTMLDivElement>, typingIndicatorRef?: React.RefObject<HTMLDivElement>) => {
-  const container = messagesContainerRef?.current;
-  const header = headerRef?.current;
-  const composer = composerRef?.current;
-  const typingIndicator = typingIndicatorRef?.current;
-
-  const scrollTop = container?.scrollTop ?? null;
-  const scrollHeight = container?.scrollHeight ?? null;
-  const clientHeight = container?.clientHeight ?? null;
-  const bottomGap = (scrollHeight !== null && scrollTop !== null && clientHeight !== null) ? (scrollHeight - scrollTop - clientHeight) : null;
-  const composerHeight = composer?.offsetHeight ?? null;
-  const headerHeight = header?.offsetHeight ?? null;
-  const typingIndicatorVisible = typingIndicator ? window.getComputedStyle(typingIndicator).display !== 'none' : null;
-  const bottomSpacerHeight = typingIndicator?.offsetHeight ?? null; 
-
-  return {
-    conversationId,
-    scrollTop,
-    scrollHeight,
-    clientHeight,
-    bottomGap,
-    composerHeight,
-    headerHeight,
-    typingIndicatorVisible,
-    bottomSpacerHeight,
-    windowInnerHeight: window.innerHeight,
-    windowOuterHeight: window.outerHeight,
-    vvHeight: window.visualViewport?.height ?? null,
-    vvOffsetTop: window.visualViewport?.offsetTop ?? null,
-    vvPageTop: window.visualViewport?.pageTop ?? null,
-    activeElementTag: document.activeElement?.tagName ?? null,
-    activeElementId: document.activeElement?.id ?? null,
-    activeElementName: (document.activeElement as HTMLInputElement)?.name ?? null,
-  };
-};
-
-const logChatDebug = (event: string, conversationId: string, messagesContainerRef?: React.RefObject<HTMLDivElement>, headerRef?: React.RefObject<HTMLDivElement>, composerRef?: React.RefObject<HTMLDivElement>, typingIndicatorRef?: React.RefObject<HTMLDivElement>, additionalMetrics: Record<string, any> = {}) => {
-  const metrics = getMetrics(conversationId, messagesContainerRef, headerRef, composerRef, typingIndicatorRef);
-  console.log('[BLYVE_CHAT_DEBUG]', {
-    event,
-    ts: Date.now(),
-    ...metrics,
-    ...additionalMetrics,
-  });
-};
-
 interface ChatScreenProps {
   onBack: () => void;
   conversationId: string;
@@ -141,16 +91,7 @@ export function ChatScreen({
   onOpenProfilePreview,
   onConversationUpdated,
 }: ChatScreenProps) {
-  const headerRef = useRef<HTMLDivElement>(null);
-  const composerRef = useRef<HTMLDivElement>(null);
   const { t, i18n } = useTranslation();
-
-  useEffect(() => {
-    logChatDebug('mount', conversationId, messagesContainerRef, headerRef, composerRef, typingIndicatorRef);
-    return () => {
-      logChatDebug('unmount', conversationId, messagesContainerRef, headerRef, composerRef, typingIndicatorRef);
-    };
-  }, [conversationId]);
 
 // Online status comes from the parent via otherUser.is_online, which is
   // kept live by MessagesScreen's single useOnlineStatus instance.
@@ -251,7 +192,6 @@ export function ChatScreen({
     null;
 
   useEffect(() => {
-    logChatDebug('conversation_id_change:reply_target_reset', conversationId, messagesContainerRef, headerRef, composerRef, typingIndicatorRef);
     setReplyTarget(null);
   }, [conversationId]);
 
@@ -321,7 +261,6 @@ export function ChatScreen({
   }, [conversationId]);
 
   useEffect(() => {
-    logChatDebug('conversation_id_change:notification_manager', conversationId, messagesContainerRef, headerRef, composerRef, typingIndicatorRef);
     NotificationManager.setActiveConversationId(conversationId);
     window.dispatchEvent(
       new CustomEvent('conversation-opened', { detail: { conversationId } })
@@ -334,7 +273,6 @@ export function ChatScreen({
   }, [conversationId]);
 
   useEffect(() => {
-    logChatDebug('conversation_id_change:can_load_older_ref_reset', conversationId, messagesContainerRef, headerRef, composerRef, typingIndicatorRef);
     canLoadOlderRef.current = false;
     const timer = setTimeout(() => {
       canLoadOlderRef.current = true;
@@ -343,20 +281,17 @@ export function ChatScreen({
   }, [conversationId]);
 
   useLayoutEffect(() => {
-    logChatDebug('initial_scroll_effect_run', conversationId, messagesContainerRef, headerRef, composerRef, typingIndicatorRef);
     if (loading || messages.length === 0) return;
     const container = messagesContainerRef.current;
     if (!container) return;
 
     if (!initialScrollDoneRef.current) {
-      logChatDebug('apply_initial_scroll_position', conversationId, messagesContainerRef, headerRef, composerRef, typingIndicatorRef);
       applyInitialScrollPosition();
       initialScrollDoneRef.current = true;
       lastMessageIdRef.current = messages[messages.length - 1]?.id ?? null;
       lastAppliedViewedAtRef.current = lastViewedAt;
       requestAnimationFrame(() => {
         setScrollAnchorReady(true);
-        logChatDebug('scroll_anchor_ready', conversationId, messagesContainerRef, headerRef, composerRef, typingIndicatorRef);
       });
 
       // Reactions render asynchronously after messages (separate per-message fetch).
@@ -385,7 +320,7 @@ export function ChatScreen({
       lastMessageIdRef.current = lastMessage.id;
       lastMessageReactionKeyRef.current = JSON.stringify(lastMessage.reactions ?? null);
       const dist = container.scrollHeight - container.scrollTop - container.clientHeight;
-      logChatDebug('new_message_scroll_snap', conversationId, messagesContainerRef, headerRef, composerRef, typingIndicatorRef, { dist, nearBottom: isNearBottom(container) });
+      console.log('[scroll-snap] new-message branch', { dist, nearBottom: isNearBottom(container) });
       if (isNearBottom(container)) {
         scrollContainerToBottomStable(container);
       }
@@ -398,7 +333,7 @@ export function ChatScreen({
     if (reactionKey !== lastMessageReactionKeyRef.current) {
       lastMessageReactionKeyRef.current = reactionKey;
       const dist = container.scrollHeight - container.scrollTop - container.clientHeight;
-      logChatDebug('reaction_scroll_snap', conversationId, messagesContainerRef, headerRef, composerRef, typingIndicatorRef, { dist, nearBottom: isNearBottom(container) });
+      console.log('[scroll-snap] reaction branch', { dist, nearBottom: isNearBottom(container) });
       if (isNearBottom(container)) {
         requestAnimationFrame(() => scrollContainerToBottomStable(container));
       }
@@ -426,13 +361,12 @@ export function ChatScreen({
           if (!container) return;
           const distance =
             container.scrollHeight - container.scrollTop - container.clientHeight;
-          logChatDebug('[scroll-snap] typing-stop branch', conversationId, messagesContainerRef, headerRef, composerRef, typingIndicatorRef, { distance, willSnap: distance < 96 });
+          console.log('[scroll-snap] typing-stop branch', { distance, willSnap: distance < 96 });
           if (distance < 96) {
             scrollContainerToBottomStable(container);
           }
         });
       }
-      logChatDebug('typing_stopped', conversationId, messagesContainerRef, headerRef, composerRef, typingIndicatorRef);
       return;
     }
 
@@ -440,7 +374,6 @@ export function ChatScreen({
       const el = typingIndicatorRef.current;
       if (!el) return;
       const height = el.offsetHeight;
-      logChatDebug('typing_indicator_measure', conversationId, messagesContainerRef, headerRef, composerRef, typingIndicatorRef, { typingIndicatorHeight: height });
       setTypingClearance(height + CHAT_TYPING_CLEARANCE_EXTRA_PX);
     };
     measure();
@@ -460,7 +393,6 @@ export function ChatScreen({
   }, [isPartnerTyping]);
 
   useLayoutEffect(() => {
-    logChatDebug('typing_clearance_effect_run', conversationId, messagesContainerRef, headerRef, composerRef, typingIndicatorRef, { isPartnerTyping, typingClearance, scrollAnchorReady });
     if (!isPartnerTyping || typingClearance <= 0 || !scrollAnchorReady) return;
     const container = messagesContainerRef.current;
     if (!container) return;
@@ -471,7 +403,6 @@ export function ChatScreen({
   }, [isPartnerTyping, typingClearance, scrollAnchorReady]);
 
   useLayoutEffect(() => {
-    logChatDebug('read_receipt_scroll_effect_run', conversationId, messagesContainerRef, headerRef, composerRef, typingIndicatorRef);
     if (!scrollAnchorReady || loading) return;
     const container = messagesContainerRef.current;
     if (!container || !lastOwnMessageId) return;
@@ -533,16 +464,12 @@ export function ChatScreen({
 
   const handleMessagesScroll = useCallback(() => {
     const container = messagesContainerRef.current;
-    if (container) {
-      logChatDebug('messages_scroll', conversationId, messagesContainerRef, headerRef, composerRef, typingIndicatorRef);
-    }
     scrollToBottomHandleScroll();
     if (!container || loadingMore || !hasMore) return;
     if (container.scrollTop <= 80 && canLoadOlderRef.current) {
-      logChatDebug('load_older_messages_trigger', conversationId, messagesContainerRef, headerRef, composerRef, typingIndicatorRef);
       loadOlderAndPreserveScroll();
     }
-  }, [loadOlderAndPreserveScroll, loadingMore, hasMore, scrollToBottomHandleScroll, conversationId, headerRef, composerRef, messagesContainerRef, typingIndicatorRef]);
+  }, [loadOlderAndPreserveScroll, loadingMore, hasMore, scrollToBottomHandleScroll]);
 
   // Ref tracks the timestamp of the last typing=true broadcast to throttle sends.
   const lastTypingTrueRef = useRef(0);
@@ -826,9 +753,8 @@ export function ChatScreen({
   return (
     <div className="relative flex h-full min-h-0 w-full max-w-full flex-col blyve-screen-bg">
       {/* Header */}
-    <div 
-      ref={headerRef}
-      className="flex items-center justify-between px-4 py-3 border-b border-gray-200 blyve-border-subtle blyve-screen-bg"
+      <div 
+        className="flex items-center justify-between px-4 py-3 border-b border-gray-200 blyve-border-subtle blyve-screen-bg"
         style={{ flexShrink: 0 }}
       >
         <div className="flex items-center gap-3">
@@ -1081,7 +1007,6 @@ export function ChatScreen({
       </div>
 
       <ChatMessageComposer
-        ref={composerRef}
         value={messageInput}
         onChange={setMessageInput}
         onSend={handleSend}

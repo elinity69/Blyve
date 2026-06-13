@@ -9,33 +9,7 @@ import {
 
 const NEAR_BOTTOM_PX = 96;
 
-const getScrollMetrics = (containerEl: HTMLElement) => {
-  const scrollTop = containerEl.scrollTop;
-  const scrollHeight = containerEl.scrollHeight;
-  const clientHeight = containerEl.clientHeight;
-  const bottomGap = scrollHeight - scrollTop - clientHeight;
-  return {
-    scrollTop,
-    scrollHeight,
-    clientHeight,
-    bottomGap,
-    windowInnerHeight: window.innerHeight,
-    windowOuterHeight: window.outerHeight,
-    vvHeight: window.visualViewport?.height ?? null,
-    vvOffsetTop: window.visualViewport?.offsetTop ?? null,
-    vvPageTop: window.visualViewport?.pageTop ?? null,
-  };
-};
-
-const logScrollAnchorDebug = (event: string, containerEl: HTMLElement, additionalMetrics: Record<string, any> = {}) => {
-  const metrics = getScrollMetrics(containerEl);
-  console.log('[BLYVE_CHAT_SCROLL_DEBUG]', {
-    event,
-    ts: Date.now(),
-    ...metrics,
-    ...additionalMetrics,
-  });
-};
+const sd = (..._args: unknown[]) => {};
 
 export type ChatScrollAnchorRef = (node: HTMLElement | null) => void;
 
@@ -60,9 +34,10 @@ export function useChatScrollAnchor(
   useLayoutEffect(() => {
     if (!enabled || !containerEl) return;
 
-    logScrollAnchorDebug('mount', containerEl, {
-      enabled,
-      endMarkerRef: !!endMarkerRef?.current,
+    sd('MOUNT enabled=true', {
+      scrollHeight: containerEl.scrollHeight,
+      clientHeight: containerEl.clientHeight,
+      scrollTop: containerEl.scrollTop,
     });
 
     let rafId = 0;
@@ -71,42 +46,39 @@ export function useChatScrollAnchor(
       containerEl.scrollHeight - containerEl.scrollTop - containerEl.clientHeight;
 
     const syncScrollPosition = () => {
-      // Skip sync entirely when the container has no size — this prevents the
-      // hidden forward-pull ChatScreen (0×0 container) from running and logging.
-      if (containerEl.clientHeight === 0) return;
-
       const distance = distanceFromBottom();
       const nearBottom = distance < NEAR_BOTTOM_PX;
 
-      logScrollAnchorDebug('syncScrollPosition', containerEl, {
+      sd('syncScrollPosition', {
         pinned: pinnedRef.current,
         distance,
         nearBottom,
+        scrollTop: containerEl.scrollTop,
+        scrollHeight: containerEl.scrollHeight,
+        clientHeight: containerEl.clientHeight,
       });
 
       if (pinnedRef.current || nearBottom) {
         pinnedRef.current = true;
         const before = containerEl.scrollTop;
         containerEl.scrollTop = Math.max(0, containerEl.scrollHeight - containerEl.clientHeight);
-        logScrollAnchorDebug('syncScrollPosition_snapped', containerEl, { before, after: containerEl.scrollTop });
+        sd('syncScrollPosition → SNAPPED', before, '→', containerEl.scrollTop);
       } else {
         const heightDelta = containerEl.clientHeight - prevClientHeightRef.current;
         if (heightDelta !== 0) {
           const before = containerEl.scrollTop;
           containerEl.scrollTop = Math.max(0, containerEl.scrollTop + heightDelta);
-          logScrollAnchorDebug('syncScrollPosition_adjust_by_delta', containerEl, { heightDelta, before, after: containerEl.scrollTop });
+          sd('syncScrollPosition → adjust by delta', heightDelta, before, '→', containerEl.scrollTop);
         } else {
-          logScrollAnchorDebug('syncScrollPosition_no_op', containerEl);
+          sd('syncScrollPosition → no-op (not pinned, no delta)');
         }
       }
 
       prevClientHeightRef.current = containerEl.clientHeight;
     };
 
-    // scheduleSync via RAF is used only for the composer-focus event, where we
-    // intentionally defer to after the keyboard has begun animating.
     const scheduleSync = (reason: string) => {
-      logScrollAnchorDebug('scheduleSync', containerEl, { reason, pinned: pinnedRef.current });
+      sd('scheduleSync', reason, { pinned: pinnedRef.current });
       cancelAnimationFrame(rafId);
       rafId = requestAnimationFrame(syncScrollPosition);
     };
@@ -115,9 +87,8 @@ export function useChatScrollAnchor(
       const wasPinned = pinnedRef.current;
       pinnedRef.current = distanceFromBottom() < NEAR_BOTTOM_PX;
       if (wasPinned !== pinnedRef.current) {
-        logScrollAnchorDebug('onScroll_pinnedRef_change', containerEl, {
-          wasPinned,
-          pinned: pinnedRef.current,
+        sd('onScroll pinnedRef', wasPinned, '→', pinnedRef.current, {
+          scrollTop: containerEl.scrollTop,
           dist: distanceFromBottom(),
         });
       }
@@ -126,54 +97,31 @@ export function useChatScrollAnchor(
     prevClientHeightRef.current = containerEl.clientHeight;
     containerEl.addEventListener('scroll', onScroll, { passive: true });
 
-    // ResizeObserver callbacks fire AFTER layout but BEFORE paint, in the same
-    // rendering frame. Calling syncScrollPosition() directly here (not via RAF)
-    // means the scroll adjustment lands in the SAME frame as the container resize.
-    // This eliminates the 1-frame gap that caused the visible "jump" when the iOS
-    // keyboard opens and shrinks the chat container height.
-    const resizeObserver = new ResizeObserver(() => {
-      cancelAnimationFrame(rafId);
-      rafId = 0;
-      if (containerEl.clientHeight === 0) return;
-
-      // iOS can fire onScroll during the keyboard-open transition (before this
-      // ResizeObserver callback) which resets pinnedRef to false. Re-check using
-      // the PREVIOUS clientHeight to detect if the user was at the bottom before
-      // the resize. If so, force pinnedRef=true so we always snap on keyboard open.
-      if (!pinnedRef.current && prevClientHeightRef.current > 0) {
-        const oldDistance =
-          containerEl.scrollHeight - containerEl.scrollTop - prevClientHeightRef.current;
-        if (oldDistance < NEAR_BOTTOM_PX) {
-          pinnedRef.current = true;
-        }
-      }
-
-      syncScrollPosition();
-    });
+    const resizeObserver = new ResizeObserver(() => scheduleSync('ResizeObserver'));
     resizeObserver.observe(containerEl);
-    logScrollAnchorDebug('ResizeObserver_observing_containerEl', containerEl);
+    sd('ResizeObserver: observing containerEl');
 
     const composerEl = containerEl.parentElement?.querySelector('[data-chat-composer]');
     if (composerEl instanceof HTMLElement) {
       resizeObserver.observe(composerEl);
-      logScrollAnchorDebug('ResizeObserver_observing_composer', containerEl, { composerExists: true });
+      sd('ResizeObserver: also observing composer');
     } else {
-      logScrollAnchorDebug('ResizeObserver_composer_not_found', containerEl, { composerExists: false });
+      sd('ResizeObserver: composer NOT found via [data-chat-composer]');
     }
 
     // Do NOT observe contentWrapper — it fires ResizeObserver on every DOM
     // mutation (reactions, read ticks, re-renders) and snaps the user back
     // to bottom mid-scroll. New messages are handled via containerEl resize.
-    logScrollAnchorDebug('ResizeObserver_not_observing_contentWrapper', containerEl);
+    sd('ResizeObserver: NOT observing contentWrapper (prevents mid-scroll snap)');
 
     const onComposerFocus = () => {
       const dist = distanceFromBottom();
-      logScrollAnchorDebug('chat-composer-focus_event', containerEl, { dist, pinned: pinnedRef.current });
+      sd('chat-composer-focus event', { dist, pinned: pinnedRef.current, scrollTop: containerEl.scrollTop });
       if (dist < NEAR_BOTTOM_PX) {
         pinnedRef.current = true;
-        logScrollAnchorDebug('chat-composer-focus_setting_pinnedRef_true', containerEl);
+        sd('chat-composer-focus → setting pinnedRef=true');
       } else {
-        logScrollAnchorDebug('chat-composer-focus_user_scrolled_up_not_pinning', containerEl);
+        sd('chat-composer-focus → user scrolled up, NOT pinning');
       }
       scheduleSync('composerFocus');
     };
@@ -181,7 +129,7 @@ export function useChatScrollAnchor(
     window.addEventListener('chat-composer-focus', onComposerFocus);
 
     return () => {
-      logScrollAnchorDebug('unmount', containerEl);
+      sd('UNMOUNT');
       containerEl.removeEventListener('scroll', onScroll);
       resizeObserver.disconnect();
       window.removeEventListener('chat-composer-focus', onComposerFocus);

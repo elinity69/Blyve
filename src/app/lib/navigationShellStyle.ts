@@ -132,27 +132,13 @@ export function setNavForwardSwipeLock(locked: boolean, shell?: HTMLDivElement |
 
 export const navigationStackShellStyle = {
   position: 'fixed' as const,
-  // top: 0 — anchored to visual viewport top.
-  // On iOS 15+ (resize-mode), vv.offsetTop is always 0 so this is safe.
-  // The offsetTop CSS var caused header jumps when offsetTop briefly oscillated.
-  top: 0,
+  top: `var(${MOBILE_VV_CSS.offsetTop}, 0px)`,
   left: 0,
   right: 0,
-  // Outer shell must cover the full physical screen so the area between the
-  // inner viewport-shell (441px when keyboard is open) and the keyboard/chrome
-  // is never transparent (which would reveal the conversation list behind).
-  //
-  // `bottom: 0` breaks: iOS Safari compositor bug with will-change:transform
-  //   doesn't re-evaluate bottom when innerHeight changes → black gap.
-  // `height: 100vh` breaks: in iOS resize-mode, 100vh tracks window.innerHeight
-  //   and shrinks to 441px along with the inner shell → zero extra coverage.
-  // `height: 100lvh` helps on iOS ≥15.4 but not on older iOS Safari.
-  //
-  // Solution: var(--blyve-screen-height) = window.outerHeight (844px on iPhone 14).
-  // outerHeight = browser window height = physical screen minus OS chrome.
-  // It NEVER shrinks when the keyboard opens, in either resize- or pan-mode.
-  // Fallback: 100lvh (iOS 15.4+ large viewport, keyboard-stable) then 100vh.
-  height: `var(${MOBILE_VV_CSS.screenHeight}, 100lvh)`,
+  // Extend to the screen bottom so no preview bleeds through the gap when
+  // the keyboard shrinks the visual viewport. The inner [data-visual-viewport-shell]
+  // div is explicitly sized to --blyve-vv-height to keep content above the keyboard.
+  bottom: 0,
   boxSizing: 'border-box' as const,
   paddingBottom: 0,
   zIndex: 65,
