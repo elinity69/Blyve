@@ -132,7 +132,7 @@ export function setNavForwardSwipeLock(locked: boolean, shell?: HTMLDivElement |
 
 export const navigationStackShellStyle = {
   position: 'fixed' as const,
-  top: `var(${MOBILE_VV_CSS.offsetTop}, 0px)`,
+  top: 0,
   left: 0,
   right: 0,
   // Extend to the screen bottom so no preview bleeds through the gap when
