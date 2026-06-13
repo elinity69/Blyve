@@ -16,6 +16,13 @@ export const MOBILE_VV_CSS = {
   offsetTop: '--blyve-vv-offset-top',
   height: '--blyve-vv-height',
   bottomInset: '--blyve-vv-bottom-inset',
+  /**
+   * Physical screen height (window.outerHeight). Written once on bind and
+   * refreshed on orientationchange. Used by the outer nav shell so it always
+   * covers the full screen even when 100vh shrinks with the keyboard (iOS
+   * resize mode). outerHeight never shrinks when the keyboard opens.
+   */
+  screenHeight: '--blyve-screen-height',
 } as const;
 
 /** Inner padding for the composer row — safe area / keyboard are owned by the nav shell. */
@@ -111,6 +118,18 @@ export function scheduleMobileViewportUpdate() {
   requestAnimationFrame(flushViewportFrame);
 }
 
+function applyScreenHeight() {
+  if (typeof document === 'undefined' || typeof window === 'undefined') return;
+  // outerHeight = browser window height = physical screen minus OS chrome.
+  // It does NOT shrink when the on-screen keyboard opens (unlike innerHeight /
+  // 100vh on iOS resize-mode). Using it as the outer nav-shell height guarantees
+  // full-screen coverage in both resize-mode and pan-mode.
+  document.documentElement.style.setProperty(
+    MOBILE_VV_CSS.screenHeight,
+    `${window.outerHeight}px`,
+  );
+}
+
 function onViewportEvent() {
   // Write offsetTop and height synchronously so the fixed navigation shell
   // repositions and resizes in the same frame as the browser layout change —
@@ -123,12 +142,15 @@ function onViewportEvent() {
     root.style.setProperty(MOBILE_VV_CSS.offsetTop, `${offsetTop}px`);
     root.style.setProperty(MOBILE_VV_CSS.height, `${height}px`);
   }
+  // Refresh screen height on orientationchange (outerHeight flips in landscape).
+  applyScreenHeight();
   scheduleMobileViewportUpdate();
 }
 
 function bindViewportListeners() {
   if (bound || typeof window === 'undefined') return;
   bound = true;
+  applyScreenHeight();
   flushViewportFrame();
 
   const vv = window.visualViewport;

@@ -138,21 +138,21 @@ export const navigationStackShellStyle = {
   top: 0,
   left: 0,
   right: 0,
-  // `bottom: 0` + `will-change: transform` (framer-motion) = iOS Safari compositor
-  // bug: composited layers don't re-evaluate bottom-positioning when innerHeight
-  // changes. Using `height: 100vh` instead fixes both problems:
+  // Outer shell must cover the full physical screen so the area between the
+  // inner viewport-shell (441px when keyboard is open) and the keyboard/chrome
+  // is never transparent (which would reveal the conversation list behind).
   //
-  // 1. No black gap: outer shell is sized via a CSS unit, not layout-dependent
-  //    `bottom`, so it updates correctly on composited layers.
+  // `bottom: 0` breaks: iOS Safari compositor bug with will-change:transform
+  //   doesn't re-evaluate bottom when innerHeight changes → black gap.
+  // `height: 100vh` breaks: in iOS resize-mode, 100vh tracks window.innerHeight
+  //   and shrinks to 441px along with the inner shell → zero extra coverage.
+  // `height: 100lvh` helps on iOS ≥15.4 but not on older iOS Safari.
   //
-  // 2. No preview bleed: on iOS 15+, `100vh` = large viewport ≥ window.innerHeight,
-  //    so the outer shell always covers the area below the inner viewport-shell
-  //    even when the keyboard shrinks the inner shell to 441px.
-  //
-  // The inner [data-visual-viewport-shell] is still sized to var(--blyve-vv-height)
-  // which correctly tracks the space above the keyboard. The outer shell just needs
-  // to be tall enough to cover the rest — 100vh satisfies this.
-  height: '100vh',
+  // Solution: var(--blyve-screen-height) = window.outerHeight (844px on iPhone 14).
+  // outerHeight = browser window height = physical screen minus OS chrome.
+  // It NEVER shrinks when the keyboard opens, in either resize- or pan-mode.
+  // Fallback: 100lvh (iOS 15.4+ large viewport, keyboard-stable) then 100vh.
+  height: `var(${MOBILE_VV_CSS.screenHeight}, 100lvh)`,
   boxSizing: 'border-box' as const,
   paddingBottom: 0,
   zIndex: 65,
