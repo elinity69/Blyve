@@ -9,7 +9,33 @@ import {
 
 const NEAR_BOTTOM_PX = 96;
 
-const sd = (..._args: unknown[]) => {};
+const getScrollMetrics = (containerEl: HTMLElement) => {
+  const scrollTop = containerEl.scrollTop;
+  const scrollHeight = containerEl.scrollHeight;
+  const clientHeight = containerEl.clientHeight;
+  const bottomGap = scrollHeight - scrollTop - clientHeight;
+  return {
+    scrollTop,
+    scrollHeight,
+    clientHeight,
+    bottomGap,
+    windowInnerHeight: window.innerHeight,
+    windowOuterHeight: window.outerHeight,
+    vvHeight: window.visualViewport?.height ?? null,
+    vvOffsetTop: window.visualViewport?.offsetTop ?? null,
+    vvPageTop: window.visualViewport?.pageTop ?? null,
+  };
+};
+
+const logScrollAnchorDebug = (event: string, containerEl: HTMLElement, additionalMetrics: Record<string, any> = {}) => {
+  const metrics = getScrollMetrics(containerEl);
+  console.log('[BLYVE_CHAT_SCROLL_DEBUG]', {
+    event,
+    ts: Date.now(),
+    ...metrics,
+    ...additionalMetrics,
+  });
+};
 
 export type ChatScrollAnchorRef = (node: HTMLElement | null) => void;
 
@@ -34,10 +60,9 @@ export function useChatScrollAnchor(
   useLayoutEffect(() => {
     if (!enabled || !containerEl) return;
 
-    sd('MOUNT enabled=true', {
-      scrollHeight: containerEl.scrollHeight,
-      clientHeight: containerEl.clientHeight,
-      scrollTop: containerEl.scrollTop,
+    logScrollAnchorDebug('mount', containerEl, {
+      enabled,
+      endMarkerRef: !!endMarkerRef?.current,
     });
 
     let rafId = 0;
@@ -49,28 +74,25 @@ export function useChatScrollAnchor(
       const distance = distanceFromBottom();
       const nearBottom = distance < NEAR_BOTTOM_PX;
 
-      sd('syncScrollPosition', {
+      logScrollAnchorDebug('syncScrollPosition', containerEl, {
         pinned: pinnedRef.current,
         distance,
         nearBottom,
-        scrollTop: containerEl.scrollTop,
-        scrollHeight: containerEl.scrollHeight,
-        clientHeight: containerEl.clientHeight,
       });
 
       if (pinnedRef.current || nearBottom) {
         pinnedRef.current = true;
         const before = containerEl.scrollTop;
         containerEl.scrollTop = Math.max(0, containerEl.scrollHeight - containerEl.clientHeight);
-        sd('syncScrollPosition → SNAPPED', before, '→', containerEl.scrollTop);
+        logScrollAnchorDebug('syncScrollPosition_snapped', containerEl, { before, after: containerEl.scrollTop });
       } else {
         const heightDelta = containerEl.clientHeight - prevClientHeightRef.current;
         if (heightDelta !== 0) {
           const before = containerEl.scrollTop;
           containerEl.scrollTop = Math.max(0, containerEl.scrollTop + heightDelta);
-          sd('syncScrollPosition → adjust by delta', heightDelta, before, '→', containerEl.scrollTop);
+          logScrollAnchorDebug('syncScrollPosition_adjust_by_delta', containerEl, { heightDelta, before, after: containerEl.scrollTop });
         } else {
-          sd('syncScrollPosition → no-op (not pinned, no delta)');
+          logScrollAnchorDebug('syncScrollPosition_no_op', containerEl);
         }
       }
 
@@ -78,7 +100,7 @@ export function useChatScrollAnchor(
     };
 
     const scheduleSync = (reason: string) => {
-      sd('scheduleSync', reason, { pinned: pinnedRef.current });
+      logScrollAnchorDebug('scheduleSync', containerEl, { reason, pinned: pinnedRef.current });
       cancelAnimationFrame(rafId);
       rafId = requestAnimationFrame(syncScrollPosition);
     };
@@ -87,8 +109,9 @@ export function useChatScrollAnchor(
       const wasPinned = pinnedRef.current;
       pinnedRef.current = distanceFromBottom() < NEAR_BOTTOM_PX;
       if (wasPinned !== pinnedRef.current) {
-        sd('onScroll pinnedRef', wasPinned, '→', pinnedRef.current, {
-          scrollTop: containerEl.scrollTop,
+        logScrollAnchorDebug('onScroll_pinnedRef_change', containerEl, {
+          wasPinned,
+          pinned: pinnedRef.current,
           dist: distanceFromBottom(),
         });
       }
@@ -99,29 +122,29 @@ export function useChatScrollAnchor(
 
     const resizeObserver = new ResizeObserver(() => scheduleSync('ResizeObserver'));
     resizeObserver.observe(containerEl);
-    sd('ResizeObserver: observing containerEl');
+    logScrollAnchorDebug('ResizeObserver_observing_containerEl', containerEl);
 
     const composerEl = containerEl.parentElement?.querySelector('[data-chat-composer]');
     if (composerEl instanceof HTMLElement) {
       resizeObserver.observe(composerEl);
-      sd('ResizeObserver: also observing composer');
+      logScrollAnchorDebug('ResizeObserver_observing_composer', containerEl, { composerExists: true });
     } else {
-      sd('ResizeObserver: composer NOT found via [data-chat-composer]');
+      logScrollAnchorDebug('ResizeObserver_composer_not_found', containerEl, { composerExists: false });
     }
 
     // Do NOT observe contentWrapper — it fires ResizeObserver on every DOM
     // mutation (reactions, read ticks, re-renders) and snaps the user back
     // to bottom mid-scroll. New messages are handled via containerEl resize.
-    sd('ResizeObserver: NOT observing contentWrapper (prevents mid-scroll snap)');
+    logScrollAnchorDebug('ResizeObserver_not_observing_contentWrapper', containerEl);
 
     const onComposerFocus = () => {
       const dist = distanceFromBottom();
-      sd('chat-composer-focus event', { dist, pinned: pinnedRef.current, scrollTop: containerEl.scrollTop });
+      logScrollAnchorDebug('chat-composer-focus_event', containerEl, { dist, pinned: pinnedRef.current });
       if (dist < NEAR_BOTTOM_PX) {
         pinnedRef.current = true;
-        sd('chat-composer-focus → setting pinnedRef=true');
+        logScrollAnchorDebug('chat-composer-focus_setting_pinnedRef_true', containerEl);
       } else {
-        sd('chat-composer-focus → user scrolled up, NOT pinning');
+        logScrollAnchorDebug('chat-composer-focus_user_scrolled_up_not_pinning', containerEl);
       }
       scheduleSync('composerFocus');
     };
@@ -129,7 +152,7 @@ export function useChatScrollAnchor(
     window.addEventListener('chat-composer-focus', onComposerFocus);
 
     return () => {
-      sd('UNMOUNT');
+      logScrollAnchorDebug('unmount', containerEl);
       containerEl.removeEventListener('scroll', onScroll);
       resizeObserver.disconnect();
       window.removeEventListener('chat-composer-focus', onComposerFocus);

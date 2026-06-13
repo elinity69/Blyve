@@ -210,8 +210,6 @@ export function ChatScreen({
   const lastMessageReactionKeyRef = useRef<string | null>(null);
   const readReceiptScrollSeededRef = useRef(false);
   const [scrollAnchorReady, setScrollAnchorReady] = useState(false);
-  const headerRef = useRef<HTMLDivElement>(null);
-  const composerRef = useRef<HTMLDivElement>(null);
 
   const applyInitialScrollPosition = useCallback(() => {
     const container = messagesContainerRef.current;
