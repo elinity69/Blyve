@@ -414,8 +414,7 @@ export function useChat(conversationId: string | null, onMessageSent?: (conversa
             }
             resubscribeTimeoutRef.current = window.setTimeout(() => {
               resubscribeTimeoutRef.current = null;
-              void refetchMessagesRef.current();
-              subscribeMessagesChannel();
+              void refetchMessagesRef.current(); // Only refetch messages, don't resubscribe the channel
             }, 800);
           }
         });
@@ -426,8 +425,8 @@ export function useChat(conversationId: string | null, onMessageSent?: (conversa
     subscribeMessagesChannel();
 
     const unsubscribeForeground = onAppForeground(() => {
+      // Only refetch on foreground, the channel is stable and handled by the effect's cleanup/re-initialization.
       void refetchMessagesRef.current();
-      subscribeMessagesChannel();
     });
 
     return () => {
