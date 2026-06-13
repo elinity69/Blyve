@@ -1,0 +1,38 @@
+{
+  "candidates": [
+    {
+      "content": {
+        "role": "model",
+        "parts": [
+          {
+            "text": "TypeScript ist eine von Microsoft entwickelte Obermenge von JavaScript, die statische Typisierung in die Sprache einführt. Das bedeutet, dass Entwickler Datentypen für Variablen, Funktionen und Objekte explizit definieren können. Dies verbessert die Codequalität, erleichtert die Fehlererkennung bereits während der Entwicklung und bietet eine bessere Werkzeugunterstützung."
+          }
+        ]
+      },
+      "finishReason": "STOP",
+      "avgLogprobs": -0.82673279226642771
+    }
+  ],
+  "usageMetadata": {
+    "promptTokenCount": 14,
+    "candidatesTokenCount": 73,
+    "totalTokenCount": 268,
+    "trafficType": "ON_DEMAND",
+    "promptTokensDetails": [
+      {
+        "modality": "TEXT",
+        "tokenCount": 14
+      }
+    ],
+    "candidatesTokensDetails": [
+      {
+        "modality": "TEXT",
+        "tokenCount": 73
+      }
+    ],
+    "thoughtsTokenCount": 181
+  },
+  "modelVersion": "gemini-2.5-flash",
+  "createTime": "2026-06-12T16:46:09.775818Z",
+  "responseId": "0TcsaoqtL4fitfAPuquvwQ4"
+}

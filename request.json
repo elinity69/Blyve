@@ -1,0 +1,10 @@
+﻿{
+  "contents": [
+    {
+      "role": "user",
+      "parts": [
+        { "text": "Erkläre mir in 3 Sätzen, was TypeScript ist." }
+      ]
+    }
+  ]
+}

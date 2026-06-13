@@ -1,6 +1,7 @@
 import { useRef, useState, useCallback, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { getAppDateLocale } from '../../lib/i18n';
+import { useMobileViewportInsets } from '../hooks/useMobileViewportInsets';
 
 const HIDE_DELAY_MS = 2000;
 
@@ -134,6 +135,7 @@ export function useStickyDateOverlay(
   const [visible, setVisible] = useState(false);
   const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const rafRef = useRef<number | null>(null);
+  const { bottomInset } = useMobileViewportInsets();
 
   // id→created_at lookup rebuilt only when the messages array changes
   const messageMapRef = useRef<Map<string, string>>(new Map());
@@ -155,6 +157,14 @@ export function useStickyDateOverlay(
   }, [containerRef, t, i18n.language]);
 
   const handleScroll = useCallback(() => {
+    // If the keyboard is active (indicated by a large bottom inset),
+    // do not show the date overlay to avoid keyboard-triggered flashes.
+    if (bottomInset > 20) {
+      setVisible(false);
+      if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
+      return;
+    }
+
     // Show immediately and reset the hide timer on every scroll event (cheap).
     setVisible(true);
     if (hideTimerRef.current) clearTimeout(hideTimerRef.current);

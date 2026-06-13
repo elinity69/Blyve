@@ -15,4 +15,21 @@ web-build/
 .DS_Store
 
 # Archive folder - old SQL files and deprecated code
-_ARCHIVE_OLD_CODE/
+_ARCHIVE_OLD_CODE/g o o g l e - c r e d e n t i a l s . j s o n  
+ g o o g l e - c r e d e n t i a l s . j s o n  
+ google-credentials.json
+*.pem
+request.json
+response.json
+test_vertex.py
+config.yaml
+/google-credentials.json
+/request.json
+/response.json
+/test_vertex.py
+/config.yaml
+*.pem/request.json
+/response.json
+/test_vertex.py
+/config.yaml
+*.pem

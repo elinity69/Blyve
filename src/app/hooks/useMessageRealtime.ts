@@ -18,6 +18,7 @@ import {
   invalidateConversationMembershipCache,
 } from '../lib/conversationMembership';
 import { appendDmMessageToCache } from '../lib/chatMessages';
+import { fetchConversationLastViewedAt } from '../lib/conversationViews';
 import type { Message } from './useChat';
 
 interface GroupMessageEventPayload {
@@ -122,6 +123,13 @@ export function useMessageRealtime(currentUserId: string | null) {
       }
 
       if (message.sender_id === currentUserId) {
+        return;
+      }
+
+      // Before notifying, check if the message is truly unread from the server's perspective.
+      // This prevents re-notifying for messages read on another device when logging in.
+      const lastViewedAt = await fetchConversationLastViewedAt(message.conversation_id, currentUserId);
+      if (lastViewedAt && new Date(message.created_at) <= new Date(lastViewedAt)) {
         return;
       }
 
