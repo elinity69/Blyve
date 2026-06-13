@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { ArrowLeft, Loader2, MoreVertical, Ban, Phone, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useTranslation } from 'react-i18next';
@@ -151,6 +152,8 @@ export function ChatScreen({
   const lastMessageReactionKeyRef = useRef<string | null>(null);
   const readReceiptScrollSeededRef = useRef(false);
   const [scrollAnchorReady, setScrollAnchorReady] = useState(false);
+  const headerPortalRef = useRef<HTMLDivElement>(null);
+  const [headerHeight, setHeaderHeight] = useState(56);
 
   const applyInitialScrollPosition = useCallback(() => {
     const container = messagesContainerRef.current;
@@ -194,6 +197,14 @@ export function ChatScreen({
   useEffect(() => {
     setReplyTarget(null);
   }, [conversationId]);
+
+  useLayoutEffect(() => {
+    const el = headerPortalRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => setHeaderHeight(el.offsetHeight));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
   const openProfileActions = useCallback(
     (event: React.MouseEvent | React.PointerEvent) => {
@@ -752,90 +763,105 @@ export function ChatScreen({
   const isCallButtonDisabled = isThisChatBusyForMe;
   return (
     <div className="relative flex h-full min-h-0 w-full max-w-full flex-col blyve-screen-bg">
-      {/* Header */}
-      <div 
-        className="flex items-center justify-between px-4 py-3 border-b border-gray-200 blyve-border-subtle blyve-screen-bg"
-        style={{ flexShrink: 0 }}
-      >
-        <div className="flex items-center gap-3">
-          <button
-            onClick={onBack}
-            className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full"
-            style={{
-              touchAction: 'manipulation',
-              WebkitTapHighlightColor: 'transparent',
-              cursor: 'pointer'
-            }}
-          >
-            <ArrowLeft className="w-6 h-6 text-gray-900 dark:text-white" />
-          </button>
-          
-          <div
-            onContextMenu={openProfileActions}
-            {...profileLongPress}
-          >
-            <button
-              onClick={() => setProfilePreviewUserId(otherUser.id)}
-              className="flex items-center gap-3"
-              style={{
-                touchAction: 'manipulation',
-                WebkitTapHighlightColor: 'transparent',
-                cursor: 'pointer'
-              }}
-            >
-              <img
-                src={otherUser.imageUrl ? getOptimizedImageUrl(otherUser.imageUrl, 200) : `https://ui-avatars.com/api/?name=${encodeURIComponent(otherDisplay)}`}
-                alt={otherDisplay}
-                className="w-10 h-10 rounded-full object-cover"
-              />
-              <div>
-                <h2 className="text-base font-semibold text-gray-900 dark:text-white">
-                  {otherDisplay}
-                </h2>
-                <p className="text-xs text-gray-500 dark:text-gray-400">
-                  {(isOnlineProp ? isOnlineProp(otherUser.id) : otherUser.is_online) ? t('chat.online') : t('chat.offline')}
-                </p>
-              </div>
-            </button>
-          </div>
-        </div>
+      {/* Header + CallBar rendered via portal so it sits outside the will-change:transform
+          nav shell. position:fixed children of transformed ancestors are fixed relative to
+          that ancestor, not the viewport — the portal breaks this coupling. */}
+      {createPortal(
+        <div
+          ref={headerPortalRef}
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            zIndex: 66,
+            paddingTop: 'env(safe-area-inset-top, 0px)',
+          }}
+          className="blyve-screen-bg border-b border-gray-200 blyve-border-subtle"
+        >
+          <div className="flex items-center justify-between px-4 py-3">
+            <div className="flex items-center gap-3">
+              <button
+                onClick={onBack}
+                className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full"
+                style={{
+                  touchAction: 'manipulation',
+                  WebkitTapHighlightColor: 'transparent',
+                  cursor: 'pointer'
+                }}
+              >
+                <ArrowLeft className="w-6 h-6 text-gray-900 dark:text-white" />
+              </button>
 
-        <div className="flex items-center gap-1 shrink-0 min-w-0">
-          <button
-            type="button"
-            onClick={() =>
-              void startDirectCall({
-                conversationId,
-                otherUserId: otherUser.id,
-                otherUserName: otherDisplay,
-                otherUserAvatar: otherUser.imageUrl,
-              })
-            }
-            title="Start call"
-            disabled={isCallButtonDisabled}
-            className={`p-2 rounded-full transition-colors shrink-0 ${
-              'hover:bg-gray-100 dark:hover:bg-gray-800'
-            } ${isCallButtonDisabled ? 'opacity-70 cursor-not-allowed' : ''}`}
-          >
-            <Phone
-              className={`w-5 h-5 ${
-                'text-gray-600 dark:text-gray-300'
-              }`}
-            />
-          </button>
-          <button
-            ref={optionsButtonRef}
-            onClick={() => setShowOptionsMenu((prev) => !prev)}
-            className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full"
-          >
-            <MoreVertical className="w-5 h-5 text-gray-600 dark:text-gray-300" />
-          </button>
-        </div>
-      </div>
-      <ChatEmbeddedCallBar conversationId={conversationId} currentUserId={currentUserId} />
+              <div
+                onContextMenu={openProfileActions}
+                {...profileLongPress}
+              >
+                <button
+                  onClick={() => setProfilePreviewUserId(otherUser.id)}
+                  className="flex items-center gap-3"
+                  style={{
+                    touchAction: 'manipulation',
+                    WebkitTapHighlightColor: 'transparent',
+                    cursor: 'pointer'
+                  }}
+                >
+                  <img
+                    src={otherUser.imageUrl ? getOptimizedImageUrl(otherUser.imageUrl, 200) : `https://ui-avatars.com/api/?name=${encodeURIComponent(otherDisplay)}`}
+                    alt={otherDisplay}
+                    className="w-10 h-10 rounded-full object-cover"
+                  />
+                  <div>
+                    <h2 className="text-base font-semibold text-gray-900 dark:text-white">
+                      {otherDisplay}
+                    </h2>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">
+                      {(isOnlineProp ? isOnlineProp(otherUser.id) : otherUser.is_online) ? t('chat.online') : t('chat.offline')}
+                    </p>
+                  </div>
+                </button>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-1 shrink-0 min-w-0">
+              <button
+                type="button"
+                onClick={() =>
+                  void startDirectCall({
+                    conversationId,
+                    otherUserId: otherUser.id,
+                    otherUserName: otherDisplay,
+                    otherUserAvatar: otherUser.imageUrl,
+                  })
+                }
+                title="Start call"
+                disabled={isCallButtonDisabled}
+                className={`p-2 rounded-full transition-colors shrink-0 ${
+                  'hover:bg-gray-100 dark:hover:bg-gray-800'
+                } ${isCallButtonDisabled ? 'opacity-70 cursor-not-allowed' : ''}`}
+              >
+                <Phone
+                  className={`w-5 h-5 ${
+                    'text-gray-600 dark:text-gray-300'
+                  }`}
+                />
+              </button>
+              <button
+                ref={optionsButtonRef}
+                onClick={() => setShowOptionsMenu((prev) => !prev)}
+                className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full"
+              >
+                <MoreVertical className="w-5 h-5 text-gray-600 dark:text-gray-300" />
+              </button>
+            </div>
+          </div>
+          <ChatEmbeddedCallBar conversationId={conversationId} currentUserId={currentUserId} />
+        </div>,
+        document.body
+      )}
 
       {/* Messages — relative wrapper so ScrollToBottomButton anchors above the composer */}
-      <div className="relative min-h-0 flex-1 flex flex-col">
+      <div className="relative min-h-0 flex-1 flex flex-col" style={{ paddingTop: headerHeight }}>
         {/* Sticky date pill overlay */}
         {stickyDateLabel ? (
           <div
