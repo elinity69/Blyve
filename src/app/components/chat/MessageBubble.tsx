@@ -1,5 +1,5 @@
 import React from 'react';
-import { CheckCheck } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 import type { MessageGroupPosition } from '../../lib/messageGrouping';
 import { CHAT_MESSAGE_BUBBLE_SHELL_CLASS } from './chatMessageStyles';
 import {
@@ -13,6 +13,7 @@ interface MessageBubbleProps {
   isMe: boolean;
   time?: string;
   isRead?: boolean;
+  isPending?: boolean;
   readLabel?: string;
   children: React.ReactNode;
 }
@@ -22,6 +23,7 @@ export function MessageBubble({
   isMe,
   time,
   isRead,
+  isPending,
   readLabel,
   children,
 }: MessageBubbleProps) {
@@ -42,13 +44,34 @@ export function MessageBubble({
             >
               {time}
               {isMe ? (
-                <CheckCheck
-                  className={`h-3.5 w-3.5 shrink-0 ${
-                    isRead ? 'text-[#34b7f1] drop-shadow-sm' : 'text-white/45'
-                  }`}
-                  strokeWidth={isRead ? 2.5 : 2}
-                  aria-hidden
-                />
+                <div className="relative flex h-3.5 w-3.5 shrink-0 items-center justify-center">
+                  <svg
+                    className={`h-full w-full ${
+                      !isPending && isRead ? 'text-[#34b7f1] drop-shadow-sm' : 'text-white/45'
+                    }`}
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth={!isPending && isRead ? 2.5 : 2}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    aria-hidden="true"
+                  >
+                    {/* First check (left) - Always visible */}
+                    <path d="M18 6 7 17l-5-5" />
+                    {/* Second check (right) - Fades in when sent */}
+                    <AnimatePresence>
+                      {!isPending && (
+                        <motion.path
+                          initial={{ opacity: 0 }}
+                          animate={{ opacity: 1 }}
+                          transition={{ duration: 0.8 }}
+                          d="M22 10l-11 11-5-5"
+                        />
+                      )}
+                    </AnimatePresence>
+                  </svg>
+                </div>
               ) : null}
             </span>
           ) : null}

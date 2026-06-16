@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback } from 'react';
+
+let chatScreenRenderCount = 0; // Global for simplicity in dev
 import { createPortal } from 'react-dom';
 import { ArrowLeft, Loader2, MoreVertical, Ban, Phone, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -68,6 +70,8 @@ import { useStickyDateOverlay } from '../hooks/useStickyDateOverlay';
 interface ChatScreenProps {
   onBack: () => void;
   conversationId: string;
+  isActiveTopScreen: boolean; // New prop
+  isDesktop?: boolean;
   otherUser: {
     id: string;
     name: string;
@@ -86,6 +90,8 @@ interface ChatScreenProps {
 export function ChatScreen({
   onBack, 
   conversationId,
+  isActiveTopScreen, // New prop
+  isDesktop = false,
   otherUser,
   currentUserId,
   isOnline: isOnlineProp,
@@ -99,6 +105,15 @@ export function ChatScreen({
   // Do NOT create a second useOnlineStatus here — a second subscriber on the
   // same channel starts with an empty presence snapshot and shows the peer
   // as offline until it re-syncs, causing a flicker/mismatch with the preview.
+  useEffect(() => {
+    console.log('[ChatScreen DEBUG] mount/update', {
+      conversationId,
+      isActiveTopScreen,
+      isMounted: true
+    });
+    return () => console.log('[ChatScreen DEBUG] unmount', { conversationId });
+  }, [conversationId, isActiveTopScreen]);
+
   const [conversationActionsMenu, setConversationActionsMenu] = useState<ConversationActionTarget | null>(null);
   const {
     messages,
@@ -151,6 +166,7 @@ export function ChatScreen({
   const lastOwnReadAtRef = useRef<string | null>(null);
   const lastMessageReactionKeyRef = useRef<string | null>(null);
   const readReceiptScrollSeededRef = useRef(false);
+  const wasNearBottomOnInputFocusRef = useRef(false); // NEW: Track near bottom status on input focus
   const [scrollAnchorReady, setScrollAnchorReady] = useState(false);
   const headerPortalRef = useRef<HTMLDivElement>(null);
   const [headerHeight, setHeaderHeight] = useState(56);
@@ -159,6 +175,7 @@ export function ChatScreen({
   // screens stay mounted with display:none — portal must not escape to body then).
   const [isPortalActive, setIsPortalActive] = useState(true);
 
+  const renderRef = useRef(0);
   const applyInitialScrollPosition = useCallback(() => {
     const container = messagesContainerRef.current;
     if (!container || messages.length === 0) return;
@@ -171,11 +188,6 @@ export function ChatScreen({
     scrollContainerToBottomStable(container);
   }, [messages, currentUserId, lastViewedAt]);
 
-  const assignMessagesContainer = useChatScrollAnchor(
-    messagesContainerRef,
-    scrollAnchorReady,
-    messagesEndRef
-  );
 
   const isGhostMode = !!currentUserProfile?.ghost_mode;
 
@@ -195,7 +207,6 @@ export function ChatScreen({
   const meAvatarUrl =
     currentUserProfile?.avatar_url ||
     currentUserProfile?.images?.[0] ||
-    currentUserProfile?.imageUrl ||
     null;
 
   useEffect(() => {
@@ -220,6 +231,125 @@ export function ChatScreen({
       window.removeEventListener('mobile-chat-stack-close', onClose);
     };
   }, []);
+
+  // NEW EFFECT: Reset headerHeight when portal becomes inactive
+  useEffect(() => {
+    if (!isActiveTopScreen) {
+      console.debug(`[ChatScreen Debug] ${Date.now()} | isActiveTopScreen false, resetting headerHeight to 0`);
+      setHeaderHeight(0); // Reset to 0 when inactive
+    }
+  }, [isActiveTopScreen]);
+
+  // Debugging useEffect for ChatScreen renders and key metrics
+  useEffect(() => {
+    renderRef.current++;
+    console.debug(`[ChatScreen Debug] --- RENDER ${renderRef.current} --- ${Date.now()}`);
+
+    const logMetrics = () => {
+      const portalEl = headerPortalRef.current;
+      const messagesEl = messagesContainerRef.current;
+
+      const portalRect = portalEl?.getBoundingClientRect();
+      const messagesRect = messagesEl?.getBoundingClientRect();
+
+      const computedPortalTop = portalEl ? window.getComputedStyle(portalEl).top : 'N/A';
+
+      const visualViewport = window.visualViewport;
+
+      const data = {
+        timestamp: Date.now(),
+        event: 'metrics_snapshot',
+        renderCount: renderRef.current,
+        isActiveTopScreen,
+        headerHeight,
+        visualViewportOffsetTop: visualViewport?.offsetTop,
+        visualViewportHeight: visualViewport?.height,
+        windowInnerHeight: window.innerHeight,
+        portalComputedTop: computedPortalTop,
+        portalRectTop: portalRect?.top,
+        portalRectBottom: portalRect?.bottom,
+        messagesRectTop: messagesRect?.top,
+        calculatedGap: (messagesRect?.top && portalRect?.bottom) ? (messagesRect.top - portalRect.bottom) : 'N/A',
+        portalDomNodeExists: portalEl && document.body.contains(portalEl),
+      };
+      console.debug(`[ChatScreen Debug] Metrics:`, data);
+    };
+
+    logMetrics();
+
+    const tryAutoScrollToBottom = () => {
+      const container = messagesContainerRef.current;
+      if (wasNearBottomOnInputFocusRef.current && container && !isNearBottom(container, 96)) {
+        requestAnimationFrame(() => {
+          scrollContainerToBottomStable(container);
+          console.debug(`[ChatScreen Debug] Auto-scrolling to bottom after viewport change.`);
+        });
+      }
+    };
+
+    const handleVisualViewportResize = () => {
+      console.debug(`[ChatScreen Debug] ${Date.now()} | Event: visualViewport resize`);
+      logMetrics();
+      tryAutoScrollToBottom(); // Try to auto-scroll after resize
+    };
+    const handleVisualViewportScroll = () => {
+      console.debug(`[ChatScreen Debug] ${Date.now()} | Event: visualViewport scroll`);
+      logMetrics();
+      tryAutoScrollToBottom(); // Also try to auto-scroll on scroll events, but debounce is implicitly handled by RAF
+    };
+
+    visualViewport?.addEventListener('resize', handleVisualViewportResize);
+    visualViewport?.addEventListener('scroll', handleVisualViewportScroll);
+
+    const handleInputFocus = () => {
+      console.debug(`[ChatScreen Debug] ${Date.now()} | Event: input focus`);
+      if (messagesContainerRef.current) {
+        wasNearBottomOnInputFocusRef.current = isNearBottom(messagesContainerRef.current, 96);
+        console.debug(`[ChatScreen Debug] captured wasNearBottomOnInputFocus: ${wasNearBottomOnInputFocusRef.current}`);
+      }
+      logMetrics();
+    };
+    const handleInputBlur = () => {
+      console.debug(`[ChatScreen Debug] ${Date.now()} | Event: input blur`);
+      wasNearBottomOnInputFocusRef.current = false; // Reset on blur
+      logMetrics();
+    };
+
+    const inputElement = messageInputRef.current;
+    inputElement?.addEventListener('focus', handleInputFocus);
+    inputElement?.addEventListener('blur', handleInputBlur);
+
+    const onMobileChatStackOpen = () => { console.debug(`[ChatScreen Debug] ${Date.now()} | Event: mobile-chat-stack-open`); logMetrics(); };
+    const onMobileChatStackClose = () => { console.debug(`[ChatScreen Debug] ${Date.now()} | Event: mobile-chat-stack-close`); logMetrics(); };
+
+    window.addEventListener('mobile-chat-stack-open', onMobileChatStackOpen);
+    window.addEventListener('mobile-chat-stack-close', onMobileChatStackClose);
+
+    return () => {
+      visualViewport?.removeEventListener('resize', handleVisualViewportResize);
+      visualViewport?.removeEventListener('scroll', handleVisualViewportScroll);
+      inputElement?.removeEventListener('focus', handleInputFocus);
+      inputElement?.removeEventListener('blur', handleInputBlur);
+      window.removeEventListener('mobile-chat-stack-open', onMobileChatStackOpen);
+      window.removeEventListener('mobile-chat-stack-close', onMobileChatStackClose);
+    };
+  }, [isActiveTopScreen, headerHeight, messagesContainerRef.current, headerPortalRef.current]);
+
+  // Log route/screen changes (inferred from ChatScreen lifecycle)
+  useEffect(() => {
+    console.debug(`[ChatScreen Debug] ${Date.now()} | ChatScreen mounted. isActiveTopScreen: ${isActiveTopScreen}`);
+    return () => {
+      console.debug(`[ChatScreen Debug] ${Date.now()} | ChatScreen unmounted. isActiveTopScreen: ${isActiveTopScreen}`);
+    };
+  }, []);
+
+  useEffect(() => {
+    console.log('[ChatScreen DEBUG]', {
+      conversationId,
+      isActiveTopScreen,
+      headerHeight
+    });
+  }, [conversationId, isActiveTopScreen, headerHeight]);
 
   const openProfileActions = useCallback(
     (event: React.MouseEvent | React.PointerEvent) => {
@@ -347,9 +477,7 @@ export function ChatScreen({
       lastMessageReactionKeyRef.current = JSON.stringify(lastMessage.reactions ?? null);
       const dist = container.scrollHeight - container.scrollTop - container.clientHeight;
       console.log('[scroll-snap] new-message branch', { dist, nearBottom: isNearBottom(container) });
-      if (isNearBottom(container)) {
-        scrollContainerToBottomStable(container);
-      }
+      scrollContainerToBottomStable(container);
       return;
     }
 
@@ -776,12 +904,185 @@ export function ChatScreen({
     (callState === 'calling' || (callState === 'in_call' && callConnectionState === 'connected')) &&
     activeCall?.conversationId === conversationId;
   const isCallButtonDisabled = isThisChatBusyForMe;
+
+  const headerContent = (
+    <div
+      ref={headerPortalRef}
+      className={`blyve-screen-bg border-b border-gray-200 blyve-border-subtle shrink-0 w-full z-20`}
+    >
+      <div className="flex items-center justify-between px-4 py-3">
+        <div className="flex items-center gap-3">
+          {!isDesktop && (
+            <button
+              onClick={onBack}
+              className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full"
+              style={{
+                touchAction: 'manipulation',
+                WebkitTapHighlightColor: 'transparent',
+                cursor: 'pointer'
+              }}
+            >
+              <ArrowLeft className="w-6 h-6 text-gray-900 dark:text-white" />
+            </button>
+          )}
+
+          <div
+            onContextMenu={openProfileActions}
+            {...profileLongPress}
+          >
+            <button
+              onClick={() => setProfilePreviewUserId(otherUser.id)}
+              className="flex items-center gap-3"
+              style={{
+                touchAction: 'manipulation',
+                WebkitTapHighlightColor: 'transparent',
+                cursor: 'pointer'
+              }}
+            >
+              <img
+                src={otherUser.imageUrl ? getOptimizedImageUrl(otherUser.imageUrl, 200) : `https://ui-avatars.com/api/?name=${encodeURIComponent(otherDisplay)}`}
+                alt={otherDisplay}
+                className="w-10 h-10 rounded-full object-cover"
+              />
+              <div>
+                <h2 className="text-base font-semibold text-gray-900 dark:text-white">
+                  {otherDisplay}
+                </h2>
+                <p className="text-xs text-gray-500 dark:text-gray-400">
+                  {(isOnlineProp ? isOnlineProp(otherUser.id) : otherUser.is_online) ? t('chat.online') : t('chat.offline')}
+                </p>
+              </div>
+            </button>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-1 shrink-0 min-w-0">
+          <button
+            type="button"
+            onClick={() =>
+              void startDirectCall({
+                conversationId,
+                otherUserId: otherUser.id,
+                otherUserName: otherDisplay,
+                otherUserAvatar: otherUser.imageUrl,
+              })
+            }
+            title="Start call"
+            disabled={isCallButtonDisabled}
+            className={`p-2 rounded-full transition-colors shrink-0 ${
+              'hover:bg-gray-100 dark:hover:bg-gray-800'
+            } ${isCallButtonDisabled ? 'opacity-70 cursor-not-allowed' : ''}`}
+          >
+            <Phone
+              className={`w-5 h-5 ${
+                'text-gray-600 dark:text-gray-300'
+              }`}
+            />
+          </button>
+          <button
+            ref={optionsButtonRef}
+            onClick={() => setShowOptionsMenu((prev) => !prev)}
+            className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full"
+          >
+            <MoreVertical className="w-5 h-5 text-gray-600 dark:text-gray-300" />
+          </button>
+        </div>
+      </div>
+      <ChatEmbeddedCallBar conversationId={conversationId} currentUserId={currentUserId} />
+    </div>
+  );
+
   return (
-    <div className="relative flex h-full min-h-0 w-full max-w-full flex-col blyve-screen-bg">
-      {/* Header + CallBar rendered via portal so it sits outside the will-change:transform
-          nav shell. position:fixed children of transformed ancestors are fixed relative to
-          that ancestor, not the viewport — the portal breaks this coupling. */}
-      {isPortalActive && createPortal(
+    <div className="relative flex h-full min-h-0 w-full max-w-full flex-col blyve-screen-bg z-50">
+      {/* CRITICAL UI ARCHITECTURE WARNING:
+          Do NOT blindly refactor this header rendering logic to always use `createPortal(..., document.body)`.
+          Because screens are kept alive and translated horizontally (they are NOT unmounted or `display: none`),
+          using `createPortal` unconditionally will cause the header to leak globally across the app over other screens.
+          The portal is ONLY used on mobile AND when the screen is the active top screen (to break free from transform-based clipping for the iOS keyboard). */}
+      {isDesktop || !isActiveTopScreen ? (
+        <div
+          ref={headerPortalRef}
+          className="blyve-screen-bg border-b border-gray-200 blyve-border-subtle shrink-0 w-full z-20"
+        >
+          <div className="flex items-center justify-between px-4 py-3">
+            <div className="flex items-center gap-3">
+              <button
+                onClick={onBack}
+                className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full"
+                style={{
+                  touchAction: 'manipulation',
+                  WebkitTapHighlightColor: 'transparent',
+                  cursor: 'pointer'
+                }}
+              >
+                <ArrowLeft className="w-6 h-6 text-gray-900 dark:text-white" />
+              </button>
+
+              <div
+                onContextMenu={openProfileActions}
+                {...profileLongPress}
+              >
+                <button
+                  onClick={() => setProfilePreviewUserId(otherUser.id)}
+                  className="flex items-center gap-3"
+                  style={{
+                    touchAction: 'manipulation',
+                    WebkitTapHighlightColor: 'transparent',
+                    cursor: 'pointer'
+                  }}
+                >
+                  <img
+                    src={otherUser.imageUrl ? getOptimizedImageUrl(otherUser.imageUrl, 200) : `https://ui-avatars.com/api/?name=${encodeURIComponent(otherDisplay)}`}
+                    alt={otherDisplay}
+                    className="w-10 h-10 rounded-full object-cover"
+                  />
+                  <div>
+                    <h2 className="text-base font-semibold text-gray-900 dark:text-white">
+                      {otherDisplay}
+                    </h2>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">
+                      {(isOnlineProp ? isOnlineProp(otherUser.id) : otherUser.is_online) ? t('chat.online') : t('chat.offline')}
+                    </p>
+                  </div>
+                </button>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-1 shrink-0 min-w-0">
+              <button
+                type="button"
+                onClick={() =>
+                  void startDirectCall({
+                    conversationId,
+                    otherUserId: otherUser.id,
+                    otherUserName: otherDisplay,
+                    otherUserAvatar: otherUser.imageUrl,
+                  })
+                }
+                title="Start call"
+                disabled={isCallButtonDisabled}
+                className={`p-2 rounded-full transition-colors shrink-0 ${
+                  'hover:bg-gray-100 dark:hover:bg-gray-800'
+                } ${isCallButtonDisabled ? 'opacity-70 cursor-not-allowed' : ''}`}
+              >
+                <Phone
+                  className={`w-5 h-5 ${
+                    'text-gray-600 dark:text-gray-300'
+                  }`}
+                />
+              </button>
+              <button
+                ref={optionsButtonRef}
+                onClick={() => setShowOptionsMenu((prev) => !prev)}
+                className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full"
+              >
+                <MoreVertical className="w-5 h-5 text-gray-600 dark:text-gray-300" />
+              </button>
+            </div>
+          </div>
+          <ChatEmbeddedCallBar conversationId={conversationId} currentUserId={currentUserId} />
+        </div>
+      ) : isPortalActive && createPortal(
         <div
           ref={headerPortalRef}
           style={{
@@ -878,7 +1179,7 @@ export function ChatScreen({
       )}
 
       {/* Messages — relative wrapper so ScrollToBottomButton anchors above the composer */}
-      <div className="relative min-h-0 flex-1 flex flex-col" style={{ paddingTop: headerHeight }}>
+      <div className="relative min-h-0 flex-1 flex flex-col" style={{ paddingTop: 0 }}>
         {/* Sticky date pill overlay */}
         {stickyDateLabel ? (
           <div
@@ -897,7 +1198,7 @@ export function ChatScreen({
         <div
           data-chat-messages-scroll
           className={`${CHAT_MESSAGE_LIST_CLASS} ${dropActive ? 'ring-2 ring-inset ring-blyve/40' : ''}`}
-          ref={assignMessagesContainer}
+          ref={messagesContainerRef}
           onScroll={handleMessagesScroll}
         onDragOver={(e) => {
           e.preventDefault();
@@ -920,7 +1221,7 @@ export function ChatScreen({
           WebkitOverflowScrolling: 'touch',
           touchAction: 'pan-y',
           overscrollBehavior: 'contain',
-          overscrollBehaviorX: 'hidden',
+          overscrollBehaviorX: 'none',
           overscrollBehaviorY: 'contain',
         }}
       >
