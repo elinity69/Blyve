@@ -5,6 +5,7 @@ import { navDebug } from '../lib/navDebug';
 import { MOBILE_BOTTOM_NAV_HEIGHT_PX } from '../lib/navigationShellStyle';
 import { useConversations } from '../hooks/useConversations';
 import { useOnlineStatus } from '../hooks/useOnlineStatus';
+import { useScreenLifecycle } from '../contexts/ScreenLifecycleContext';
 import { ChatScreen } from './ChatScreen';
 import { DmChatForwardPreview } from './DmChatForwardPreview';
 import { GroupThreadScreen } from './GroupThreadScreen';
@@ -2247,6 +2248,8 @@ export function MessagesScreen({ isTabActive = true }: MessagesScreenProps) {
             <ChatScreen
               key={selectedConversationId}
               conversationId={selectedConversationId}
+              isActiveTopScreen={isDesktop}
+              isDesktop={isDesktop}
               otherUser={{ ...selectedOtherUser, age: selectedOtherUser.age, is_online: isOnline(selectedOtherUser.id) }}
               currentUserId={currentUserId}
               isOnline={isOnline}

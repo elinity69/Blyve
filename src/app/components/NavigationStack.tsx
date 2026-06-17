@@ -915,6 +915,7 @@ export function NavigationStack({
     navPhase === 'drag' || navPhase === 'snap' || isDraggingRef.current;
   const isForwardHidden = isForwardPull && !isGestureActive;
   const isEnterSliding = enterCssActiveRef.current || navPhase === 'enter';
+  const isTransitioning = isGestureActive || isEnterSliding;
 
   useLayoutEffect(() => {
     const node = viewportShellRef.current;
@@ -941,7 +942,7 @@ export function NavigationStack({
       touchAction: isForwardPull ? 'none' : swipeBackLocked ? 'none' : 'pan-y',
       pointerEvents: isForwardPull ? 'none' : 'auto',
       visibility: isForwardHidden ? 'hidden' : 'visible',
-      display: isForwardHidden ? 'none' : undefined,
+      contentVisibility: isForwardHidden ? 'hidden' : undefined,
       willChange: isForwardHidden ? undefined : 'transform',
       backfaceVisibility: 'hidden',
       WebkitBackfaceVisibility: 'hidden',
@@ -973,7 +974,7 @@ export function NavigationStack({
             }}
             aria-hidden={isForwardHidden}
           >
-            {children}
+            {React.isValidElement(children) ? React.cloneElement(children as React.ReactElement<any>, { ...(screenId?.startsWith('chat-') ? { isActiveTopScreen: !isForwardHidden, isTransitioning } : {}) }) : children}
             {enterTouchShield ? (
               <div
                 className="absolute inset-0 z-[200] touch-none pointer-events-none"
@@ -999,7 +1000,7 @@ export function NavigationStack({
       }}
       style={navigationStackShellStyleDesktop}
     >
-      {children}
+      {React.isValidElement(children) ? React.cloneElement(children as React.ReactElement<any>, { ...(screenId?.startsWith('chat-') ? { isActiveTopScreen: true, isTransitioning: false } : {}) }) : children}
     </motion.div>
   );
 }

@@ -27,6 +27,8 @@ import { useMobileViewportDriver } from '../hooks/useMobileViewportInsets';
 import { MOBILE_VV_CSS } from '../lib/mobileViewport';
 
 import { clearNavSwipeLocks } from '../lib/navigationShellStyle';
+import { ScreenWrapper } from './ScreenWrapper';
+import { ScreenPhase } from '../contexts/ScreenLifecycleContext';
 
 
 
@@ -354,7 +356,20 @@ export function MobileNavStack({
 
 
 
+  const [navPhase, setNavPhase] = useState<'idle' | 'back-drag'>('idle');
+
+  const handleSwipeBackStart = useCallback(() => {
+    setNavPhase('back-drag');
+    onSwipeBackStart?.();
+  }, [onSwipeBackStart]);
+
+  const handleSwipeBackEnd = useCallback(() => {
+    setNavPhase('idle');
+    onSwipeBackEnd?.();
+  }, [onSwipeBackEnd]);
+
   const handlePanelBack = useCallback(() => {
+    setNavPhase('idle');
     requestAnimationFrame(() => {
       popScreen();
     });
@@ -411,8 +426,16 @@ export function MobileNavStack({
               }}
 
             >
-
-              {preview}
+              {/* UNDERLAY PREWARM */}
+              {overlay ? (
+                <ScreenWrapper phase={navPhase === 'back-drag' ? 'preparing-underlay' : 'parked'}>
+                  {preview}
+                </ScreenWrapper>
+              ) : (
+                <ScreenWrapper phase="active">
+                  {preview}
+                </ScreenWrapper>
+              )}
 
             </div>
 
@@ -427,12 +450,15 @@ export function MobileNavStack({
               screenId={overlay.id}
               skipEnterAnimation={overlay.skipEnterAnimation}
               onBeforeBack={onBeforePop}
-              onSwipeBackStart={onSwipeBackStart}
-              onSwipeBackEnd={onSwipeBackEnd}
+              onSwipeBackStart={handleSwipeBackStart}
+              onSwipeBackEnd={handleSwipeBackEnd}
               onBack={handlePanelBack}
             >
 
-              {overlay.content}
+              {/* FREEZE TOP SCREEN */}
+              <ScreenWrapper phase={navPhase === 'back-drag' ? 'leaving' : 'active'}>
+                {overlay.content}
+              </ScreenWrapper>
 
             </NavigationStack>
 

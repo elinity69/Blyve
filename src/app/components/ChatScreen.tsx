@@ -12,6 +12,8 @@ import { api } from '../lib/api';
 import { toast } from '../lib/toast';
 import { REPORT_REASONS } from '../constants/report';
 import { useTyping } from '../hooks/useTyping';
+import { useScreenLifecycle } from '../contexts/ScreenLifecycleContext';
+import { usePerformanceInstrument } from '../hooks/usePerformanceInstrument';
 // useOnlineStatus is intentionally NOT called here — see comment at the usage site below.
 import { useAppData } from '../context/AppDataContext';
 import { TypingBubble } from './TypingBubble';
@@ -70,7 +72,8 @@ import { useStickyDateOverlay } from '../hooks/useStickyDateOverlay';
 interface ChatScreenProps {
   onBack: () => void;
   conversationId: string;
-  isActiveTopScreen: boolean; // New prop
+  isActiveTopScreen?: boolean; // New prop
+  isTransitioning?: boolean; // When true, screen is animating swipe. Header must stay inline.
   isDesktop?: boolean;
   otherUser: {
     id: string;
@@ -90,7 +93,8 @@ interface ChatScreenProps {
 export function ChatScreen({
   onBack, 
   conversationId,
-  isActiveTopScreen, // New prop
+  isActiveTopScreen = true, // New prop
+  isTransitioning = false, // New prop
   isDesktop = false,
   otherUser,
   currentUserId,
@@ -98,6 +102,8 @@ export function ChatScreen({
   onOpenProfilePreview,
   onConversationUpdated,
 }: ChatScreenProps) {
+  const { isFrozen, shouldRunExpensiveEffects } = useScreenLifecycle();
+  usePerformanceInstrument('ChatScreen');
   const { t, i18n } = useTranslation();
 
 // Online status comes from the parent via otherUser.is_online, which is
@@ -214,12 +220,13 @@ export function ChatScreen({
   }, [conversationId]);
 
   useLayoutEffect(() => {
+    if (!shouldRunExpensiveEffects) return;
     const el = headerPortalRef.current;
     if (!el) return;
     const ro = new ResizeObserver(() => setHeaderHeight(el.offsetHeight));
     ro.observe(el);
     return () => ro.disconnect();
-  }, []);
+  }, [shouldRunExpensiveEffects]);
 
   useEffect(() => {
     const onOpen = () => setIsPortalActive(true);
@@ -288,11 +295,13 @@ export function ChatScreen({
     };
 
     const handleVisualViewportResize = () => {
+      if (!isActiveTopScreen || !shouldRunExpensiveEffects) return;
       console.debug(`[ChatScreen Debug] ${Date.now()} | Event: visualViewport resize`);
       logMetrics();
       tryAutoScrollToBottom(); // Try to auto-scroll after resize
     };
     const handleVisualViewportScroll = () => {
+      if (!isActiveTopScreen || !shouldRunExpensiveEffects) return;
       console.debug(`[ChatScreen Debug] ${Date.now()} | Event: visualViewport scroll`);
       logMetrics();
       tryAutoScrollToBottom(); // Also try to auto-scroll on scroll events, but debounce is implicitly handled by RAF
@@ -302,6 +311,7 @@ export function ChatScreen({
     visualViewport?.addEventListener('scroll', handleVisualViewportScroll);
 
     const handleInputFocus = () => {
+      if (!isActiveTopScreen || !shouldRunExpensiveEffects) return;
       console.debug(`[ChatScreen Debug] ${Date.now()} | Event: input focus`);
       if (messagesContainerRef.current) {
         wasNearBottomOnInputFocusRef.current = isNearBottom(messagesContainerRef.current, 96);
@@ -310,6 +320,7 @@ export function ChatScreen({
       logMetrics();
     };
     const handleInputBlur = () => {
+      if (!isActiveTopScreen || !shouldRunExpensiveEffects) return;
       console.debug(`[ChatScreen Debug] ${Date.now()} | Event: input blur`);
       wasNearBottomOnInputFocusRef.current = false; // Reset on blur
       logMetrics();
@@ -319,8 +330,8 @@ export function ChatScreen({
     inputElement?.addEventListener('focus', handleInputFocus);
     inputElement?.addEventListener('blur', handleInputBlur);
 
-    const onMobileChatStackOpen = () => { console.debug(`[ChatScreen Debug] ${Date.now()} | Event: mobile-chat-stack-open`); logMetrics(); };
-    const onMobileChatStackClose = () => { console.debug(`[ChatScreen Debug] ${Date.now()} | Event: mobile-chat-stack-close`); logMetrics(); };
+    const onMobileChatStackOpen = () => { if(!shouldRunExpensiveEffects) return; console.debug(`[ChatScreen Debug] ${Date.now()} | Event: mobile-chat-stack-open`); logMetrics(); };
+    const onMobileChatStackClose = () => { if(!shouldRunExpensiveEffects) return; console.debug(`[ChatScreen Debug] ${Date.now()} | Event: mobile-chat-stack-close`); logMetrics(); };
 
     window.addEventListener('mobile-chat-stack-open', onMobileChatStackOpen);
     window.addEventListener('mobile-chat-stack-close', onMobileChatStackClose);
@@ -333,7 +344,7 @@ export function ChatScreen({
       window.removeEventListener('mobile-chat-stack-open', onMobileChatStackOpen);
       window.removeEventListener('mobile-chat-stack-close', onMobileChatStackClose);
     };
-  }, [isActiveTopScreen, headerHeight, messagesContainerRef.current, headerPortalRef.current]);
+  }, [isActiveTopScreen, headerHeight, messagesContainerRef.current, headerPortalRef.current, shouldRunExpensiveEffects]);
 
   // Log route/screen changes (inferred from ChatScreen lifecycle)
   useEffect(() => {
@@ -395,8 +406,6 @@ export function ChatScreen({
       toast.error(t('chat.blockFailedTitle'), error.message || t('chat.blockFailedTitle'));
     }
   }, [onBack, onConversationUpdated, otherUser.id, t]);
-  const { isPartnerTyping, sendTyping } = useTyping(conversationId, currentUserId, isGhostMode);
-
   const lastOwnMessageId = useMemo(() => {
     for (let i = messages.length - 1; i >= 0; i -= 1) {
       if (messages[i].sender_id === currentUserId) {
@@ -405,6 +414,122 @@ export function ChatScreen({
     }
     return null;
   }, [messages, currentUserId]);
+
+  const renderedMessages = useMemo(() => {
+    return messages.map((msg, index) => {
+      const isMe = msg.sender_id === currentUserId;
+      const prev = index > 0 ? messages[index - 1] : null;
+      const next = index < messages.length - 1 ? messages[index + 1] : null;
+      const isGroupStart = isMessageGroupStart(msg, prev);
+      const isNewSender = isNewSenderGroupStart(msg, prev);
+      const isGroupEnd = isMessageGroupEnd(msg, next);
+      const isBundled = isMessageBundled(msg, prev, next);
+      const groupPosition = getMessageGroupPosition(msg, prev, next);
+      const isLastOwnMessage = isMe && msg.id === lastOwnMessageId;
+      const isNewlyLoaded = newlyLoadedIds.has(msg.id);
+      const timeLocale = getAppDateLocale(i18n.language);
+      const messageTime = formatMessageTime(
+        msg.created_at,
+        timeLocale,
+        timeLocale === 'en-US'
+      );
+      const replyQuote = resolveReplyQuote(
+        msg.reply_to_message_id,
+        messages,
+        (senderId) => getSenderLabel(senderId),
+        t('chat.originalMessageUnavailable')
+      );
+      const readLabel =
+        isLastOwnMessage && isGroupEnd && msg.read_at
+          ? `${t('chat.read')} ${formatMessageTime(msg.read_at, timeLocale, timeLocale === 'en-US')}`
+          : undefined;
+      return (
+        <motion.div
+          key={msg.id}
+          data-message-id={msg.id}
+          initial={isNewlyLoaded ? { opacity: 0, y: -6 } : false}
+          animate={{ opacity: 1, y: 0 }}
+          transition={
+            isNewlyLoaded
+              ? { duration: 0.18, ease: [0.25, 0.1, 0.25, 1] }
+              : { duration: 0 }
+          }
+          className={getChatMessageRowClass(isGroupStart, isNewSender)}
+        >
+          <div className={`flex w-full flex-col ${isMe ? 'items-end' : 'items-start'}`}>
+              <div
+                className={`${
+                  isBundled ? CHAT_MESSAGE_ROW_INNER_GROUPED_CLASS : CHAT_MESSAGE_ROW_INNER_CLASS
+                } ${isMe ? 'flex-row-reverse' : 'flex-row'}`}
+              >
+                <MessageRowAvatarSlot
+                  visible={isGroupEnd}
+                  imageUrl={isMe ? meAvatarUrl : otherUser.imageUrl}
+                  label={isMe ? meDisplay : otherDisplay}
+                />
+                <div className={`flex min-w-0 max-w-[calc(100%-2.25rem)] flex-1 flex-col ${isMe ? 'items-end' : 'items-start'}`}>
+                  {isGroupStart && (
+                    <MessageGroupHeader
+                      name={isMe ? meDisplay : otherDisplay}
+                      align={isMe ? 'end' : 'start'}
+                    />
+                  )}
+                  <div className="w-full min-w-0">
+                    <MessageWithReactions
+                      messageId={msg.id}
+                      isMe={isMe}
+                      canDelete={isMe}
+                      isReplyTarget={replyTarget?.id === msg.id}
+                      onReply={() =>
+                        setReplyTarget(buildReplyTarget(msg, getSenderLabel(msg.sender_id)))
+                      }
+                      onDelete={() => {
+                        const confirmed = window.confirm(t('chat.deleteMessageConfirm'));
+                        if (!confirmed) return;
+                        void deleteMessage(msg.id).then((ok) => {
+                          if (!ok) toast.error(t('chat.deleteMessageFailedTitle'));
+                        });
+                      }}
+                      onEdit={() => {
+                        setEditTarget({ id: msg.id, originalContent: msg.content });
+                        setReplyTarget(null);
+                        setMessageInput(msg.content);
+                        focusMessageInput();
+                      }}
+                      content={msg.content}
+                      isBundled={isBundled}
+                      replyQuote={replyQuote}
+                      bubblePosition={groupPosition}
+                      messageTime={messageTime}
+                      isRead={isOutgoingMessageRead(msg, messages, currentUserId)}
+                      readLabel={readLabel}
+                      editedAt={msg.edited_at}
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+        </motion.div>
+      );
+    });
+  }, [
+    messages,
+    currentUserId,
+    lastOwnMessageId,
+    newlyLoadedIds,
+    i18n.language,
+    meAvatarUrl,
+    otherUser.imageUrl,
+    meDisplay,
+    otherDisplay,
+    getSenderLabel,
+    t,
+    replyTarget?.id,
+    deleteMessage,
+  ],
+  );
+
+  const { isPartnerTyping, sendTyping } = useTyping(conversationId, currentUserId, isGhostMode);
 
   useEffect(() => {
     initialScrollDoneRef.current = false;
@@ -417,6 +542,7 @@ export function ChatScreen({
   }, [conversationId]);
 
   useEffect(() => {
+    if (!shouldRunExpensiveEffects) return;
     NotificationManager.setActiveConversationId(conversationId);
     window.dispatchEvent(
       new CustomEvent('conversation-opened', { detail: { conversationId } })
@@ -429,6 +555,7 @@ export function ChatScreen({
   }, [conversationId]);
 
   useEffect(() => {
+    if (!shouldRunExpensiveEffects) return;
     canLoadOlderRef.current = false;
     const timer = setTimeout(() => {
       canLoadOlderRef.current = true;
@@ -437,6 +564,7 @@ export function ChatScreen({
   }, [conversationId]);
 
   useLayoutEffect(() => {
+    if (!shouldRunExpensiveEffects) return;
     if (loading || messages.length === 0) return;
     const container = messagesContainerRef.current;
     if (!container) return;
@@ -507,6 +635,7 @@ export function ChatScreen({
   }, [loading, messages, lastViewedAt, currentUserId, applyInitialScrollPosition]);
 
   useLayoutEffect(() => {
+    if (!shouldRunExpensiveEffects) return;
     if (!isPartnerTyping) {
       setTypingClearance(0);
       if (initialScrollDoneRef.current) {
@@ -547,6 +676,7 @@ export function ChatScreen({
   }, [isPartnerTyping]);
 
   useLayoutEffect(() => {
+    if (!shouldRunExpensiveEffects) return;
     if (!isPartnerTyping || typingClearance <= 0 || !scrollAnchorReady) return;
     const container = messagesContainerRef.current;
     if (!container) return;
@@ -557,6 +687,7 @@ export function ChatScreen({
   }, [isPartnerTyping, typingClearance, scrollAnchorReady]);
 
   useLayoutEffect(() => {
+    if (!shouldRunExpensiveEffects) return;
     if (!scrollAnchorReady || loading) return;
     const container = messagesContainerRef.current;
     if (!container || !lastOwnMessageId) return;
@@ -748,6 +879,7 @@ export function ChatScreen({
   }, [isMdUp]);
 
   useLayoutEffect(() => {
+    if (!shouldRunExpensiveEffects) return;
     if (!conversationId || !isMdUp) return;
     const id = requestAnimationFrame(() => {
       messageInputRef.current?.focus({ preventScroll: true });
@@ -997,9 +1129,11 @@ export function ChatScreen({
       {/* CRITICAL UI ARCHITECTURE WARNING:
           Do NOT blindly refactor this header rendering logic to always use `createPortal(..., document.body)`.
           Because screens are kept alive and translated horizontally (they are NOT unmounted or `display: none`),
-          using `createPortal` unconditionally will cause the header to leak globally across the app over other screens.
-          The portal is ONLY used on mobile AND when the screen is the active top screen (to break free from transform-based clipping for the iOS keyboard). */}
-      {isDesktop || !isActiveTopScreen ? (
+          using `createPortal` unconditionally will cause the header to leak globally across the app over other screens, 
+          OR it will detach from the screen body during swipe animations.
+          The portal is ONLY used on mobile AND when the screen is the active top screen AND NOT transitioning (to break free from transform-based clipping for the iOS keyboard).
+          DO NOT REMOVE OR CHANGE THIS LOGIC UNLESS IT IS A STRICT REFACTOR AND REQUIRED! */}
+      {isDesktop || !isActiveTopScreen || isTransitioning ? (
         <div
           ref={headerPortalRef}
           className="blyve-screen-bg border-b border-gray-200 blyve-border-subtle shrink-0 w-full z-20"
@@ -1082,9 +1216,13 @@ export function ChatScreen({
           </div>
           <ChatEmbeddedCallBar conversationId={conversationId} currentUserId={currentUserId} />
         </div>
-      ) : isPortalActive && createPortal(
-        <div
-          ref={headerPortalRef}
+      ) : (
+        <>
+          {/* Placeholder prevents messages from jumping up when the header is moved to the portal */}
+          <div style={{ height: headerHeight > 0 ? headerHeight : 65, flexShrink: 0, width: '100%' }} />
+          {isPortalActive && createPortal(
+            <div
+              ref={headerPortalRef}
           style={{
             position: 'fixed',
             // Match the nav shell's top so the header aligns with the visual
@@ -1177,6 +1315,8 @@ export function ChatScreen({
         </div>,
         document.body
       )}
+      </>
+      )}
 
       {/* Messages — relative wrapper so ScrollToBottomButton anchors above the composer */}
       <div className="relative min-h-0 flex-1 flex flex-col" style={{ paddingTop: 0 }}>
@@ -1244,102 +1384,7 @@ export function ChatScreen({
                 <Loader2 className="w-4 h-4 animate-spin text-gray-400" />
               </div>
             )}
-            {messages.map((msg, index) => {
-              const isMe = msg.sender_id === currentUserId;
-              const prev = index > 0 ? messages[index - 1] : null;
-              const next = index < messages.length - 1 ? messages[index + 1] : null;
-              const isGroupStart = isMessageGroupStart(msg, prev);
-              const isNewSender = isNewSenderGroupStart(msg, prev);
-              const isGroupEnd = isMessageGroupEnd(msg, next);
-              const isBundled = isMessageBundled(msg, prev, next);
-              const groupPosition = getMessageGroupPosition(msg, prev, next);
-              const isLastOwnMessage = isMe && msg.id === lastOwnMessageId;
-              const isNewlyLoaded = newlyLoadedIds.has(msg.id);
-              const timeLocale = getAppDateLocale(i18n.language);
-              const messageTime = formatMessageTime(
-                msg.created_at,
-                timeLocale,
-                timeLocale === 'en-US'
-              );
-              const replyQuote = resolveReplyQuote(
-                msg.reply_to_message_id,
-                messages,
-                (senderId) => getSenderLabel(senderId),
-                t('chat.originalMessageUnavailable')
-              );
-              const readLabel =
-                isLastOwnMessage && isGroupEnd && msg.read_at
-                  ? `${t('chat.read')} ${formatMessageTime(msg.read_at, timeLocale, timeLocale === 'en-US')}`
-                  : undefined;
-              return (
-                <motion.div
-                  key={msg.id}
-                  data-message-id={msg.id}
-                  initial={isNewlyLoaded ? { opacity: 0, y: -6 } : false}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={
-                    isNewlyLoaded
-                      ? { duration: 0.18, ease: [0.25, 0.1, 0.25, 1] }
-                      : { duration: 0 }
-                  }
-                  className={getChatMessageRowClass(isGroupStart, isNewSender)}
-                >
-                  <div className={`flex w-full flex-col ${isMe ? 'items-end' : 'items-start'}`}>
-                      <div
-                        className={`${
-                          isBundled ? CHAT_MESSAGE_ROW_INNER_GROUPED_CLASS : CHAT_MESSAGE_ROW_INNER_CLASS
-                        } ${isMe ? 'flex-row-reverse' : 'flex-row'}`}
-                      >
-                        <MessageRowAvatarSlot
-                          visible={isGroupEnd}
-                          imageUrl={isMe ? meAvatarUrl : otherUser.imageUrl}
-                          label={isMe ? meDisplay : otherDisplay}
-                        />
-                        <div className={`flex min-w-0 max-w-[calc(100%-2.25rem)] flex-1 flex-col ${isMe ? 'items-end' : 'items-start'}`}>
-                          {isGroupStart && (
-                            <MessageGroupHeader
-                              name={isMe ? meDisplay : otherDisplay}
-                              align={isMe ? 'end' : 'start'}
-                            />
-                          )}
-                          <div className="w-full min-w-0">
-                            <MessageWithReactions
-                              messageId={msg.id}
-                              isMe={isMe}
-                              canDelete={isMe}
-                              isReplyTarget={replyTarget?.id === msg.id}
-                              onReply={() =>
-                                setReplyTarget(buildReplyTarget(msg, getSenderLabel(msg.sender_id)))
-                              }
-                              onDelete={() => {
-                                const confirmed = window.confirm(t('chat.deleteMessageConfirm'));
-                                if (!confirmed) return;
-                                void deleteMessage(msg.id).then((ok) => {
-                                  if (!ok) toast.error(t('chat.deleteMessageFailedTitle'));
-                                });
-                              }}
-                              onEdit={() => {
-                                setEditTarget({ id: msg.id, originalContent: msg.content });
-                                setReplyTarget(null);
-                                setMessageInput(msg.content);
-                                focusMessageInput();
-                              }}
-                              content={msg.content}
-                              isBundled={isBundled}
-                              replyQuote={replyQuote}
-                              bubblePosition={groupPosition}
-                              messageTime={messageTime}
-                              isRead={isOutgoingMessageRead(msg, messages, currentUserId)}
-                              readLabel={readLabel}
-                              editedAt={msg.edited_at}
-                            />
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                </motion.div>
-              );
-            })}
+            {renderedMessages}
             {typingClearance > 0 && (
               <div aria-hidden style={{ height: typingClearance, flexShrink: 0 }} />
             )}

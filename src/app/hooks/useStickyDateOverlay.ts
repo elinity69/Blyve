@@ -1,7 +1,6 @@
 import { useRef, useState, useCallback, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { getAppDateLocale } from '../../lib/i18n';
-import { useMobileViewportInsets } from '../hooks/useMobileViewportInsets';
 
 const HIDE_DELAY_MS = 2000;
 
@@ -105,20 +104,16 @@ function findTopMessageDate(
   messageMap: Map<string, string>
 ): string | null {
   const rect = container.getBoundingClientRect();
-  // Sample a point near the container's top, offset by pt-2 (8px) padding plus
-  // a small buffer so we land on real content rather than whitespace.
-  const hits = document.elementsFromPoint(rect.left + rect.width / 2, rect.top + 16);
-
-  for (const el of hits) {
-    // Guard: ignore elements that live outside this container (e.g. a fixed header).
-    if (!container.contains(el)) continue;
-
-    const msgEl = el.hasAttribute('data-message-id')
-      ? el
-      : (el.closest?.('[data-message-id]') ?? null);
-
-    if (msgEl) {
-      const id = msgEl.getAttribute('data-message-id');
+  const messageElements = container.querySelectorAll('[data-message-id]');
+  
+  for (let i = 0; i < messageElements.length; i++) {
+    const el = messageElements[i];
+    const elRect = el.getBoundingClientRect();
+    
+    // Find the first message whose bottom is visible below the container's top edge.
+    // Adding a small buffer (8px) to avoid picking a message that is just barely scrolled out.
+    if (elRect.bottom > rect.top + 8) {
+      const id = el.getAttribute('data-message-id');
       if (id) return messageMap.get(id) ?? null;
     }
   }
@@ -135,7 +130,6 @@ export function useStickyDateOverlay(
   const [visible, setVisible] = useState(false);
   const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const rafRef = useRef<number | null>(null);
-  const { bottomInset } = useMobileViewportInsets();
 
   // id→created_at lookup rebuilt only when the messages array changes
   const messageMapRef = useRef<Map<string, string>>(new Map());
@@ -152,23 +146,18 @@ export function useStickyDateOverlay(
     const closestDate = findTopMessageDate(container, messageMapRef.current);
     if (closestDate) {
       const locale = getAppDateLocale(i18n.language);
-      setLabel(formatStickyDate(closestDate, locale, t('chat.today'), t('chat.yesterday')));
+      const newLabel = formatStickyDate(closestDate, locale, t('chat.today'), t('chat.yesterday'));
+      setLabel(newLabel);
     }
   }, [containerRef, t, i18n.language]);
 
   const handleScroll = useCallback(() => {
-    // If the keyboard is active (indicated by a large bottom inset),
-    // do not show the date overlay to avoid keyboard-triggered flashes.
-    if (bottomInset > 20) {
-      setVisible(false);
-      if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
-      return;
-    }
-
     // Show immediately and reset the hide timer on every scroll event (cheap).
     setVisible(true);
     if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
-    hideTimerRef.current = setTimeout(() => setVisible(false), HIDE_DELAY_MS);
+    hideTimerRef.current = setTimeout(() => {
+      setVisible(false);
+    }, HIDE_DELAY_MS);
 
     // Gate the DOM hit-test behind rAF so it runs at most once per paint frame,
     // not on every raw scroll event (which fires 60+ times/s on some devices).

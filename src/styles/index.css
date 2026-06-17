@@ -65,6 +65,22 @@ a:active {
 
 /* ======================================== */
 
+/* Screen Layer für Performance-optimiertes Gesten-Routing */
+.screen-layer {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100dvh;
+  contain: layout paint style; /* BROWSER CRITICAL: Isoliert Layout und Paint OHNE Size-Kollaps */
+  overscroll-behavior-y: none;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: pan-y;
+  background-color: var(--background-color, #ffffff);
+}
+.dark .screen-layer {
+  background-color: #000000;
+}
+
 @import './fonts.css';
 @import './tailwind.css';
 @import './theme.css';
