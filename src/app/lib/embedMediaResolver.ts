@@ -1,5 +1,6 @@
 import type { ParsedEmbed } from './linkEmbeds';
 import { parseEmbed } from './linkEmbeds';
+import { api } from './api';
 
 const mediaCache = new Map<string, string | null>();
 const inflight = new Map<string, Promise<string | null>>();
@@ -48,10 +49,21 @@ function tenorPageUrls(embed: ParsedEmbed): string[] {
 export async function resolveTenorMediaUrl(embed: ParsedEmbed): Promise<string | null> {
   for (const pageUrl of tenorPageUrls(embed)) {
     const data = await fetchTenorOembed(pageUrl);
-    if (!data) continue;
-    const fromHtml = extractTenorMediaFromHtml(data.html);
-    if (fromHtml) return fromHtml;
-    if (data.thumbnail_url?.includes('.gif')) return data.thumbnail_url;
+    if (data) {
+      const fromHtml = extractTenorMediaFromHtml(data.html);
+      if (fromHtml) return fromHtml;
+      if (data.thumbnail_url?.includes('.gif')) return data.thumbnail_url;
+    }
+
+    // Fallback: fetch link preview through our Edge function, which is CORS-free
+    try {
+      const preview = await api.getLinkPreview(pageUrl);
+      if (preview?.image) {
+        return preview.image;
+      }
+    } catch {
+      // ignore and continue
+    }
   }
   return null;
 }
