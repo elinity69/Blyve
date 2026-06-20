@@ -20,6 +20,7 @@ function Calendar({
       classNames={{
         months: "flex flex-col sm:flex-row gap-2",
         month: "flex flex-col gap-4",
+        // @ts-expect-error react-day-picker v9 structure vs v8 type mappings
         caption: "flex justify-center pt-1 relative items-center w-full",
         caption_label: "text-sm font-medium",
         nav: "flex items-center gap-1",
@@ -60,9 +61,11 @@ function Calendar({
         ...classNames,
       }}
       components={{
+        // @ts-expect-error react-day-picker v9 internal typing issue with Chevron component
         IconLeft: ({ className, ...props }) => (
           <ChevronLeft className={cn("size-4", className)} {...props} />
         ),
+        // @ts-expect-error react-day-picker v9 internal typing issue with Chevron component
         IconRight: ({ className, ...props }) => (
           <ChevronRight className={cn("size-4", className)} {...props} />
         ),

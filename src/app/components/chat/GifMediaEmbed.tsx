@@ -46,11 +46,13 @@ function GifVideoEmbed({
   openUrl,
   inBubble,
   onFailed,
+  onLoad,
 }: {
   src: string;
   openUrl: string;
   inBubble?: boolean;
   onFailed: () => void;
+  onLoad?: () => void;
 }) {
   const [lightboxOpen, setLightboxOpen] = useState(false);
 
@@ -77,6 +79,8 @@ function GifVideoEmbed({
           playsInline
           preload="metadata"
           onError={onFailed}
+          onLoadedData={onLoad}
+          onCanPlay={onLoad}
         />
       </button>
       {lightboxOpen && (
@@ -92,9 +96,11 @@ function GifVideoEmbed({
 export function GifMediaEmbed({
   embed,
   inBubble = false,
+  onLoad,
 }: {
   embed: ParsedEmbed;
   inBubble?: boolean;
+  onLoad?: () => void;
 }) {
   const [src, setSrc] = useState<string | undefined>(() => embed.imageUrl);
   const [failed, setFailed] = useState(false);
@@ -141,6 +147,7 @@ export function GifMediaEmbed({
         openUrl={embed.url}
         inBubble={inBubble}
         onFailed={() => setFailed(true)}
+        onLoad={onLoad}
       />
     );
   }
@@ -152,6 +159,7 @@ export function GifMediaEmbed({
       alt="GIF"
       inBubble={inBubble}
       onFailed={() => setFailed(true)}
+      onLoad={onLoad}
     />
   );
 }

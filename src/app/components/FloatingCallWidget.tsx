@@ -1,7 +1,9 @@
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Minimize2, User, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { getOptimizedImageUrl } from '../lib/images';
+import { takeDomSnapshot } from '../lib/domSnapshot';
 import type { CallMediaType, JitsiHandle } from '../lib/jitsi';
 import type { JitsiJoinCredentials } from '../lib/jitsiCall';
 import type { CallStageParticipant } from './CallParticipantStage';
@@ -33,6 +35,8 @@ interface FloatingCallActiveCall {
 interface FloatingCallWidgetProps {
   displayMode: 'pip' | 'fullscreen' | 'embedded';
   hostAnchorEl?: HTMLElement | null;
+  registerCallHost?: (hostKey: string, element: HTMLElement | null) => void;
+  callHostTarget?: any;
   callPinned?: boolean;
   activeCall: FloatingCallActiveCall | null;
   localIdentity: string | null;
@@ -80,12 +84,13 @@ interface FloatingCallWidgetProps {
   onToggleCamera: () => void;
   onToggleScreenShare: () => void;
   onMinimizeFullscreen: () => void;
-  onOpenInChat: () => void;
+  onRestoreEmbedded: () => void;
   onClosePip: () => void;
   onEnterFullscreen: () => void;
   onExpandedChange?: (expanded: boolean) => void;
   onMinimizeToPip?: () => void;
   onTogglePin?: () => void;
+  isProfilePreviewOpen?: boolean;
 }
 
 function clampPosition(x: number, y: number) {
@@ -169,6 +174,8 @@ function PipAvatar({
 export function FloatingCallWidget({
   displayMode,
   hostAnchorEl = null,
+  registerCallHost,
+  callHostTarget,
   callPinned = false,
   activeCall,
   localIdentity,
@@ -208,15 +215,19 @@ export function FloatingCallWidget({
   onToggleCamera,
   onToggleScreenShare,
   onMinimizeFullscreen,
-  onOpenInChat,
+  onRestoreEmbedded,
   onClosePip,
   onEnterFullscreen,
   onExpandedChange,
   onMinimizeToPip,
   onTogglePin,
+  isProfilePreviewOpen = false,
 }: FloatingCallWidgetProps) {
   const { t } = useTranslation();
   const isMobile = useIsMobile();
+  const isEmbedded = displayMode === 'embedded';
+  const isFullscreen = displayMode === 'fullscreen';
+  const showPipChrome = !isEmbedded;
   const [pipHovered, setPipHovered] = useState(false);
   const [pipControlsVisible, setPipControlsVisible] = useState(false);
   const [volumeMenu, setVolumeMenu] = useState<{
@@ -232,6 +243,19 @@ export function FloatingCallWidget({
       window.innerHeight - PIP_SIZE - 88
     );
   });
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      (window as any).__dragCallPip = (dx: number, dy: number) => {
+        setPosition((prev) => clampPosition(prev.x + dx, prev.y + dy));
+      };
+    }
+    return () => {
+      if (typeof window !== 'undefined') {
+        delete (window as any).__dragCallPip;
+      }
+    };
+  }, []);
   const [remoteStreamActive, setRemoteStreamActive] = useState(false);
   const dragRef = useRef<{
     startX: number;
@@ -241,20 +265,72 @@ export function FloatingCallWidget({
     moved: boolean;
     pointerId: number | null;
   } | null>(null);
-  const pipContentRef = useRef<HTMLDivElement | null>(null);
+  const pipContentRefVal = useRef<HTMLDivElement | null>(null);
+  const pipContentRef = useCallback((node: HTMLDivElement | null) => {
+    pipContentRefVal.current = node;
+    if (node && registerCallHost && displayMode === 'pip') {
+      registerCallHost('pip', node);
+    }
+  }, [displayMode, registerCallHost]);
+  const pipContainerRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const el = pipContainerRef.current;
+    if (!el) return;
+
+    const blockAndShield = (e: Event) => {
+      const target = e.target as HTMLElement;
+      if (el.contains(target)) {
+        e.stopPropagation();
+        if (e.stopImmediatePropagation) {
+          e.stopImmediatePropagation();
+        }
+        if (!target.closest('button, [data-call-controls], [data-pip-avatar], [data-pip-drag-handle], select, input')) {
+          e.preventDefault();
+        }
+      }
+    };
+
+    const events = [
+      'pointerdown', 'pointerup', 'click', 'dblclick', 
+      'touchstart', 'touchend', 'mousedown', 'mouseup', 
+      'contextmenu', 'pointermove', 'touchmove', 'mousemove'
+    ];
+
+    events.forEach(name => {
+      document.body.addEventListener(name, blockAndShield, { capture: false, passive: false });
+    });
+
+    return () => {
+      events.forEach(name => {
+        document.body.removeEventListener(name, blockAndShield, { capture: false });
+      });
+    };
+  }, [showPipChrome, isFullscreen]);
   const jitsiSurfaceRef = useRef<HTMLDivElement | null>(null);
   const hasStreamRef = useRef(false);
   const lastPipOpenTapAtRef = useRef(0);
   const onEnterFullscreenRef = useRef(onEnterFullscreen);
-  const onOpenInChatRef = useRef(onOpenInChat);
+  const onRestoreEmbeddedRef = useRef(onRestoreEmbedded);
   const onClosePipRef = useRef(onClosePip);
 
   onEnterFullscreenRef.current = onEnterFullscreen;
-  onOpenInChatRef.current = onOpenInChat;
+  onRestoreEmbeddedRef.current = onRestoreEmbedded;
   onClosePipRef.current = onClosePip;
 
+  useLayoutEffect(() => {
+    if (!registerCallHost) return;
+    if (displayMode === 'pip') {
+      registerCallHost('pip', pipContentRefVal.current);
+      return () => registerCallHost('pip', null);
+    } else if (displayMode === 'fullscreen') {
+      registerCallHost('fullscreen', jitsiSurfaceRef.current);
+      return () => registerCallHost('fullscreen', null);
+    }
+  }, [displayMode, registerCallHost]);
+
   const openCallWindowFromPip = useCallback(() => {
-    onOpenInChatRef.current();
+    onRestoreEmbeddedRef.current();
   }, []);
 
   const displayParticipants = stageParticipants;
@@ -268,9 +344,6 @@ export function FloatingCallWidget({
 
   hasStreamRef.current = hasStream;
 
-  const isEmbedded = displayMode === 'embedded';
-  const isFullscreen = displayMode === 'fullscreen';
-  const showPipChrome = !isEmbedded;
   const layout: JitsiCallLayout = isEmbedded ? 'embedded' : isFullscreen ? 'standalone' : 'pip';
 
   const syncJitsiSurfaceBounds = useCallback(() => {
@@ -281,7 +354,7 @@ export function FloatingCallWidget({
     if (isFullscreen) return;
 
     const target =
-      isEmbedded && hostAnchorEl ? hostAnchorEl : showPipChrome ? pipContentRef.current : null;
+      isEmbedded && hostAnchorEl ? hostAnchorEl : showPipChrome ? pipContentRefVal.current : null;
 
     if (!target) {
       surface.style.visibility = 'hidden';
@@ -308,32 +381,64 @@ export function FloatingCallWidget({
   }, [hostAnchorEl, isEmbedded, isFullscreen, showPipChrome]);
 
   useLayoutEffect(() => {
+    // Sync immediately
     syncJitsiSurfaceBounds();
 
+    // Sync on next animation frame to catch layout shifts
+    const rafId = requestAnimationFrame(() => {
+      syncJitsiSurfaceBounds();
+    });
+
     const target =
-      isEmbedded && hostAnchorEl ? hostAnchorEl : showPipChrome ? pipContentRef.current : null;
+      isEmbedded && hostAnchorEl ? hostAnchorEl : showPipChrome ? pipContentRefVal.current : null;
 
     // In fullscreen, React controls the surface style — no observers needed.
-    if (isFullscreen) return undefined;
+    if (isFullscreen) {
+      return () => {
+        cancelAnimationFrame(rafId);
+      };
+    }
 
-    if (!target) return undefined;
+    if (!target) {
+      return () => {
+        cancelAnimationFrame(rafId);
+      };
+    }
 
-    const resizeObserver = new ResizeObserver(() => syncJitsiSurfaceBounds());
+    const resizeObserver = new ResizeObserver(() => {
+      syncJitsiSurfaceBounds();
+      // Ensure we catch it on layout changes as well
+      requestAnimationFrame(() => syncJitsiSurfaceBounds());
+    });
     resizeObserver.observe(target);
+
+    const handleVisualViewportChange = () => {
+      syncJitsiSurfaceBounds();
+    };
 
     window.addEventListener('scroll', syncJitsiSurfaceBounds, true);
     window.addEventListener('resize', syncJitsiSurfaceBounds);
+    window.addEventListener('orientationchange', syncJitsiSurfaceBounds);
+    window.addEventListener('navigation-swipe', syncJitsiSurfaceBounds);
+    
+    if (window.visualViewport) {
+      window.visualViewport.addEventListener('resize', handleVisualViewportChange);
+      window.visualViewport.addEventListener('scroll', handleVisualViewportChange);
+    }
 
     return () => {
+      cancelAnimationFrame(rafId);
       resizeObserver.disconnect();
       window.removeEventListener('scroll', syncJitsiSurfaceBounds, true);
       window.removeEventListener('resize', syncJitsiSurfaceBounds);
+      window.removeEventListener('orientationchange', syncJitsiSurfaceBounds);
+      window.removeEventListener('navigation-swipe', syncJitsiSurfaceBounds);
+      if (window.visualViewport) {
+        window.visualViewport.removeEventListener('resize', handleVisualViewportChange);
+        window.visualViewport.removeEventListener('scroll', handleVisualViewportChange);
+      }
     };
   }, [hostAnchorEl, isEmbedded, isFullscreen, position, showPipChrome, syncJitsiSurfaceBounds]);
-
-  useLayoutEffect(() => {
-    syncJitsiSurfaceBounds();
-  }, [position, syncJitsiSurfaceBounds]);
 
   const showVideoSurface =
     isCameraEnabled ||
@@ -360,23 +465,52 @@ export function FloatingCallWidget({
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  const registerPipOpenTap = useCallback(
-    (event: React.MouseEvent | React.PointerEvent) => {
-      if ((event.target as HTMLElement).closest('button, [data-call-controls], [data-pip-avatar]')) {
+  useEffect(() => {
+    console.log(`[PIP DEBUG] pip mount. displayMode=${displayMode}, targetConversation=${activeCall?.conversationId || 'none'}`);
+    takeDomSnapshot('after PiP mount');
+    return () => {
+      console.log(`[PIP DEBUG] pip unmount`);
+    };
+  }, []);
+
+  const moveCountRef = useRef(0);
+
+  const clickTimerRef = useRef<number | null>(null);
+  const lastRestoreAttemptAtRef = useRef<number>(0);
+
+  const handlePipSingleOrDoubleTap = useCallback((event: React.MouseEvent | React.PointerEvent, isDoubleClick = false) => {
+    if ((event.target as HTMLElement).closest('button, [data-call-controls], [data-pip-avatar]')) {
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+
+    if (clickTimerRef.current) {
+      window.clearTimeout(clickTimerRef.current);
+      clickTimerRef.current = null;
+    }
+
+    if (isDoubleClick) {
+      const nowTs = Date.now();
+      if (nowTs - lastRestoreAttemptAtRef.current < 500) {
+        console.log(`[PIP DEBUG] Duplicate restore request ignored ts=${performance.now()}`);
         return;
       }
-      const now = Date.now();
-      if (now - lastPipOpenTapAtRef.current < 360) {
-        lastPipOpenTapAtRef.current = 0;
-        event.preventDefault();
-        event.stopPropagation();
-        openCallWindowFromPip();
+      lastRestoreAttemptAtRef.current = nowTs;
+
+      const isPreviewOpen = isProfilePreviewOpen || (typeof document !== 'undefined' && !!document.querySelector('[data-profile-preview-root="true"]'));
+      if (isPreviewOpen) {
+        console.log(`[PIP DEBUG] PiP double tap IGNORED because profile preview is open! data-profile-preview-root or isProfilePreviewOpen active.`);
         return;
       }
-      lastPipOpenTapAtRef.current = now;
-    },
-    [openCallWindowFromPip]
-  );
+
+      console.log(`[PIP DEBUG] PiP double tap intercepted -> restore embedded for active conversation if valid.`);
+      onRestoreEmbeddedRef.current();
+      takeDomSnapshot('after double tap on PiP');
+    } else {
+      console.log(`[PIP DEBUG] PiP single tap/click registered (ignored to prevent accidental trigger).`);
+    }
+  }, [isProfilePreviewOpen]);
 
   const openPipVolumeMenu = useCallback(
     (participant: CallStageParticipant, event: React.MouseEvent) => {
@@ -412,10 +546,40 @@ export function FloatingCallWidget({
   );
 
   const handleDragPointerDown = (event: React.PointerEvent) => {
+    event.stopPropagation();
+    console.log(`[PIP DEBUG] pip pointerdown ts=${performance.now()}`, { x: event.clientX, y: event.clientY });
+    
+    // PIP GESTURE TARGET DEBUG
+    const nativeEv = event.nativeEvent;
+    const path = nativeEv.composedPath ? nativeEv.composedPath() : [];
+    const pathTags = path.map((el: any) => el.tagName || el.nodeName || 'unknown');
+    const hasPreviewInPath = path.some((el: any) => el.hasAttribute && (el.hasAttribute('data-messages-preview-panel') || el.hasAttribute('data-profile-preview-root')));
+    const elemAtPoint = typeof document !== 'undefined' ? document.elementFromPoint(event.clientX, event.clientY) : null;
+    const elemAtPointTag = elemAtPoint ? `${elemAtPoint.tagName}#${elemAtPoint.id}.${elemAtPoint.className}` : 'none';
+
+    console.log(`[PIP EVENT PATH DEBUG] pointerdown event details:`, {
+      clientX: event.clientX,
+      clientY: event.clientY,
+      composedPath: pathTags,
+      hasPreviewInPath,
+      elementFromPoint: elemAtPointTag,
+    });
+
     if (isFullscreen) return;
     if ((event.target as HTMLElement).closest('button, [data-call-controls], [data-pip-avatar]')) {
       return;
     }
+
+    const handle = event.currentTarget as HTMLElement;
+    if (event.pointerId != null) {
+      try {
+        handle.setPointerCapture(event.pointerId);
+        console.log(`[PIP DEBUG] setPointerCapture successful on pointerdown ts=${performance.now()}`);
+      } catch {
+        console.log(`[PIP DEBUG] setPointerCapture failed on pointerdown ts=${performance.now()}`);
+      }
+    }
+
     dragRef.current = {
       startX: event.clientX,
       startY: event.clientY,
@@ -427,43 +591,62 @@ export function FloatingCallWidget({
   };
 
   const handleDragPointerMove = (event: React.PointerEvent) => {
+    event.stopPropagation();
     if (!dragRef.current || isFullscreen) return;
     const dx = event.clientX - dragRef.current.startX;
     const dy = event.clientY - dragRef.current.startY;
     if (!dragRef.current.moved && (Math.abs(dx) > 6 || Math.abs(dy) > 6)) {
+      console.log(`[PIP DEBUG] pip drag threshold crossed ts=${performance.now()}`);
       dragRef.current.moved = true;
-      const handle = event.currentTarget as HTMLElement;
-      if (dragRef.current.pointerId != null) {
-        try {
-          handle.setPointerCapture(dragRef.current.pointerId);
-        } catch {
-          // best effort
-        }
-      }
     }
     if (!dragRef.current.moved) return;
+    
+    // Prevent default scroll/pan behaviors only during active dragging
+    event.preventDefault();
+    
+    moveCountRef.current++;
+    if (moveCountRef.current % 10 === 0) {
+      console.log(`[PIP DEBUG] pip pointermove throttled ts=${performance.now()} dx=${dx} dy=${dy} finalPos=`, clampPosition(dragRef.current.originX + dx, dragRef.current.originY + dy));
+    }
     setPosition(clampPosition(dragRef.current.originX + dx, dragRef.current.originY + dy));
   };
 
   const handleDragPointerUp = (event: React.PointerEvent) => {
+    event.stopPropagation();
     if (!dragRef.current) return;
     const wasDrag = dragRef.current.moved;
+    console.log(`[PIP DEBUG] pip pointerup ts=${performance.now()}`, { wasDrag, finalPos: position });
     dragRef.current = null;
     if (wasDrag) {
-      event.stopPropagation();
+      event.preventDefault();
       return;
     }
-    registerPipOpenTap(event);
+    console.log(`[PIP DEBUG] pip treated as click (tap)`);
+    const now = Date.now();
+    if (now - lastPipOpenTapAtRef.current < 250) {
+      lastPipOpenTapAtRef.current = 0;
+      if (typeof window !== 'undefined' && (window as any).__createGestureFlowId) {
+        (window as any).__createGestureFlowId('pip-double-tap-pointerup');
+      }
+      handlePipSingleOrDoubleTap(event, true);
+    } else {
+      lastPipOpenTapAtRef.current = now;
+      handlePipSingleOrDoubleTap(event, false);
+    }
   };
 
   const handlePipDoubleClick = (event: React.MouseEvent) => {
-    if ((event.target as HTMLElement).closest('button, [data-call-controls], [data-pip-avatar]')) {
+    const isTargetPiPRoot = !((event.target as HTMLElement).closest('button, [data-call-controls], [data-pip-avatar]'));
+    console.log(`[PIP DEBUG] pip dblclick event ts=${performance.now()} onPiPRoot=${isTargetPiPRoot}`);
+    if (!isTargetPiPRoot) {
       return;
     }
     event.preventDefault();
     event.stopPropagation();
-    lastPipOpenTapAtRef.current = 0;
-    onEnterFullscreenRef.current();
+    if (typeof window !== 'undefined' && (window as any).__createGestureFlowId) {
+      (window as any).__createGestureFlowId('pip-double-tap-dblclick');
+    }
+    handlePipSingleOrDoubleTap(event, true);
   };
 
   const live = connectionState === 'connected';
@@ -644,89 +827,140 @@ export function FloatingCallWidget({
         zIndex: 9999,
         pointerEvents: 'auto',
       }
-    : { visibility: 'hidden', left: 0, top: 0, width: 0, height: 0 };
+    : {
+        zIndex: isEmbedded ? 120 : 134,
+        pointerEvents: showPipChrome ? 'none' : 'auto',
+      };
+
+  const volumeMenuPortal = volumeMenu && typeof document !== 'undefined' ? createPortal(
+    <CallParticipantVolumeMenu
+      participantName={volumeMenu.participantName}
+      volume={participantVolumes[volumeMenu.participantId] ?? 1}
+      x={volumeMenu.x}
+      y={volumeMenu.y}
+      onVolumeChange={(volume) =>
+        onParticipantVolumeChange(volumeMenu.participantId, volume)
+      }
+      onClose={() => setVolumeMenu(null)}
+    />,
+    document.body
+  ) : null;
+
+  const pipContainerPortal = showPipChrome && !isFullscreen && typeof document !== 'undefined' ? createPortal(
+    <div
+      ref={pipContainerRef}
+      className="group/pip fixed z-[99999] select-none"
+      style={{ left: position.x, top: position.y, width: PIP_SIZE, height: PIP_SIZE }}
+      onMouseEnter={() => setPipHovered(true)}
+      onMouseLeave={() => setPipHovered(false)}
+      onPointerDown={(event) => {
+        event.stopPropagation();
+      }}
+      onPointerUp={(event) => {
+        event.stopPropagation();
+      }}
+      onMouseDown={(event) => {
+        event.stopPropagation();
+      }}
+      onMouseUp={(event) => {
+        event.stopPropagation();
+      }}
+      onTouchStart={(event) => {
+        event.stopPropagation();
+      }}
+      onTouchEnd={(event) => {
+        event.stopPropagation();
+      }}
+      onClick={(event) => {
+        event.stopPropagation();
+        event.preventDefault();
+        if ((event.target as HTMLElement).closest('button, [data-call-controls], [data-pip-avatar]')) return;
+        setPipControlsVisible((v) => !v);
+      }}
+      onDoubleClick={(event) => {
+        event.stopPropagation();
+        event.preventDefault();
+      }}
+    >
+      <div
+        ref={pipContentRef}
+        className="relative h-full w-full overflow-hidden rounded-xl border border-white/15 bg-transparent shadow-2xl"
+      />
+      {avatarOverlay}
+      <div
+        data-call-controls
+        className={`pointer-events-none absolute inset-x-0 bottom-1 z-[50] flex justify-center px-1 transition-opacity ${
+          pipControlsVisible || pipHovered || isMobile ? 'opacity-100' : 'opacity-0'
+        }`}
+      >
+        <CallControlBar
+          live={live}
+          isMuted={isMuted}
+          isCameraEnabled={isCameraEnabled}
+          isScreenShareEnabled={isScreenShareEnabled}
+          mediaActive={hasStream}
+          onToggleMute={onToggleMute}
+          onToggleCamera={onToggleCamera}
+          onToggleScreenShare={onToggleScreenShare}
+          onHangUp={onHangUp}
+          compact
+        />
+      </div>
+      <div
+        data-pip-drag-handle
+        className="absolute inset-0 z-[35] cursor-grab touch-none active:cursor-grabbing"
+        onPointerDown={handleDragPointerDown}
+        onPointerMove={handleDragPointerMove}
+        onPointerUp={handleDragPointerUp}
+        onPointerCancel={handleDragPointerUp}
+        onMouseDown={(event) => {
+          event.stopPropagation();
+        }}
+        onMouseUp={(event) => {
+          event.stopPropagation();
+        }}
+        onTouchStart={(event) => {
+          event.stopPropagation();
+        }}
+        onTouchEnd={(event) => {
+          event.stopPropagation();
+        }}
+        onDoubleClick={handlePipDoubleClick}
+        onClick={(event) => {
+          event.stopPropagation();
+          event.preventDefault();
+          console.log(`[PIP DEBUG] pip drag handle click intercepted and stopped propagation`);
+        }}
+      />
+      <button
+        type="button"
+        onClick={(event) => {
+          event.stopPropagation();
+          onClosePip();
+        }}
+        className="absolute right-1 top-1 z-[40] flex h-6 w-6 items-center justify-center rounded-full border border-white/10 bg-black/70 text-white shadow-lg transition-colors hover:bg-black/90"
+        aria-label={t('groups.modalClose', { defaultValue: 'Close' })}
+      >
+        <X className="h-3.5 w-3.5" />
+      </button>
+    </div>,
+    document.body
+  ) : null;
 
   return (
     <>
       <div
+        id="floating-call-widget-root"
         ref={jitsiSurfaceRef}
-        className={`fixed overflow-hidden bg-[#0b0b0b] ${
-          showPipChrome && !isFullscreen ? 'rounded-xl' : ''
-        }`}
+        className={`fixed overflow-hidden ${
+          isFullscreen ? 'bg-[#0b0b0b]' : 'bg-transparent'
+        } ${showPipChrome && !isFullscreen ? 'rounded-xl' : ''}`}
         style={jitsiSurfaceStyle}
       >
         <PersistentJitsiMeeting {...jitsiMeetingProps} />
       </div>
-      {/* PiP chrome — only rendered in pip mode; fullscreen UI lives inside jitsiSurface via overlay prop */}
-      {showPipChrome && !isFullscreen ? (
-        <div
-          className="group/pip fixed z-[135] select-none"
-          style={{ left: position.x, top: position.y, width: PIP_SIZE, height: PIP_SIZE }}
-          onMouseEnter={() => setPipHovered(true)}
-          onMouseLeave={() => setPipHovered(false)}
-          onClick={(event) => {
-            if ((event.target as HTMLElement).closest('button, [data-call-controls], [data-pip-avatar]')) return;
-            setPipControlsVisible((v) => !v);
-          }}
-        >
-          <div
-            ref={pipContentRef}
-            className="relative h-full w-full overflow-hidden rounded-xl border border-white/15 bg-transparent shadow-2xl"
-          />
-          {avatarOverlay}
-          <div
-            data-call-controls
-            className={`pointer-events-none absolute inset-x-0 bottom-1 z-[50] flex justify-center px-1 transition-opacity ${
-              pipControlsVisible || pipHovered || isMobile ? 'opacity-100' : 'opacity-0'
-            }`}
-          >
-            <CallControlBar
-              live={live}
-              isMuted={isMuted}
-              isCameraEnabled={isCameraEnabled}
-              isScreenShareEnabled={isScreenShareEnabled}
-              mediaActive={hasStream}
-              onToggleMute={onToggleMute}
-              onToggleCamera={onToggleCamera}
-              onToggleScreenShare={onToggleScreenShare}
-              onHangUp={onHangUp}
-              compact
-            />
-          </div>
-          <div
-            data-pip-drag-handle
-            className="absolute inset-0 z-[35] cursor-grab touch-manipulation active:cursor-grabbing"
-            onPointerDown={handleDragPointerDown}
-            onPointerMove={handleDragPointerMove}
-            onPointerUp={handleDragPointerUp}
-            onPointerCancel={handleDragPointerUp}
-            onDoubleClick={handlePipDoubleClick}
-          />
-          <button
-            type="button"
-            onClick={(event) => {
-              event.stopPropagation();
-              onClosePip();
-            }}
-            className="absolute right-1 top-1 z-[40] flex h-6 w-6 items-center justify-center rounded-full border border-white/10 bg-black/70 text-white shadow-lg transition-colors hover:bg-black/90"
-            aria-label={t('groups.modalClose', { defaultValue: 'Close' })}
-          >
-            <X className="h-3.5 w-3.5" />
-          </button>
-        </div>
-      ) : null}
-      {volumeMenu ? (
-        <CallParticipantVolumeMenu
-          participantName={volumeMenu.participantName}
-          volume={participantVolumes[volumeMenu.participantId] ?? 1}
-          x={volumeMenu.x}
-          y={volumeMenu.y}
-          onVolumeChange={(volume) =>
-            onParticipantVolumeChange(volumeMenu.participantId, volume)
-          }
-          onClose={() => setVolumeMenu(null)}
-        />
-      ) : null}
+      {pipContainerPortal}
+      {volumeMenuPortal}
     </>
   );
 }

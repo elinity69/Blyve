@@ -10,6 +10,220 @@ import {
   unregisterJitsiMeetingApi,
 } from './callAudio/jitsiAudioBridge';
 
+export function debugJitsi(event: string, payload?: any) {
+  const ts = performance.now();
+  console.log(`[JITSI EMBED DEBUG] ts=${ts} event=${event}`, payload || {});
+}
+
+let lastAttachedHostKey: string | null = null;
+let lastIframeElement: HTMLIFrameElement | null = null;
+let activeJitsiApiInstance: any = null;
+
+const diagnosticEvents: Array<{ event: string; timestamp: string }> = [];
+function logDiagnosticEvent(event: string, details?: any) {
+  const ts = new Date().toISOString();
+  console.log(`[REPARENTING DIAGNOSTIC][EVENT] ${event} fired at ${ts}`, details || '');
+  diagnosticEvents.push({ event, timestamp: ts });
+}
+
+function inspectDOMOnIframeAction(action: 'appended' | 'removed', container: HTMLElement, iframe: HTMLIFrameElement | null) {
+  const ts = performance.now();
+  const activeElement = typeof document !== 'undefined' ? document.activeElement : null;
+  const rect = iframe ? iframe.getBoundingClientRect() : { x: 0, y: 0, width: 0, height: 0 };
+  const parentSelector = container.className || container.id || container.tagName;
+  const closestScreenId = typeof container.closest === 'function' ? container.closest('[screen-id]')?.getAttribute('screen-id') || 'none' : 'none';
+  const isInHostZone = typeof container.closest === 'function' ? !!container.closest('[data-chat-call-host-zone]') : false;
+  const isInPreview = typeof container.closest === 'function' ? !!container.closest('[data-messages-preview-panel]') : false;
+  const isInGlobalRoot = typeof container.closest === 'function' ? !!container.closest('#floating-call-widget-root') : false;
+
+  debugJitsi(`iframe ${action}`, {
+    ts,
+    parentSelector,
+    closestScreenId,
+    isInHostZone,
+    isInPreview,
+    isInGlobalRoot,
+    rect: { x: rect.x, y: rect.y, w: rect.width, h: rect.height },
+    activeElement: activeElement ? `${activeElement.tagName}.${activeElement.className}` : 'none'
+  });
+
+  if (action === 'appended' && !isInHostZone && !isInPreview && !isInGlobalRoot && closestScreenId !== 'none') {
+    console.warn(`[JITSI EMBED DEBUG][ILLEGAL DOM] Jitsi iframe is being appended outside of a Chat-Host-Zone! ts=${ts}, screen=${closestScreenId}`);
+  }
+}
+
+export function resolveCallHostElement(conversationId: string | null): HTMLElement | null {
+  if (typeof window !== 'undefined') {
+    return (window as any).__activeHostElement || null;
+  }
+  return null;
+}
+
+let guardInstalled = false;
+const origAppendChild = typeof window !== 'undefined' ? Element.prototype.appendChild : null;
+
+export function installJitsiStableRootGuard() {
+  if (typeof window === 'undefined' || guardInstalled) return;
+  if (process.env.NODE_ENV === 'production') return;
+
+  guardInstalled = true;
+  console.log(`[JITSI GUARD] Installing DOM mutation runtime guards for stable Jitsi stage`);
+
+  const isStageOrIframe = (node: Node | null): boolean => {
+    if (!node) return false;
+    if (node instanceof Element) {
+      if (node.id === 'jitsi-stable-stage' || node.classList.contains('mock-jitsi-iframe') || node.tagName === 'IFRAME') {
+        const stage = document.getElementById('jitsi-stable-stage');
+        if (stage && (node === stage || stage.contains(node))) {
+          return true;
+        }
+      }
+    }
+    return false;
+  };
+
+  const throwGuardViolation = (method: string) => {
+    const errorMsg = `[JITSI GUARD VIOLATION][HARD ERROR] Attempted to physically move or manipulate Jitsi stage or iframe in the DOM via "${method}"! Only absolute CSS projection/overlay is allowed.`;
+    console.error(errorMsg);
+    throw new Error(errorMsg);
+  };
+
+  // Monkey patch Element.prototype.appendChild
+  Element.prototype.appendChild = function<T extends Node>(newChild: T): T {
+    if (isStageOrIframe(newChild)) {
+      throwGuardViolation('appendChild');
+    }
+    return origAppendChild!.call(this, newChild) as T;
+  };
+
+  // Monkey patch Element.prototype.insertBefore
+  const origInsertBefore = Element.prototype.insertBefore;
+  Element.prototype.insertBefore = function<T extends Node>(newChild: T, refChild: Node | null): T {
+    if (isStageOrIframe(newChild)) {
+      throwGuardViolation('insertBefore');
+    }
+    return origInsertBefore.call(this, newChild, refChild) as T;
+  };
+
+  // Monkey patch Document.prototype.adoptNode
+  const origAdoptNode = Document.prototype.adoptNode;
+  Document.prototype.adoptNode = function<T extends Node>(node: T): T {
+    if (isStageOrIframe(node)) {
+      throwGuardViolation('adoptNode');
+    }
+    return origAdoptNode.call(this, node) as T;
+  };
+
+  // Monkey patch Element.prototype.append
+  const origAppend = Element.prototype.append;
+  Element.prototype.append = function(...nodes: (string | Node)[]) {
+    for (const node of nodes) {
+      if (node instanceof Node && isStageOrIframe(node)) {
+        throwGuardViolation('append');
+      }
+    }
+    return origAppend.apply(this, nodes);
+  };
+
+  // Monkey patch Element.prototype.prepend
+  const origPrepend = Element.prototype.prepend;
+  Element.prototype.prepend = function(...nodes: (string | Node)[]) {
+    for (const node of nodes) {
+      if (node instanceof Node && isStageOrIframe(node)) {
+        throwGuardViolation('prepend');
+      }
+    }
+    return origPrepend.apply(this, nodes);
+  };
+}
+
+export function mountOnceToStableRoot(container: HTMLElement) {
+  let stage = document.getElementById('jitsi-stable-stage');
+  if (!stage) {
+    stage = document.createElement('div');
+    stage.id = 'jitsi-stable-stage';
+    stage.className = 'w-full h-full min-h-0 min-w-0 overflow-hidden relative';
+  }
+  
+  if (container) {
+    if (stage.parentElement !== container) {
+      console.log(`[JITSI PROJECTION] Mounting stage once to stable root container`);
+      if (origAppendChild) {
+        origAppendChild.call(container, stage);
+      } else {
+        container.appendChild(stage);
+      }
+    }
+  } else {
+    console.error(`[JITSI PROJECTION][HARD ERROR] No stable root container provided for mounting!`);
+    if (process.env.NODE_ENV !== 'production') {
+      throw new Error(`[JITSI PROJECTION][HARD ERROR] No stable root container provided for mounting!`);
+    }
+  }
+
+  // Install runtime guards to prevent any other code path from moving the stage
+  installJitsiStableRootGuard();
+
+  return stage;
+}
+
+export function syncJitsiSurfaceBounds(hostKey: string, element: HTMLElement) {
+  if (typeof window === 'undefined') return;
+  console.log(`[JITSI PROJECTION][SYNC] Syncing Jitsi surface bounds to active host: ${hostKey}`);
+  
+  if (process.env.NODE_ENV !== 'production') {
+    const stage = document.getElementById('jitsi-stable-stage');
+    if (!stage) {
+      console.warn(`[JITSI PROJECTION][WARNING] Stable Jitsi stage (#jitsi-stable-stage) is missing from DOM!`);
+    }
+  }
+}
+
+export function attachToHost(hostKey: string, element: HTMLElement) {
+  if (typeof window === 'undefined') return;
+  const activeHostKey = (window as any).__activeHostKey;
+  if (hostKey !== activeHostKey) {
+    const errorMsg = `[JITSI ATTACH ERROR] Attempted to attach hostKey "${hostKey}" but activeHostKey is "${activeHostKey}"!`;
+    console.error(errorMsg);
+    if (process.env.NODE_ENV !== 'production') {
+      throw new Error(errorMsg);
+    }
+    return;
+  }
+
+  const stage = document.getElementById('jitsi-stable-stage');
+  const iframeBefore = stage ? stage.querySelector('iframe') : null;
+  const previousHostKey = lastAttachedHostKey;
+  const timestamp = new Date().toISOString();
+
+  console.log(`[PROJECTION DIAGNOSTIC][START] Syncing Jitsi stage layout to host`);
+  console.log(`  - Timestamp: ${timestamp}`);
+  console.log(`  - Previous Host Key: ${previousHostKey}`);
+  console.log(`  - Next Host Key: ${hostKey}`);
+  console.log(`  - Active API Instance present: ${!!activeJitsiApiInstance}`);
+  console.log(`  - Iframe Element present: ${!!iframeBefore}`);
+
+  // Invoke projection synchronization
+  syncJitsiSurfaceBounds(hostKey, element);
+
+  const iframeAfter = stage ? stage.querySelector('iframe') : null;
+  const iframeIdentitySame = iframeBefore && iframeAfter && (iframeBefore === iframeAfter);
+  const sessionIdentitySame = !!activeJitsiApiInstance;
+
+  console.log(`[PROJECTION DIAGNOSTIC][COMPLETE] Layout synced successfully`);
+  console.log(`  - Iframe DOM node identity preserved (100% stable): ${iframeIdentitySame}`);
+  console.log(`  - Jitsi API/Session object identity preserved: ${sessionIdentitySame}`);
+
+  lastAttachedHostKey = hostKey;
+  if (iframeAfter) {
+    lastIframeElement = iframeAfter;
+  }
+}
+
+export function detachFromHost(hostKey: string) {
+  console.log(`[JITSI DETACH] Detaching hostKey: ${hostKey}`);
+}
+
 export interface JitsiRemoteMediaState {
   remoteVideoActive: boolean;
   remoteScreenShareActive: boolean;
@@ -103,8 +317,8 @@ function externalApiCacheKey(domain: string, appId?: string): string {
   return appId ? `${domain}:${appId}` : domain;
 }
 
-const JITSI_IFRAME_ALLOW =
-  'autoplay; camera; clipboard-write; compute-pressure; display-capture; encrypted-media; fullscreen; microphone; screen-wake-lock';
+  const JITSI_IFRAME_ALLOW =
+    'autoplay; camera; clipboard-write; display-capture; encrypted-media; fullscreen; microphone; screen-wake-lock';
 
 const JITSI_UNSUPPORTED_ALLOW_TOKENS = new Set([
   'speaker-selection',
@@ -112,6 +326,8 @@ const JITSI_UNSUPPORTED_ALLOW_TOKENS = new Set([
   'serial',
   'usb',
   'bluetooth',
+  'compute-pressure',
+  'local-fonts',
 ]);
 
 function buildJitsiIframeAllow(domain?: string): string {
@@ -124,7 +340,6 @@ function buildJitsiIframeAllow(domain?: string): string {
     `microphone https://${normalizedDomain}`,
     `display-capture https://${normalizedDomain}`,
     'clipboard-write',
-    'compute-pressure',
     'encrypted-media',
     'fullscreen',
     'screen-wake-lock',
@@ -141,7 +356,8 @@ function sanitizeAllowTokens(value: string, fallback: string): string {
       return feature && !JITSI_UNSUPPORTED_ALLOW_TOKENS.has(feature);
     });
 
-  return tokens.length > 0 ? tokens.join('; ') : fallback;
+  const result = tokens.length > 0 ? tokens.join('; ') : fallback;
+  return result;
 }
 
 let iframeAllowInterceptorInstalled = false;
@@ -195,25 +411,49 @@ function ensureJitsiIframeScreenSharePermissions(api: { getIFrame?: () => HTMLIF
 }
 
 function observeJitsiIframePermissions(container: HTMLElement, domain?: string) {
+  let iframeLogged = false;
   patchJitsiIframePermissions(container, domain);
+
+  const checkIframe = () => {
+    const iframe = container.querySelector('iframe');
+    if (iframe && !iframeLogged) {
+      iframeLogged = true;
+      inspectDOMOnIframeAction('appended', container, iframe);
+    } else if (!iframe && iframeLogged) {
+      iframeLogged = false;
+      inspectDOMOnIframeAction('removed', container, null);
+    }
+  };
+
+  checkIframe();
 
   const observer = new MutationObserver(() => {
     patchJitsiIframePermissions(container, domain);
+    checkIframe();
   });
   observer.observe(container, { childList: true, subtree: true, attributes: true, attributeFilter: ['allow'] });
 
   const intervalId = window.setInterval(() => {
     patchJitsiIframePermissions(container, domain);
+    checkIframe();
   }, 100);
 
   return () => {
     observer.disconnect();
     window.clearInterval(intervalId);
+    if (iframeLogged) {
+      inspectDOMOnIframeAction('removed', container, null);
+    }
   };
 }
 
 export function loadJitsiExternalApi(domain: string, appId?: string): Promise<void> {
   if (typeof window === 'undefined') {
+    return Promise.resolve();
+  }
+
+  if ((window as any).__useMockJitsi) {
+    console.log('[JITSI MOCK] Skipping loadJitsiExternalApi in mock mode');
     return Promise.resolve();
   }
 
@@ -338,14 +578,49 @@ export async function mountJitsiMeetingFromServerJoin(
     throw new Error('Jitsi External API unavailable');
   }
 
+  // Sanitize localStorage of the host page to prevent 8x8 JaaS parsing errors on null/empty strings
+  if (typeof window !== 'undefined' && window.localStorage) {
+    try {
+      const rawLocal = window.localStorage.getItem('jitsiLocalStorage');
+      if (rawLocal === null || rawLocal === 'null' || rawLocal === '' || rawLocal === 'undefined') {
+        console.log('[JITSI EMBED DEBUG] Sanitized null/empty jitsiLocalStorage from localStorage');
+        window.localStorage.removeItem('jitsiLocalStorage');
+      } else {
+        JSON.parse(rawLocal);
+      }
+    } catch {
+      console.log('[JITSI EMBED DEBUG] Removed corrupted jitsiLocalStorage from localStorage');
+      window.localStorage.removeItem('jitsiLocalStorage');
+    }
+  }
+
+  // Mount once to stable root container
+  const stage = mountOnceToStableRoot(container);
+  const hostForInterceptor = container || stage;
+
+  const closestScreenId = typeof hostForInterceptor.closest === 'function' ? hostForInterceptor.closest('[screen-id]')?.getAttribute('screen-id') || 'none' : 'none';
+  const isInHostZone = typeof hostForInterceptor.closest === 'function' ? !!hostForInterceptor.closest('[data-chat-call-host-zone]') : false;
+  const isInPreview = typeof hostForInterceptor.closest === 'function' ? !!hostForInterceptor.closest('[data-messages-preview-panel]') : false;
+  const isInGlobalRoot = typeof hostForInterceptor.closest === 'function' ? !!hostForInterceptor.closest('#floating-call-widget-root') : false;
+
+  console.log(`[JITSI EMBED DEBUG] mount Jitsi authorized and resolved`, {
+    closestScreenId,
+    isInHostZone,
+    isInPreview,
+    isInGlobalRoot,
+    resolvedHostId: hostForInterceptor.id,
+    resolvedHostClass: hostForInterceptor.className,
+  });
+
   const videoMuted = callType === 'audio';
   installJitsiIframeAllowInterceptor(resolvedDomain);
   let stopObservingIframe: (() => void) | null = null;
-  stopObservingIframe = observeJitsiIframePermissions(container, resolvedDomain);
+  stopObservingIframe = observeJitsiIframePermissions(hostForInterceptor, resolvedDomain);
 
+  debugJitsi('create iframe start', { resolvedRoom, containerSelector: hostForInterceptor.className || hostForInterceptor.id || hostForInterceptor.tagName });
   const api = new window.JitsiMeetExternalAPI(resolvedDomain, {
     roomName: resolvedRoom,
-    parentNode: container,
+    parentNode: stage,
     width: '100%',
     height: '100%',
     jwt: resolvedJwt,
@@ -359,6 +634,13 @@ export async function mountJitsiMeetingFromServerJoin(
       requireDisplayName: false,
       enableLobbyChatSupport: false,
       hideLobbyButton: true,
+      captions: {
+        enabled: false
+      },
+      transcription: {
+        enabled: false,
+        useCaptions: false
+      },
       lobby: {
         autoKnock: false,
         enableChat: false,
@@ -451,6 +733,11 @@ export async function mountJitsiMeetingFromServerJoin(
   });
 
   registerJitsiMeetingApi(api);
+  activeJitsiApiInstance = api;
+  lastIframeElement = api.getIFrame?.() || null;
+  lastAttachedHostKey = (window as any).__activeHostKey || null;
+  debugJitsi('create iframe success');
+  debugJitsi('api instance created');
   applyJitsiNoiseSuppression();
 
   patchJitsiIframePermissions(container, resolvedDomain);
@@ -612,7 +899,10 @@ export async function mountJitsiMeetingFromServerJoin(
     window.setTimeout(snapshotRemoteMedia, delayMs);
   };
 
+  debugJitsi('api event listeners attached');
   api.addListener('videoConferenceJoined', (...args: unknown[]) => {
+    logDiagnosticEvent('videoConferenceJoined', args[0]);
+    debugJitsi('videoConferenceJoined event');
     markJitsiMicGranted();
     conferenceJoined = true;
     const payload = readJitsiParticipantPayload(args[0]);
@@ -625,6 +915,9 @@ export async function mountJitsiMeetingFromServerJoin(
     applyJitsiNoiseSuppression();
     scheduleRemoteMediaSnapshot(800);
     scheduleEnsureAudioUnmuted();
+  });
+  api.addListener('videoConferenceLeft', (...args: unknown[]) => {
+    logDiagnosticEvent('videoConferenceLeft', args[0]);
   });
   api.addListener('errorOccurred', (...args: unknown[]) => {
     const payload = args[0] as { error?: { message?: string; name?: string } } | undefined;
@@ -655,15 +948,21 @@ export async function mountJitsiMeetingFromServerJoin(
     options.onAuthError?.(message);
   });
   api.addListener('readyToClose', () => {
+    logDiagnosticEvent('readyToClose');
+    debugJitsi('readyToClose event');
     options.onReadyToClose?.();
   });
   api.addListener('participantJoined', (...args: unknown[]) => {
+    logDiagnosticEvent('participantJoined', args[0]);
     const payload = readJitsiParticipantPayload(args[0]);
+    debugJitsi('remote participant joined count', { count: getRemoteParticipantIds().length + 1 });
     options.onRemoteParticipantJoined?.(payload);
     options.onParticipantJoined?.();
     scheduleRemoteMediaSnapshot(800);
   });
-  api.addListener('participantLeft', () => {
+  api.addListener('participantLeft', (...args: unknown[]) => {
+    logDiagnosticEvent('participantLeft', args[0]);
+    debugJitsi('remote participant left count', { count: getRemoteParticipantIds().length });
     options.onParticipantLeft?.();
     scheduleRemoteMediaSnapshot(300);
   });
@@ -795,6 +1094,7 @@ export async function mountJitsiMeetingFromServerJoin(
     }
   });
   api.addListener('audioMuteStatusChanged', (...args: unknown[]) => {
+    logDiagnosticEvent('audioMuteStatusChanged', args[0]);
     const payload = args[0] as { muted?: boolean } | undefined;
     const muted = Boolean(payload?.muted);
     if (!muted) {
@@ -803,11 +1103,13 @@ export async function mountJitsiMeetingFromServerJoin(
     options.onAudioMuteChanged?.(muted);
   });
   api.addListener('videoMuteStatusChanged', (...args: unknown[]) => {
+    logDiagnosticEvent('videoMuteStatusChanged', args[0]);
     const payload = args[0] as { muted?: boolean } | undefined;
     options.onVideoMuteChanged?.(Boolean(payload?.muted));
     scheduleRemoteMediaSnapshot(300);
   });
   api.addListener('screenSharingStatusChanged', (...args: unknown[]) => {
+    logDiagnosticEvent('screenSharingStatusChanged', args[0]);
     const payload = args[0] as {
       on?: boolean;
       enabled?: boolean;

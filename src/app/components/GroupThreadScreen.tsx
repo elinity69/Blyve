@@ -108,8 +108,15 @@ export function GroupThreadScreen({
   const channelName = channelNameProp ?? ctx.channelName ?? '';
   const channelIconUrl = channelIconUrlProp ?? ctx.channelIconUrl ?? null;
 
-  const [messages, setMessages] = useState<GroupMessageRow[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [messages, setMessages] = useState<GroupMessageRow[]>(() => {
+    if (!channelId) return [];
+    return queryClient.getQueryData<GroupMessageRow[]>(groupMessagesQueryKey(groupId, channelId)) || [];
+  });
+  const [loading, setLoading] = useState(() => {
+    if (!channelId) return false;
+    const hasData = !!queryClient.getQueryData<GroupMessageRow[]>(groupMessagesQueryKey(groupId, channelId));
+    return !hasData;
+  });
   const [sending, setSending] = useState(false);
   const [input, setInput] = useState('');
   const [replyTarget, setReplyTarget] = useState<ReplyTarget | null>(null);
@@ -133,7 +140,7 @@ export function GroupThreadScreen({
   } = useQuery({
     queryKey: groupMessagesQueryKey(groupId, channelId ?? ''),
     enabled: !!channelId,
-    queryFn: () => fetchGroupChannelMessages(groupId, channelId!) as Promise<GroupMessageRow[]>,
+    queryFn: () => fetchGroupChannelMessages(groupId, channelId!) as unknown as Promise<GroupMessageRow[]>,
     initialData: () => {
       if (!channelId) return undefined;
       return queryClient.getQueryData<GroupMessageRow[]>(
@@ -551,7 +558,7 @@ export function GroupThreadScreen({
           WebkitOverflowScrolling: 'touch',
           touchAction: 'pan-y',
           overscrollBehavior: 'contain',
-          overscrollBehaviorX: 'hidden',
+          overscrollBehaviorX: 'none',
           overscrollBehaviorY: 'contain',
           ...(typingClearance > 0 ? { paddingBottom: typingClearance } : {}),
         }}

@@ -9,6 +9,7 @@ interface ChatEmbeddedCallBarProps {
   conversationId?: string;
   voiceGroupId?: string;
   voiceChannelId?: string;
+  isActive?: boolean;
 }
 
 export function ChatEmbeddedCallBar({
@@ -16,13 +17,40 @@ export function ChatEmbeddedCallBar({
   conversationId,
   voiceGroupId,
   voiceChannelId,
+  isActive = true,
 }: ChatEmbeddedCallBarProps) {
-  const { callPinned, callDisplayMode, state: callState, activeCall } = useCall();
+  const { callPinned, callDisplayMode, state: callState, activeCall, callHostTarget, transitionToEmbeddedInConversation } = useCall();
+
+  const isCallConv = conversationId && activeCall && activeCall.conversationId === conversationId;
+
+  React.useEffect(() => {
+    if (!isActive || callState !== 'in_call' || !activeCall) return;
+
+    if (isCallConv) {
+      if (callDisplayMode !== 'embedded' || !callHostTarget || callHostTarget.type !== 'chat') {
+        console.log(`[CALL AUTO TRANSITION] Entering call conversation ${conversationId}. Transitioning to embedded.`);
+        transitionToEmbeddedInConversation(conversationId, 'auto-enter-chat');
+      }
+    } else if (callPinned && conversationId) {
+      if (callDisplayMode !== 'embedded' || !callHostTarget || callHostTarget.type !== 'pinned-global') {
+        console.log(`[CALL AUTO TRANSITION] Entering another conversation ${conversationId} while pinned. Transitioning to pinned-global.`);
+        transitionToEmbeddedInConversation(conversationId, 'auto-enter-pinned');
+      }
+    }
+  }, [isActive, callState, activeCall, isCallConv, callPinned, callDisplayMode, callHostTarget, conversationId, transitionToEmbeddedInConversation]);
 
   const showPinned =
-    callPinned && callState === 'in_call' && callDisplayMode === 'embedded';
+    isActive &&
+    callPinned &&
+    callState === 'in_call' &&
+    callDisplayMode === 'embedded' &&
+    !isCallConv &&
+    (!!conversationId || !!voiceGroupId);
+
+  console.log(`[CALL DEBUG] ChatEmbeddedCallBar evaluation: conversationId=${conversationId}, callPinned=${callPinned}, callState=${callState}, callDisplayMode=${callDisplayMode}, isCallConv=${isCallConv}, showPinned=${showPinned}`);
 
   if (showPinned) {
+    console.log(`[CALL DEBUG] ChatEmbeddedCallBar rendering PinnedCallPanel.`);
     return <PinnedCallPanel currentUserId={currentUserId} />;
   }
 

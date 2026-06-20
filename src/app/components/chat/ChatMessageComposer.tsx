@@ -30,7 +30,7 @@ interface ChatMessageComposerProps {
   sending: boolean;
   mediaUploading?: boolean;
   mediaUploadLabel?: string | null;
-  inputRef?: RefObject<HTMLInputElement | null>;
+  inputRef?: React.RefObject<HTMLInputElement>;
   replyBar?: ReactNode;
   typingIndicator?: ReactNode;
   dropActive?: boolean;

@@ -13,6 +13,17 @@ services:
       timeout: 5s
       retries: 10
 
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    command: ["redis-server", "--appendonly", "yes"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
   litellm:
     image: ghcr.io/berriai/litellm:main-stable
     ports:
@@ -20,13 +31,18 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      redis:
+        condition: service_healthy
     environment:
       LITELLM_MASTER_KEY: sk-1234
       DATABASE_URL: postgresql://llmproxy:dbpassword9090@db:5432/litellm
       GOOGLE_APPLICATION_CREDENTIALS: /app/google-credentials.json
       VERTEXAI_PROJECT: project-6f2f73ef-798c-4cfb-a32
-      VERTEXAI_LOCATION: global
+      VERTEXAI_LOCATION: us-central1
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      REDIS_URL: redis://redis:6379
     volumes:
       - ./config.yaml:/app/config.yaml
       - ./google-credentials.json:/app/google-credentials.json
-    command: ["--config", "/app/config.yaml", "--detailed_debug"]
+    command: ["--config", "/app/config.yaml"]

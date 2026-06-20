@@ -48,12 +48,14 @@ export function PinnedCallPanel(_props: PinnedCallPanelProps) {
     retryAttempt,
     isAutoRetrying,
     retryConnection,
-    registerPinnedCallHost,
-    registerCallHostAnchor,
+    callHostTarget,
+    registerCallHost,
     callDisplayMode,
     callPinned,
     speakingParticipantId,
     localIdentity,
+    desiredHostKey,
+    activeHostKey,
   } = useCall();
 
   const callHostAnchorRef = useRef<HTMLDivElement>(null);
@@ -81,24 +83,24 @@ export function PinnedCallPanel(_props: PinnedCallPanelProps) {
     }
   }, [isMuted]);
 
-  const isPinnedHost = callPinned && callDisplayMode === 'embedded';
+  const isPinnedHost = callHostTarget.type === 'pinned-global';
+
+  console.log(`[CALL DEBUG] PinnedCallPanel rendering. callPinned=${callPinned}, isPinnedHost=${isPinnedHost}, callDisplayMode=${callDisplayMode}, desiredHostKey=${desiredHostKey}, activeHostKey=${activeHostKey}`);
 
   useLayoutEffect(() => {
-    if (!callPinned || state !== 'in_call' || callDisplayMode !== 'embedded') {
-      return undefined;
+    if (isPinnedHost) {
+      const elementExists = !!callHostAnchorRef.current;
+      console.log(`[CALL HOST REGISTRY] PinnedCallPanel registering: key=pinned-global, elementExists=${elementExists}`);
+      registerCallHost('pinned-global', callHostAnchorRef.current);
+      return () => {
+        console.log(`[CALL HOST REGISTRY] PinnedCallPanel unregistering: key=pinned-global`);
+        registerCallHost('pinned-global', null);
+      };
     }
-    registerPinnedCallHost(true);
-    return () => registerPinnedCallHost(false);
-  }, [callDisplayMode, callPinned, registerPinnedCallHost, state]);
-
-  useLayoutEffect(() => {
-    if (!isPinnedHost || state !== 'in_call') {
-      registerCallHostAnchor(null);
-      return () => registerCallHostAnchor(null);
-    }
-    registerCallHostAnchor(callHostAnchorRef.current);
-    return () => registerCallHostAnchor(null);
-  }, [isPinnedHost, registerCallHostAnchor, state]);
+    console.log(`[CALL HOST REGISTRY] PinnedCallPanel registerCallHost called with null: key=pinned-global`);
+    registerCallHost('pinned-global', null);
+    return undefined;
+  }, [isPinnedHost, registerCallHost]);
 
   const callTitle = useMemo(() => {
     if (!activeCall) return t('call.inCall');
@@ -122,7 +124,7 @@ export function PinnedCallPanel(_props: PinnedCallPanelProps) {
       240
     );
 
-    const participants = [
+    const participants: Array<{ id: string; name: string; avatarUrl: string | undefined; jitsiParticipantId?: string; isLocal: boolean; }> = [
       {
         id: '__local__',
         name: localName,
@@ -146,7 +148,10 @@ export function PinnedCallPanel(_props: PinnedCallPanelProps) {
     return filterJoinedStageParticipants(participants, remoteParticipantCount);
   }, [activeCall?.participants, currentUserProfile, localIdentity, remoteParticipantCount, t]);
 
-  if (!callPinned || state !== 'in_call') return null;
+  if (!callPinned || state !== 'in_call') {
+    console.log(`[CALL DEBUG] PinnedCallPanel hidden. callPinned=${callPinned}, state=${state}`);
+    return null;
+  }
 
   const subtitle = connectionLabel(connectionState, t);
 
@@ -170,11 +175,24 @@ export function PinnedCallPanel(_props: PinnedCallPanelProps) {
   const showEmbeddedHost = isJitsiCallProvider() && isPinnedHost;
 
   return (
-    <div className="relative shrink-0">
+    <div
+      className="relative shrink-0"
+      onPointerDown={(e) => e.stopPropagation()}
+      onPointerUp={(e) => e.stopPropagation()}
+      onTouchStart={(e) => e.stopPropagation()}
+      onTouchEnd={(e) => e.stopPropagation()}
+      onMouseDown={(e) => e.stopPropagation()}
+      onMouseUp={(e) => e.stopPropagation()}
+      onClick={(e) => e.stopPropagation()}
+      onDoubleClick={(e) => {
+        e.stopPropagation();
+        e.preventDefault();
+      }}
+    >
       {showEmbeddedHost ? (
         <div
           ref={callHostAnchorRef}
-          className="relative min-h-[200px] w-full shrink-0 overflow-hidden border-t border-white/10 bg-[#0b0b0b]"
+          className="relative h-[min(32vh,300px)] min-h-[200px] w-full shrink-0 overflow-hidden border-t border-white/10 bg-[#0b0b0b]"
         />
       ) : (
         <div className="flex h-[min(32vh,300px)] min-h-[200px] w-full items-center justify-center border-t border-white/10 bg-[#0b0b0b] px-4">

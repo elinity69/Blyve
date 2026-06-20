@@ -966,3 +966,6 @@ export class ApiClient {
 }
 
 export const api = new ApiClient();
+if (typeof window !== 'undefined') {
+  (window as any).api = api;
+}

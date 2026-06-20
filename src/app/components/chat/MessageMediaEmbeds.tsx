@@ -8,10 +8,12 @@ export function MessageVideoEmbed({
   src,
   openUrl,
   inBubble = false,
+  onLoad,
 }: {
   src: string;
   openUrl: string;
   inBubble?: boolean;
+  onLoad?: () => void;
 }) {
   const [lightboxOpen, setLightboxOpen] = useState(false);
 
@@ -26,6 +28,8 @@ export function MessageVideoEmbed({
           className="max-h-48 w-full min-w-[12rem] max-w-[min(100%,16rem)] cursor-zoom-in rounded-xl"
           onPointerDown={(e) => e.stopPropagation()}
           onClick={() => setLightboxOpen(true)}
+          onLoadedData={onLoad}
+          onCanPlay={onLoad}
         />
         {lightboxOpen && (
           <MediaLightbox
@@ -50,6 +54,8 @@ export function MessageVideoEmbed({
           preload="metadata"
           className="max-h-80 w-full cursor-zoom-in bg-black/5 dark:bg-white/5"
           onClick={() => setLightboxOpen(true)}
+          onLoadedData={onLoad}
+          onCanPlay={onLoad}
         />
       </div>
       {lightboxOpen && (
@@ -128,12 +134,14 @@ export function MessageImageEmbed({
   alt,
   inBubble = false,
   onFailed,
+  onLoad,
 }: {
   src: string;
   openUrl: string;
   alt: string;
   inBubble?: boolean;
   onFailed?: () => void;
+  onLoad?: () => void;
 }) {
   const [failed, setFailed] = useState(false);
   const [lightboxOpen, setLightboxOpen] = useState(false);
@@ -160,6 +168,7 @@ export function MessageImageEmbed({
             inBubble ? 'max-h-80 rounded-xl' : 'max-h-80 bg-black/5 dark:bg-white/5'
           }`}
           loading="lazy"
+          onLoad={onLoad}
           onError={() => {
             setFailed(true);
             onFailed?.();

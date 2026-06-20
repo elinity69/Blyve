@@ -81,7 +81,7 @@ export async function showRewardedAd(): Promise<boolean> {
         unsubscribeLoaded();
         rewardedAd?.show().then(() => {
           resolve(true);
-        }).catch((error) => {
+        }).catch((error: unknown) => {
           console.error('Error showing ad:', error);
           resolve(false);
         });
@@ -100,7 +100,7 @@ export async function showRewardedAd(): Promise<boolean> {
     if (rewardedAd.loaded) {
       rewardedAd.show().then(() => {
         resolve(true);
-      }).catch((error) => {
+      }).catch((error: unknown) => {
         console.error('Error showing ad:', error);
         resolve(false);
       });

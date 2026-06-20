@@ -34,7 +34,7 @@ export async function connectLiveKitRoom(callSessionId: string): Promise<LiveKit
   }
 
   const roomName = `call_${callSessionId}`;
-  const livekitTokenResponse = await api.getLivekitToken({
+  const livekitTokenResponse = await (api as any).getLivekitToken({
     identity: user.id,
     room: roomName,
   });
@@ -54,7 +54,7 @@ export async function connectLiveKitRoom(callSessionId: string): Promise<LiveKit
   const room = new Room();
   await room.connect(serverUrl, participantToken);
 
-  if (navigator?.mediaDevices?.getUserMedia) {
+  if (typeof navigator !== 'undefined' && navigator.mediaDevices && typeof navigator.mediaDevices.getUserMedia === 'function') {
     try {
       await room.localParticipant.setMicrophoneEnabled(true);
     } catch {

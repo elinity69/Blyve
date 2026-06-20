@@ -32,6 +32,7 @@ interface MessageWithReactionsProps {
   onReply: () => void;
   onDelete: () => void;
   onEdit?: () => void;
+  onMediaLoad?: () => void;
 }
 
 export function MessageWithReactions({
@@ -50,6 +51,7 @@ export function MessageWithReactions({
   onReply,
   onDelete,
   onEdit,
+  onMediaLoad,
 }: MessageWithReactionsProps) {
   const { t } = useTranslation();
   const { summaries, toggleReaction } = useMessageReactions(messageId, { isOwnMessage: isMe });
@@ -136,6 +138,7 @@ export function MessageWithReactions({
         summaries={summaries}
         onToggleReaction={toggleReaction}
         editedAt={editedAt}
+        onMediaLoad={onMediaLoad}
       />
     </MessageBubbleActionRow>
   );

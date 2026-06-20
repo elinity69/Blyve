@@ -342,6 +342,7 @@ export class NotificationManager {
       const notification = new Notification(title, {
         icon: notificationOptions?.icon || '/icon.png', // Use provided icon (profile image) or fallback
         badge: '/icon.png', // Badge Icon
+        // @ts-expect-error vibrate is valid in web notification spec
         vibrate: [200, 100, 200], // Vibration Pattern (Mobile)
         silent: options?.silent || false,
         ...notificationOptions,

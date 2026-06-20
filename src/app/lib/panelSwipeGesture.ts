@@ -24,6 +24,7 @@ export interface PanelSwipeReleaseResult {
   shouldComplete: boolean;
   distance: number;
   width: number;
+  startX?: number;
 }
 
 interface PanelSwipeGestureOptions {

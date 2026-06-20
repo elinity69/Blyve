@@ -1,6 +1,15 @@
 import React, { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback } from 'react';
 
 let chatScreenRenderCount = 0; // Global for simplicity in dev
+
+export interface CachedScrollState {
+  scrollTop: number;
+  scrollHeight: number;
+  wasNearBottom: boolean;
+  timestamp: number;
+}
+
+export const chatScrollCache = new Map<string, CachedScrollState>();
 import { createPortal } from 'react-dom';
 import { ArrowLeft, Loader2, MoreVertical, Ban, Phone, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -88,6 +97,7 @@ interface ChatScreenProps {
   isOnline?: (userId: string) => boolean;
   onOpenProfilePreview?: (userId: string) => void;
   onConversationUpdated?: () => void;
+  openReason?: 'preview-tap' | 'forward-reopen' | 'programmatic';
 }
 
 export function ChatScreen({
@@ -101,10 +111,96 @@ export function ChatScreen({
   isOnline: isOnlineProp,
   onOpenProfilePreview,
   onConversationUpdated,
+  openReason = 'preview-tap',
 }: ChatScreenProps) {
-  const { isFrozen, shouldRunExpensiveEffects } = useScreenLifecycle();
   usePerformanceInstrument('ChatScreen');
   const { t, i18n } = useTranslation();
+
+  // --- CENTRALIZED STATE OWNERSHIP MACHINE ---
+  const { phase, isFrozen, shouldRunExpensiveEffects } = useScreenLifecycle();
+  
+  const isTopMost = isActiveTopScreen;
+  const isActive = isActiveTopScreen && !isFrozen;
+  const isLeaving = phase === 'leaving';
+  const isCached = phase === 'parked';
+  const isGestureActive = phase === 'leaving'; // In this architecture, 'leaving' signifies an active pop/swipe gesture.
+
+  const shouldAttachGlobalListeners = isActive && shouldRunExpensiveEffects && !isLeaving && !isCached;
+  const shouldRunExpensiveEffectsResolved = shouldRunExpensiveEffects && !isLeaving && !isCached;
+  const shouldAutoScroll = isActive && shouldRunExpensiveEffectsResolved && !isGestureActive;
+  const shouldRunScrollSnapReactions = isActive && shouldRunExpensiveEffectsResolved && !isGestureActive;
+
+  const IS_KEYBOARD_DEBUG_DEV = typeof window !== 'undefined' && (
+    process.env.NODE_ENV !== 'production' ||
+    (import.meta as any).env?.DEV
+  );
+  const shouldRunKeyboardDebug = shouldAttachGlobalListeners && IS_KEYBOARD_DEBUG_DEV;
+  
+  // Expose refs for debug
+  const instanceIdRef = useRef(Math.random().toString(36).substring(2, 9));
+  const debugRenderCountRef = useRef(0);
+  const debugEventSeqRef = useRef(0);
+  const debugPrevMetricsRef = useRef<{
+    composerHeight?: number;
+    viewportHeight?: number;
+    visualViewportHeight?: number;
+    messagesContainerClientHeight?: number;
+    messagesContainerScrollTop?: number;
+    isKeyboardLikelyOpen?: boolean;
+  }>({});
+
+  const callStateContext = useCall();
+  const debugChatCallBridge = useCallback((event: string, payload?: any) => {
+    const ts = performance.now();
+    const info = {
+      ts,
+      event,
+      isActiveTopScreen,
+      isTransitioning,
+      openReason,
+      callActive: callStateContext.state === 'in_call',
+      pipActive: callStateContext.callDisplayMode === 'pip',
+      shouldBeHost: conversationId === callStateContext.activeCall?.conversationId,
+      isHost: callStateContext.embeddedCallConversationId === conversationId,
+      conversationId,
+      instanceId: instanceIdRef.current,
+      ...(payload || {})
+    };
+    console.log(`[CHAT CALL BRIDGE]`, info);
+  }, [isActiveTopScreen, isTransitioning, openReason, callStateContext, conversationId]);
+
+  useEffect(() => {
+    const flowInfo = typeof window !== 'undefined' && (window as any).__getCallStateDebugInfo ? (window as any).__getCallStateDebugInfo() : '';
+    console.log(`[PREVIEW ORIGIN DEBUG] ${flowInfo} ChatScreen mounted. conversationId=${conversationId}, openReason=${openReason}, openedFromPreview=${openReason === 'preview-tap'}`);
+    debugChatCallBridge('ChatScreen mounted');
+    return () => {
+      const cleanupFlowInfo = typeof window !== 'undefined' && (window as any).__getCallStateDebugInfo ? (window as any).__getCallStateDebugInfo() : '';
+      console.log(`[PREVIEW ORIGIN DEBUG] ${cleanupFlowInfo} ChatScreen unmounted. conversationId=${conversationId}`);
+      debugChatCallBridge('ChatScreen unmounted');
+    };
+  }, []);
+
+  const lastShouldRenderRef = useRef<boolean | null>(null);
+  useEffect(() => {
+    const shouldRender = callStateContext.state === 'in_call' && (callStateContext.embeddedCallConversationId === conversationId || callStateContext.callDisplayMode === 'pip');
+    if (shouldRender !== lastShouldRenderRef.current) {
+      lastShouldRenderRef.current = shouldRender;
+      debugChatCallBridge('mount/unmount of the Call-Host-Zone decision changed', {
+        shouldRender,
+        callState: callStateContext.state,
+        embeddedCallConversationId: callStateContext.embeddedCallConversationId,
+        callDisplayMode: callStateContext.callDisplayMode
+      });
+    }
+  }, [callStateContext.state, callStateContext.embeddedCallConversationId, callStateContext.callDisplayMode, conversationId, debugChatCallBridge]);
+
+  useEffect(() => {
+    const callContainerExists = !!document.querySelector(`[data-chat-call-host-zone="${conversationId}"]`);
+    const isSwiping = typeof window !== 'undefined' && !!(window as any).__blyveNavSwipeActive;
+    if (callContainerExists && !isActiveTopScreen && callStateContext.callDisplayMode !== 'pip' && !isSwiping) {
+      console.warn(`[CHAT CALL BRIDGE][ILLEGAL HOST] Call is being rendered/hosted in ChatScreen ${conversationId} (instance ${instanceIdRef.current}) even though isActiveTopScreen is false and callDisplayMode is not pip! ts=${performance.now()}`);
+    }
+  }, [isActiveTopScreen, callStateContext.callDisplayMode, conversationId]);
 
 // Online status comes from the parent via otherUser.is_online, which is
   // kept live by MessagesScreen's single useOnlineStatus instance.
@@ -112,13 +208,26 @@ export function ChatScreen({
   // same channel starts with an empty presence snapshot and shows the peer
   // as offline until it re-syncs, causing a flicker/mismatch with the preview.
   useEffect(() => {
-    console.log('[ChatScreen DEBUG] mount/update', {
+    if (!shouldRunKeyboardDebug) return;
+    console.log(`[ChatScreen DEBUG] mount/update [Instanz: ${instanceIdRef.current}]`, {
       conversationId,
       isActiveTopScreen,
       isMounted: true
     });
-    return () => console.log('[ChatScreen DEBUG] unmount', { conversationId });
-  }, [conversationId, isActiveTopScreen]);
+    return () => console.log(`[ChatScreen DEBUG] unmount [Instanz: ${instanceIdRef.current}]`, { conversationId });
+  }, [conversationId, isActiveTopScreen, shouldRunKeyboardDebug]);
+
+  // Set manual scroll restoration to control exactly when the browser restores scroll positions
+  useEffect(() => {
+    if (!shouldAttachGlobalListeners) return;
+    if (typeof window !== 'undefined' && window.history) {
+      const originalScrollRestoration = window.history.scrollRestoration;
+      window.history.scrollRestoration = 'manual';
+      return () => {
+        window.history.scrollRestoration = originalScrollRestoration;
+      };
+    }
+  }, [shouldAttachGlobalListeners]);
 
   const [conversationActionsMenu, setConversationActionsMenu] = useState<ConversationActionTarget | null>(null);
   const {
@@ -140,6 +249,7 @@ export function ChatScreen({
     state: callState,
     activeCall,
     connectionState: callConnectionState,
+    setIsProfilePreviewOpen,
   } = useCall();
   const isMdUp = useIsMdUp();
   const isMobile = useIsMobile();
@@ -165,7 +275,31 @@ export function ChatScreen({
   const [dropActive, setDropActive] = useState(false);
   const [profilePreviewUserId, setProfilePreviewUserId] = useState<string | null>(null);
   const [profilePreviewData, setProfilePreviewData] = useState<User | null>(null);
+
+  const isAnyOverlayActive = Boolean(
+    profilePreviewUserId ||
+    showReportModal ||
+    showBlockModal
+  );
+
+  useEffect(() => {
+    setIsProfilePreviewOpen(isAnyOverlayActive);
+    return () => {
+      setIsProfilePreviewOpen(false);
+    };
+  }, [isAnyOverlayActive, setIsProfilePreviewOpen]);
   const initialScrollDoneRef = useRef(false);
+  const messagesContentRef = useRef<HTMLDivElement>(null);
+  const bottomAnchorRef = useRef<HTMLDivElement>(null);
+  const previewBottomResizeObserverRef = useRef<ResizeObserver | null>(null);
+  const didApplyInitialOpenScrollRef = useRef(false);
+  const isRestoringFromCacheRef = useRef(false);
+  const userHasInteractedRef = useRef(false);
+  const pendingPreviewBottomStabilizeRef = useRef<number | null>(null);
+  const initialOpenReasonRef = useRef<'preview-tap' | 'forward-reopen' | 'programmatic' | null>(null);
+  if (initialOpenReasonRef.current === null) {
+    initialOpenReasonRef.current = openReason;
+  }
   const canLoadOlderRef = useRef(false);
   const lastMessageIdRef = useRef<string | null>(null);
   const lastAppliedViewedAtRef = useRef<string | null>(null);
@@ -182,17 +316,479 @@ export function ChatScreen({
   const [isPortalActive, setIsPortalActive] = useState(true);
 
   const renderRef = useRef(0);
+
+  // --- KEYBOARD DEBUG INSTRUMENTATION ---
+  debugRenderCountRef.current += 1;
+  const currentComposerEl = typeof document !== 'undefined' ? document.querySelector('[data-chat-composer]') : null;
+  const currentComposerHeight = currentComposerEl ? (currentComposerEl as HTMLElement).offsetHeight : 0;
+  const currentViewportHeight = typeof window !== 'undefined' ? window.innerHeight : 0;
+  const currentVisualViewportHeight = typeof window !== 'undefined' && window.visualViewport ? window.visualViewport.height : 0;
+  const currentMessagesContainer = messagesContainerRef.current;
+  const currentClientHeight = currentMessagesContainer ? currentMessagesContainer.clientHeight : 0;
+  const currentScrollTop = currentMessagesContainer ? currentMessagesContainer.scrollTop : 0;
+
+  const debugKeyboardHeightEstimate = Math.max(0, currentViewportHeight - currentVisualViewportHeight);
+  const debugIsKeyboardLikelyOpen = debugKeyboardHeightEstimate > 80;
+
+  useEffect(() => {
+    if (!shouldRunKeyboardDebug || !IS_KEYBOARD_DEBUG_DEV) return;
+
+    const prev = debugPrevMetricsRef.current;
+    const diffs: Record<string, { from: any; to: any }> = {};
+
+    if (prev.composerHeight !== undefined && prev.composerHeight !== currentComposerHeight) {
+      diffs.composerHeight = { from: prev.composerHeight, to: currentComposerHeight };
+    }
+    if (prev.viewportHeight !== undefined && prev.viewportHeight !== currentViewportHeight) {
+      diffs.viewportHeight = { from: prev.viewportHeight, to: currentViewportHeight };
+    }
+    if (prev.visualViewportHeight !== undefined && prev.visualViewportHeight !== currentVisualViewportHeight) {
+      diffs.visualViewportHeight = { from: prev.visualViewportHeight, to: currentVisualViewportHeight };
+    }
+    if (prev.messagesContainerClientHeight !== undefined && prev.messagesContainerClientHeight !== currentClientHeight) {
+      diffs.messagesContainerClientHeight = { from: prev.messagesContainerClientHeight, to: currentClientHeight };
+    }
+    if (prev.messagesContainerScrollTop !== undefined && prev.messagesContainerScrollTop !== currentScrollTop) {
+      diffs.messagesContainerScrollTop = { from: prev.messagesContainerScrollTop, to: currentScrollTop };
+    }
+    if (prev.isKeyboardLikelyOpen !== undefined && prev.isKeyboardLikelyOpen !== debugIsKeyboardLikelyOpen) {
+      diffs.isKeyboardLikelyOpen = { from: prev.isKeyboardLikelyOpen, to: debugIsKeyboardLikelyOpen };
+    }
+
+    console.log(`%c[ChatScreen KEYBOARD DEBUG] [Instanz: ${instanceIdRef.current}] render #${debugRenderCountRef.current} at ${performance.now().toFixed(2)}ms`, 'color: #3faf95; font-weight: bold;', {
+      conversationId,
+      openReason,
+      instanceId: instanceIdRef.current,
+      renderCount: debugRenderCountRef.current,
+      diffs: Object.keys(diffs).length > 0 ? diffs : 'no relevant layout changes',
+      metrics: {
+        composerHeight: currentComposerHeight,
+        viewportHeight: currentViewportHeight,
+        visualViewportHeight: currentVisualViewportHeight,
+        messagesContainerClientHeight: currentClientHeight,
+        messagesContainerScrollTop: currentScrollTop,
+        keyboardHeightEstimate: debugKeyboardHeightEstimate,
+        isKeyboardLikelyOpen: debugIsKeyboardLikelyOpen
+      }
+    });
+
+    debugPrevMetricsRef.current = {
+      composerHeight: currentComposerHeight,
+      viewportHeight: currentViewportHeight,
+      visualViewportHeight: currentVisualViewportHeight,
+      messagesContainerClientHeight: currentClientHeight,
+      messagesContainerScrollTop: currentScrollTop,
+      isKeyboardLikelyOpen: debugIsKeyboardLikelyOpen
+    };
+  });
+
+  useLayoutEffect(() => {
+    if (!shouldRunKeyboardDebug) return;
+    const seq = (debugEventSeqRef.current += 1);
+    console.log(`[ChatScreen KEYBOARD DEBUG #${seq}] useLayoutEffect START at ${performance.now().toFixed(2)}ms`, { conversationId, openReason, instanceId: instanceIdRef.current });
+    return () => {
+      const seqCleanup = (debugEventSeqRef.current += 1);
+      console.log(`[ChatScreen KEYBOARD DEBUG #${seqCleanup}] useLayoutEffect CLEANUP at ${performance.now().toFixed(2)}ms`, { conversationId, openReason, instanceId: instanceIdRef.current });
+    };
+  }, [conversationId, openReason, shouldRunKeyboardDebug]);
+
+  useEffect(() => {
+    if (!shouldRunKeyboardDebug) return;
+    const seq = (debugEventSeqRef.current += 1);
+    console.log(`[ChatScreen KEYBOARD DEBUG #${seq}] useEffect START at ${performance.now().toFixed(2)}ms`, { conversationId, openReason, instanceId: instanceIdRef.current });
+    return () => {
+      const seqCleanup = (debugEventSeqRef.current += 1);
+      console.log(`[ChatScreen KEYBOARD DEBUG #${seqCleanup}] useEffect CLEANUP at ${performance.now().toFixed(2)}ms`, { conversationId, openReason, instanceId: instanceIdRef.current });
+    };
+  }, [conversationId, openReason, shouldRunKeyboardDebug]);
+
+  const logKeyboardSnapshot = useCallback((eventName: string) => {
+    if (!shouldRunKeyboardDebug) return;
+
+    const seq = (debugEventSeqRef.current += 1);
+    const ts = performance.now().toFixed(2);
+    
+    const winWidth = typeof window !== 'undefined' ? window.innerWidth : 0;
+    const winHeight = typeof window !== 'undefined' ? window.innerHeight : 0;
+    const winScrollY = typeof window !== 'undefined' ? window.scrollY : 0;
+    const docClientWidth = typeof document !== 'undefined' ? document.documentElement.clientWidth : 0;
+    const docClientHeight = typeof document !== 'undefined' ? document.documentElement.clientHeight : 0;
+    const docBodyHeight = typeof document !== 'undefined' && document.body ? document.body.clientHeight : 0;
+
+    const activeEl = typeof document !== 'undefined' ? document.activeElement : null;
+    const activeElementMetrics = activeEl ? {
+      tagName: activeEl.tagName,
+      id: activeEl.id,
+      className: activeEl.className,
+      selectionStart: (activeEl as any).selectionStart,
+      selectionEnd: (activeEl as any).selectionEnd
+    } : null;
+
+    const vv = typeof window !== 'undefined' ? window.visualViewport : null;
+    const vvMetrics = vv ? {
+      width: vv.width,
+      height: vv.height,
+      offsetTop: vv.offsetTop,
+      offsetLeft: vv.offsetLeft,
+      pageTop: vv.pageTop,
+      pageLeft: vv.pageLeft,
+      scale: vv.scale
+    } : 'Unsupported';
+
+    const container = messagesContainerRef.current;
+    const containerMetrics = container ? {
+      scrollTop: container.scrollTop,
+      scrollHeight: container.scrollHeight,
+      clientHeight: container.clientHeight,
+      offsetHeight: container.offsetHeight,
+      top: container.getBoundingClientRect().top,
+      bottom: container.getBoundingClientRect().bottom,
+      height: container.getBoundingClientRect().height,
+      distanceToBottom: container.scrollHeight - container.scrollTop - container.clientHeight
+    } : null;
+
+    const content = messagesContentRef.current;
+    const contentMetrics = content ? {
+      offsetHeight: content.offsetHeight,
+      scrollHeight: content.scrollHeight,
+      height: content.getBoundingClientRect().height
+    } : null;
+
+    const composer = typeof document !== 'undefined' ? document.querySelector('[data-chat-composer]') : null;
+    const composerRect = composer ? composer.getBoundingClientRect() : null;
+    const composerMetrics = composer && composerRect ? {
+      offsetHeight: (composer as HTMLElement).offsetHeight,
+      top: composerRect.top,
+      bottom: composerRect.bottom,
+      height: composerRect.height,
+      bottomDistance: vv ? vv.height - composerRect.bottom : winHeight - composerRect.bottom
+    } : null;
+
+    const input = messageInputRef.current;
+    const inputRect = input ? input.getBoundingClientRect() : null;
+    const inputMetrics = input && inputRect ? {
+      top: inputRect.top,
+      bottom: inputRect.bottom,
+      height: inputRect.height
+    } : null;
+
+    const kbEstimate = Math.max(0, winHeight - (vv?.height ?? winHeight));
+    const kbLikelyOpen = kbEstimate > 80;
+
+    console.groupCollapsed(`%c[ChatScreen KEYBOARD DEBUG #${seq}] [Instanz: ${instanceIdRef.current}] ${eventName} at ${ts}ms`, 'color: #3b82f6; font-weight: bold;');
+    console.log('Event Name:', eventName);
+    console.log('Timestamp:', ts);
+    console.log('Sequence:', seq);
+    console.log('Instance ID:', instanceIdRef.current);
+    console.log('Active Element:', activeElementMetrics);
+    console.log('Keyboard Estimate:', { keyboardHeightEstimate: kbEstimate, isKeyboardLikelyOpen: kbLikelyOpen });
+    console.log('Window / Viewport:', { winWidth, winHeight, winScrollY, docClientWidth, docClientHeight, docBodyHeight });
+    console.log('VisualViewport:', vvMetrics);
+    console.log('Chat Container:', containerMetrics);
+    console.log('Messages Content:', contentMetrics);
+    console.log('Composer:', composerMetrics);
+    console.log('Input:', inputMetrics);
+    console.groupEnd();
+  }, [shouldRunKeyboardDebug]);
+
+  const traceKeyboardEvent = useCallback((eventName: string) => {
+    if (!shouldRunKeyboardDebug) return () => {};
+
+    logKeyboardSnapshot(`${eventName} (IMMEDIATE)`);
+
+    const rAF = requestAnimationFrame(() => {
+      logKeyboardSnapshot(`${eventName} (rAF)`);
+    });
+
+    const t1 = setTimeout(() => {
+      logKeyboardSnapshot(`${eventName} (100ms)`);
+    }, 100);
+
+    const t2 = setTimeout(() => {
+      logKeyboardSnapshot(`${eventName} (300ms)`);
+    }, 300);
+
+    return () => {
+      cancelAnimationFrame(rAF);
+      clearTimeout(t1);
+      clearTimeout(t2);
+    };
+  }, [logKeyboardSnapshot, shouldRunKeyboardDebug]);
+
+  useEffect(() => {
+    if (!shouldRunKeyboardDebug) return;
+
+    const handleWindowResize = () => {
+      logKeyboardSnapshot('window.resize');
+    };
+
+    const handleOrientationChange = () => {
+      logKeyboardSnapshot('orientationchange');
+    };
+
+    const handleSelectionChange = () => {
+      logKeyboardSnapshot('document.selectionchange');
+    };
+
+    const timeouts: Array<() => void> = [];
+
+    const handleFocusIn = (e: FocusEvent) => {
+      console.log(`[ChatScreen KEYBOARD DEBUG] [Instanz: ${instanceIdRef.current}] focusin event target:`, e.target);
+      const cleanupTrace = traceKeyboardEvent('focusin');
+      timeouts.push(cleanupTrace);
+    };
+
+    const handleFocusOut = (e: FocusEvent) => {
+      console.log(`[ChatScreen KEYBOARD DEBUG] [Instanz: ${instanceIdRef.current}] focusout event target:`, e.target);
+      const cleanupTrace = traceKeyboardEvent('focusout');
+      timeouts.push(cleanupTrace);
+    };
+
+    window.addEventListener('resize', handleWindowResize);
+    window.addEventListener('orientationchange', handleOrientationChange);
+    document.addEventListener('focusin', handleFocusIn);
+    document.addEventListener('focusout', handleFocusOut);
+    document.addEventListener('selectionchange', handleSelectionChange);
+
+    const vv = window.visualViewport;
+    const handleVVResize = () => {
+      const cleanupTrace = traceKeyboardEvent('visualViewport.resize');
+      timeouts.push(cleanupTrace);
+    };
+    const handleVVScroll = () => {
+      logKeyboardSnapshot('visualViewport.scroll');
+    };
+
+    if (vv) {
+      vv.addEventListener('resize', handleVVResize);
+      vv.addEventListener('scroll', handleVVScroll);
+    } else {
+      console.log(`%c[ChatScreen KEYBOARD DEBUG] [Instanz: ${instanceIdRef.current}] visualViewport unsupported`, 'color: red; font-weight: bold;');
+    }
+
+    const input = messageInputRef.current;
+    const handleInputFocus = () => logKeyboardSnapshot('input.focus');
+    const handleInputBlur = () => logKeyboardSnapshot('input.blur');
+    const handleInputClick = () => logKeyboardSnapshot('input.click');
+    const handleInputPointerDown = () => logKeyboardSnapshot('input.pointerdown');
+    const handleInput = () => logKeyboardSnapshot('input.input');
+
+    if (input) {
+      input.addEventListener('focus', handleInputFocus);
+      input.addEventListener('blur', handleInputBlur);
+      input.addEventListener('click', handleInputClick);
+      input.addEventListener('pointerdown', handleInputPointerDown);
+      input.addEventListener('input', handleInput);
+    }
+
+    return () => {
+      window.removeEventListener('resize', handleWindowResize);
+      window.removeEventListener('orientationchange', handleOrientationChange);
+      document.removeEventListener('focusin', handleFocusIn);
+      document.removeEventListener('focusout', handleFocusOut);
+      document.removeEventListener('selectionchange', handleSelectionChange);
+
+      if (vv) {
+        vv.removeEventListener('resize', handleVVResize);
+        vv.removeEventListener('scroll', handleVVScroll);
+      }
+
+      if (input) {
+        input.removeEventListener('focus', handleInputFocus);
+        input.removeEventListener('blur', handleInputBlur);
+        input.removeEventListener('click', handleInputClick);
+        input.removeEventListener('pointerdown', handleInputPointerDown);
+        input.removeEventListener('input', handleInput);
+      }
+
+      timeouts.forEach((cleanup) => cleanup());
+    };
+  }, [logKeyboardSnapshot, traceKeyboardEvent, shouldRunKeyboardDebug]);
+
+  const stabilizePreviewTapBottomIfNeeded = useCallback((container: HTMLElement) => {
+    if (userHasInteractedRef.current) return;
+    if (initialOpenReasonRef.current !== 'preview-tap') return;
+    if (!shouldRunScrollSnapReactions) return; // Centralized gating
+    if (!messagesContainerRef.current) return;
+    if (messagesContainerRef.current !== container) return;
+
+    if (pendingPreviewBottomStabilizeRef.current !== null) {
+      cancelAnimationFrame(pendingPreviewBottomStabilizeRef.current);
+      pendingPreviewBottomStabilizeRef.current = null;
+    }
+
+    let lastHeight = container.scrollHeight;
+    let stableFrames = 0;
+    let cycleCount = 0;
+
+    const tick = () => {
+      if (userHasInteractedRef.current) {
+        pendingPreviewBottomStabilizeRef.current = null;
+        return;
+      }
+
+      if (initialOpenReasonRef.current !== 'preview-tap') {
+        pendingPreviewBottomStabilizeRef.current = null;
+        return;
+      }
+
+      if (!shouldRunScrollSnapReactions) { // Centralized gating
+        pendingPreviewBottomStabilizeRef.current = null;
+        return;
+      }
+
+      const liveContainer = messagesContainerRef.current;
+      if (!liveContainer || liveContainer !== container) {
+        pendingPreviewBottomStabilizeRef.current = null;
+        return;
+      }
+
+      // Check if the actual scrollTop has drifted from the expected scroll position of the last known height
+      // (This serves as a robust fallback if the user scrolled up before touch/wheel listeners fired)
+      // Uses a 10px tolerance to prevent false-positives on high-DPI displays or fractional pixel rendering in iOS Safari
+      const lastExpectedMax = Math.max(0, lastHeight - liveContainer.clientHeight);
+      if (Math.abs(liveContainer.scrollTop - lastExpectedMax) > 10) {
+        userHasInteractedRef.current = true;
+        pendingPreviewBottomStabilizeRef.current = null;
+        return;
+      }
+
+      const currentHeight = liveContainer.scrollHeight;
+      cycleCount += 1;
+
+      if (currentHeight !== lastHeight) {
+        const maxScroll = Math.max(0, currentHeight - liveContainer.clientHeight);
+        liveContainer.scrollTop = maxScroll;
+        lastHeight = currentHeight;
+        stableFrames = 0;
+      } else {
+        stableFrames += 1;
+      }
+
+      if (cycleCount < 3 && stableFrames < 2) {
+        pendingPreviewBottomStabilizeRef.current = requestAnimationFrame(tick);
+      } else {
+        pendingPreviewBottomStabilizeRef.current = null;
+      }
+    };
+
+    pendingPreviewBottomStabilizeRef.current = requestAnimationFrame(tick);
+  }, [shouldRunScrollSnapReactions]);
+
+  const stopPreviewBottomGrowthFollow = useCallback(() => {
+    if (previewBottomResizeObserverRef.current) {
+      previewBottomResizeObserverRef.current.disconnect();
+      previewBottomResizeObserverRef.current = null;
+    }
+  }, []);
+
+  const pinToBottomIfStillEligible = useCallback(() => {
+    if (userHasInteractedRef.current) return;
+    if (initialOpenReasonRef.current !== 'preview-tap') return;
+    if (!shouldRunScrollSnapReactions) return; // Use centralized gating
+
+    const container = messagesContainerRef.current;
+    if (!container) return;
+
+    const maxScroll = Math.max(0, container.scrollHeight - container.clientHeight);
+    if (Math.abs(container.scrollTop - maxScroll) <= 15) {
+      container.scrollTop = maxScroll;
+    }
+  }, [shouldRunScrollSnapReactions]);
+
+  const handleLastMediaReady = useCallback(() => {
+    pinToBottomIfStillEligible();
+  }, [pinToBottomIfStillEligible]);
+
+  const startPreviewBottomGrowthFollow = useCallback(() => {
+    if (userHasInteractedRef.current) return;
+    if (initialOpenReasonRef.current !== 'preview-tap') return;
+    if (!shouldRunScrollSnapReactions) return; // Centralized gating
+    const contentEl = messagesContentRef.current;
+    const container = messagesContainerRef.current;
+    if (!contentEl || !container) return;
+
+    stopPreviewBottomGrowthFollow();
+
+    let lastHeight = contentEl.offsetHeight;
+
+    const observer = new ResizeObserver(() => {
+      if (userHasInteractedRef.current || initialOpenReasonRef.current !== 'preview-tap' || !shouldRunScrollSnapReactions) {
+        stopPreviewBottomGrowthFollow();
+        return;
+      }
+
+      const liveContainer = messagesContainerRef.current;
+      const liveContent = messagesContentRef.current;
+      if (!liveContainer || !liveContent) {
+        stopPreviewBottomGrowthFollow();
+        return;
+      }
+
+      // Check if user has scrolled away from the expected bottom position of the last height
+      const lastExpectedMax = Math.max(0, liveContainer.scrollHeight - liveContainer.clientHeight);
+      if (Math.abs(liveContainer.scrollTop - lastExpectedMax) > 10) {
+        userHasInteractedRef.current = true;
+        stopPreviewBottomGrowthFollow();
+        return;
+      }
+
+      const currentHeight = liveContent.offsetHeight;
+      if (currentHeight !== lastHeight) {
+        const maxScroll = Math.max(0, liveContainer.scrollHeight - liveContainer.clientHeight);
+        liveContainer.scrollTop = maxScroll;
+        lastHeight = currentHeight;
+      }
+    });
+
+    observer.observe(contentEl);
+    previewBottomResizeObserverRef.current = observer;
+
+    // Automatically stop growth-follow phase after a short window (2.5 seconds)
+    // to stop observing and release browser resources.
+    setTimeout(() => {
+      stopPreviewBottomGrowthFollow();
+    }, 2500);
+  }, [stopPreviewBottomGrowthFollow, shouldRunScrollSnapReactions]);
+
   const applyInitialScrollPosition = useCallback(() => {
     const container = messagesContainerRef.current;
     if (!container || messages.length === 0) return;
 
-    const firstUnreadId = findFirstUnreadMessageId(messages, currentUserId, lastViewedAt);
-    if (firstUnreadId && scrollContainerToMessage(container, firstUnreadId)) {
+    if (initialOpenReasonRef.current === 'preview-tap') {
+      const maxScroll = Math.max(0, container.scrollHeight - container.clientHeight);
+      container.scrollTop = maxScroll;
+      didApplyInitialOpenScrollRef.current = true;
+      stabilizePreviewTapBottomIfNeeded(container);
+      startPreviewBottomGrowthFollow();
       return;
     }
 
-    scrollContainerToBottomStable(container);
-  }, [messages, currentUserId, lastViewedAt]);
+    if (initialOpenReasonRef.current === 'forward-reopen') {
+      const cached = chatScrollCache.get(conversationId);
+      if (cached) {
+        container.scrollTop = cached.scrollTop;
+        isRestoringFromCacheRef.current = true;
+        didApplyInitialOpenScrollRef.current = true;
+        
+        if (cached.wasNearBottom) {
+          const maxScroll = Math.max(0, container.scrollHeight - container.clientHeight);
+          container.scrollTop = maxScroll;
+        }
+        return;
+      }
+    }
+
+    const firstUnreadId = findFirstUnreadMessageId(messages, currentUserId, lastViewedAt);
+    if (firstUnreadId && scrollContainerToMessage(container, firstUnreadId)) {
+      didApplyInitialOpenScrollRef.current = true;
+      return;
+    }
+
+    const maxScroll = Math.max(0, container.scrollHeight - container.clientHeight);
+    container.scrollTop = maxScroll;
+    didApplyInitialOpenScrollRef.current = true;
+  }, [messages, currentUserId, lastViewedAt, conversationId, stabilizePreviewTapBottomIfNeeded, startPreviewBottomGrowthFollow]);
 
 
   const isGhostMode = !!currentUserProfile?.ghost_mode;
@@ -219,16 +815,22 @@ export function ChatScreen({
     setReplyTarget(null);
   }, [conversationId]);
 
-  useLayoutEffect(() => {
-    if (!shouldRunExpensiveEffects) return;
+  useEffect(() => {
+    if (!shouldRunExpensiveEffectsResolved) return;
     const el = headerPortalRef.current;
     if (!el) return;
-    const ro = new ResizeObserver(() => setHeaderHeight(el.offsetHeight));
+    const ro = new ResizeObserver(() => {
+      const height = el.offsetHeight;
+      if (height > 0) {
+        setHeaderHeight(height);
+      }
+    });
     ro.observe(el);
     return () => ro.disconnect();
-  }, [shouldRunExpensiveEffects]);
+  }, [shouldRunExpensiveEffectsResolved]);
 
   useEffect(() => {
+    if (!shouldAttachGlobalListeners) return;
     const onOpen = () => setIsPortalActive(true);
     const onClose = () => setIsPortalActive(false);
     window.addEventListener('mobile-chat-stack-open', onOpen);
@@ -237,106 +839,63 @@ export function ChatScreen({
       window.removeEventListener('mobile-chat-stack-open', onOpen);
       window.removeEventListener('mobile-chat-stack-close', onClose);
     };
-  }, []);
+  }, [shouldAttachGlobalListeners]);
 
-  // NEW EFFECT: Reset headerHeight when portal becomes inactive
+
+  // Event listeners for Auto-scroll on viewport change and stack transitions
   useEffect(() => {
-    if (!isActiveTopScreen) {
-      console.debug(`[ChatScreen Debug] ${Date.now()} | isActiveTopScreen false, resetting headerHeight to 0`);
-      setHeaderHeight(0); // Reset to 0 when inactive
-    }
-  }, [isActiveTopScreen]);
+    if (!shouldAttachGlobalListeners) return;
 
-  // Debugging useEffect for ChatScreen renders and key metrics
-  useEffect(() => {
-    renderRef.current++;
-    console.debug(`[ChatScreen Debug] --- RENDER ${renderRef.current} --- ${Date.now()}`);
-
-    const logMetrics = () => {
-      const portalEl = headerPortalRef.current;
-      const messagesEl = messagesContainerRef.current;
-
-      const portalRect = portalEl?.getBoundingClientRect();
-      const messagesRect = messagesEl?.getBoundingClientRect();
-
-      const computedPortalTop = portalEl ? window.getComputedStyle(portalEl).top : 'N/A';
-
-      const visualViewport = window.visualViewport;
-
-      const data = {
-        timestamp: Date.now(),
-        event: 'metrics_snapshot',
-        renderCount: renderRef.current,
-        isActiveTopScreen,
-        headerHeight,
-        visualViewportOffsetTop: visualViewport?.offsetTop,
-        visualViewportHeight: visualViewport?.height,
-        windowInnerHeight: window.innerHeight,
-        portalComputedTop: computedPortalTop,
-        portalRectTop: portalRect?.top,
-        portalRectBottom: portalRect?.bottom,
-        messagesRectTop: messagesRect?.top,
-        calculatedGap: (messagesRect?.top && portalRect?.bottom) ? (messagesRect.top - portalRect.bottom) : 'N/A',
-        portalDomNodeExists: portalEl && document.body.contains(portalEl),
-      };
-      console.debug(`[ChatScreen Debug] Metrics:`, data);
-    };
-
-    logMetrics();
+    let autoScrollRaf: number | null = null;
 
     const tryAutoScrollToBottom = () => {
       const container = messagesContainerRef.current;
       if (wasNearBottomOnInputFocusRef.current && container && !isNearBottom(container, 96)) {
-        requestAnimationFrame(() => {
+        if (autoScrollRaf !== null) cancelAnimationFrame(autoScrollRaf);
+        autoScrollRaf = requestAnimationFrame(() => {
           scrollContainerToBottomStable(container);
-          console.debug(`[ChatScreen Debug] Auto-scrolling to bottom after viewport change.`);
+          autoScrollRaf = null;
         });
       }
     };
 
     const handleVisualViewportResize = () => {
-      if (!isActiveTopScreen || !shouldRunExpensiveEffects) return;
-      console.debug(`[ChatScreen Debug] ${Date.now()} | Event: visualViewport resize`);
-      logMetrics();
-      tryAutoScrollToBottom(); // Try to auto-scroll after resize
+      if (!shouldAttachGlobalListeners) return;
+      tryAutoScrollToBottom();
     };
+    
     const handleVisualViewportScroll = () => {
-      if (!isActiveTopScreen || !shouldRunExpensiveEffects) return;
-      console.debug(`[ChatScreen Debug] ${Date.now()} | Event: visualViewport scroll`);
-      logMetrics();
-      tryAutoScrollToBottom(); // Also try to auto-scroll on scroll events, but debounce is implicitly handled by RAF
+      if (!shouldAttachGlobalListeners) return;
+      tryAutoScrollToBottom();
     };
 
     visualViewport?.addEventListener('resize', handleVisualViewportResize);
     visualViewport?.addEventListener('scroll', handleVisualViewportScroll);
 
     const handleInputFocus = () => {
-      if (!isActiveTopScreen || !shouldRunExpensiveEffects) return;
-      console.debug(`[ChatScreen Debug] ${Date.now()} | Event: input focus`);
+      if (!shouldAttachGlobalListeners) return;
       if (messagesContainerRef.current) {
         wasNearBottomOnInputFocusRef.current = isNearBottom(messagesContainerRef.current, 96);
-        console.debug(`[ChatScreen Debug] captured wasNearBottomOnInputFocus: ${wasNearBottomOnInputFocusRef.current}`);
       }
-      logMetrics();
     };
+    
     const handleInputBlur = () => {
-      if (!isActiveTopScreen || !shouldRunExpensiveEffects) return;
-      console.debug(`[ChatScreen Debug] ${Date.now()} | Event: input blur`);
-      wasNearBottomOnInputFocusRef.current = false; // Reset on blur
-      logMetrics();
+      if (!shouldAttachGlobalListeners) return;
+      wasNearBottomOnInputFocusRef.current = false;
     };
 
     const inputElement = messageInputRef.current;
     inputElement?.addEventListener('focus', handleInputFocus);
     inputElement?.addEventListener('blur', handleInputBlur);
 
-    const onMobileChatStackOpen = () => { if(!shouldRunExpensiveEffects) return; console.debug(`[ChatScreen Debug] ${Date.now()} | Event: mobile-chat-stack-open`); logMetrics(); };
-    const onMobileChatStackClose = () => { if(!shouldRunExpensiveEffects) return; console.debug(`[ChatScreen Debug] ${Date.now()} | Event: mobile-chat-stack-close`); logMetrics(); };
+    const onMobileChatStackOpen = () => { if(!shouldAttachGlobalListeners) return; };
+    const onMobileChatStackClose = () => { if(!shouldAttachGlobalListeners) return; };
 
     window.addEventListener('mobile-chat-stack-open', onMobileChatStackOpen);
     window.addEventListener('mobile-chat-stack-close', onMobileChatStackClose);
 
     return () => {
+      if (autoScrollRaf !== null) cancelAnimationFrame(autoScrollRaf);
       visualViewport?.removeEventListener('resize', handleVisualViewportResize);
       visualViewport?.removeEventListener('scroll', handleVisualViewportScroll);
       inputElement?.removeEventListener('focus', handleInputFocus);
@@ -344,7 +903,7 @@ export function ChatScreen({
       window.removeEventListener('mobile-chat-stack-open', onMobileChatStackOpen);
       window.removeEventListener('mobile-chat-stack-close', onMobileChatStackClose);
     };
-  }, [isActiveTopScreen, headerHeight, messagesContainerRef.current, headerPortalRef.current, shouldRunExpensiveEffects]);
+  }, [shouldAttachGlobalListeners, headerHeight]);
 
   // Log route/screen changes (inferred from ChatScreen lifecycle)
   useEffect(() => {
@@ -418,6 +977,7 @@ export function ChatScreen({
   const renderedMessages = useMemo(() => {
     return messages.map((msg, index) => {
       const isMe = msg.sender_id === currentUserId;
+      const isLastMessage = index === messages.length - 1;
       const prev = index > 0 ? messages[index - 1] : null;
       const next = index < messages.length - 1 ? messages[index + 1] : null;
       const isGroupStart = isMessageGroupStart(msg, prev);
@@ -455,6 +1015,7 @@ export function ChatScreen({
               : { duration: 0 }
           }
           className={getChatMessageRowClass(isGroupStart, isNewSender)}
+          style={{ overflowAnchor: 'none' }}
         >
           <div className={`flex w-full flex-col ${isMe ? 'items-end' : 'items-start'}`}>
               <div
@@ -504,6 +1065,7 @@ export function ChatScreen({
                       isRead={isOutgoingMessageRead(msg, messages, currentUserId)}
                       readLabel={readLabel}
                       editedAt={msg.edited_at}
+                      onMediaLoad={isLastMessage ? handleLastMediaReady : undefined}
                     />
                   </div>
                 </div>
@@ -526,20 +1088,46 @@ export function ChatScreen({
     t,
     replyTarget?.id,
     deleteMessage,
+    handleLastMediaReady,
   ],
   );
 
   const { isPartnerTyping, sendTyping } = useTyping(conversationId, currentUserId, isGhostMode);
 
+  // Save scroll position when the conversation changes or unmounts
+  useEffect(() => {
+    return () => {
+      if (initialScrollDoneRef.current && scrollTrackerRef.current) {
+        const { scrollTop, scrollHeight, clientHeight } = scrollTrackerRef.current;
+        chatScrollCache.set(conversationId, {
+          scrollTop,
+          scrollHeight,
+          wasNearBottom: (scrollHeight - scrollTop - clientHeight) <= 96,
+          timestamp: Date.now(),
+        });
+      }
+      stopPreviewBottomGrowthFollow();
+    };
+  }, [conversationId, stopPreviewBottomGrowthFollow]);
+
   useEffect(() => {
     initialScrollDoneRef.current = false;
+    didApplyInitialOpenScrollRef.current = false;
+    isRestoringFromCacheRef.current = false;
+    userHasInteractedRef.current = false;
+    initialOpenReasonRef.current = openReason;
+    if (pendingPreviewBottomStabilizeRef.current !== null) {
+      cancelAnimationFrame(pendingPreviewBottomStabilizeRef.current);
+      pendingPreviewBottomStabilizeRef.current = null;
+    }
+    stopPreviewBottomGrowthFollow();
     lastMessageIdRef.current = null;
     lastAppliedViewedAtRef.current = null;
     lastOwnReadAtRef.current = null;
     lastMessageReactionKeyRef.current = null;
     readReceiptScrollSeededRef.current = false;
     setScrollAnchorReady(false);
-  }, [conversationId]);
+  }, [conversationId, openReason, stopPreviewBottomGrowthFollow]);
 
   useEffect(() => {
     if (!shouldRunExpensiveEffects) return;
@@ -584,7 +1172,7 @@ export function ChatScreen({
       if (container) {
         let pinActive = true;
         const mo = new MutationObserver(() => {
-          if (!pinActive) { mo.disconnect(); return; }
+          if (!pinActive || !shouldRunScrollSnapReactions) { mo.disconnect(); return; }
           const maxScroll = Math.max(0, container.scrollHeight - container.clientHeight);
           // Only re-pin if already near the bottom — do not override a user scroll.
           const dist = container.scrollHeight - container.scrollTop - container.clientHeight;
@@ -604,8 +1192,11 @@ export function ChatScreen({
       lastMessageIdRef.current = lastMessage.id;
       lastMessageReactionKeyRef.current = JSON.stringify(lastMessage.reactions ?? null);
       const dist = container.scrollHeight - container.scrollTop - container.clientHeight;
-      console.log('[scroll-snap] new-message branch', { dist, nearBottom: isNearBottom(container) });
-      scrollContainerToBottomStable(container);
+      const isMyMessage = lastMessage.sender_id === currentUserId;
+      console.log('[scroll-snap] new-message branch', { dist, isMyMessage, nearBottom: isNearBottom(container) });
+      if (isMyMessage || isNearBottom(container, 96)) {
+        scrollContainerToBottomStable(container);
+      }
       return;
     }
 
@@ -617,6 +1208,7 @@ export function ChatScreen({
       const dist = container.scrollHeight - container.scrollTop - container.clientHeight;
       console.log('[scroll-snap] reaction branch', { dist, nearBottom: isNearBottom(container) });
       if (isNearBottom(container)) {
+        if (!shouldRunScrollSnapReactions) return; // Centralized gating
         requestAnimationFrame(() => scrollContainerToBottomStable(container));
       }
       return;
@@ -632,25 +1224,29 @@ export function ChatScreen({
       // Initial scroll-to-bottom is already handled by applyInitialScrollPosition.
       lastAppliedViewedAtRef.current = lastViewedAt;
     }
-  }, [loading, messages, lastViewedAt, currentUserId, applyInitialScrollPosition]);
+  }, [loading, messages, lastViewedAt, currentUserId, applyInitialScrollPosition, shouldRunScrollSnapReactions]);
 
   useLayoutEffect(() => {
-    if (!shouldRunExpensiveEffects) return;
+    if (!shouldRunScrollSnapReactions) return; // Centralized gating
+    let rafId: number | null = null;
+    
     if (!isPartnerTyping) {
       setTypingClearance(0);
       if (initialScrollDoneRef.current) {
-        requestAnimationFrame(() => {
+        rafId = requestAnimationFrame(() => {
           const container = messagesContainerRef.current;
           if (!container) return;
           const distance =
             container.scrollHeight - container.scrollTop - container.clientHeight;
-          console.log('[scroll-snap] typing-stop branch', { distance, willSnap: distance < 96 });
           if (distance < 96) {
             scrollContainerToBottomStable(container);
           }
+          rafId = null;
         });
       }
-      return;
+      return () => {
+        if (rafId !== null) cancelAnimationFrame(rafId);
+      };
     }
 
     const measure = () => {
@@ -660,7 +1256,7 @@ export function ChatScreen({
       setTypingClearance(height + CHAT_TYPING_CLEARANCE_EXTRA_PX);
     };
     measure();
-    const rafId = requestAnimationFrame(measure);
+    rafId = requestAnimationFrame(measure);
 
     let observer: ResizeObserver | undefined;
     const indicator = typingIndicatorRef.current;
@@ -670,24 +1266,32 @@ export function ChatScreen({
     }
 
     return () => {
-      cancelAnimationFrame(rafId);
+      if (rafId !== null) cancelAnimationFrame(rafId);
       observer?.disconnect();
     };
-  }, [isPartnerTyping]);
+  }, [isPartnerTyping, shouldRunScrollSnapReactions]);
 
   useLayoutEffect(() => {
-    if (!shouldRunExpensiveEffects) return;
+    if (!shouldRunScrollSnapReactions) return;
     if (!isPartnerTyping || typingClearance <= 0 || !scrollAnchorReady) return;
     const container = messagesContainerRef.current;
     if (!container) return;
 
+    let rafId: number | null = null;
     if (isNearBottom(container)) {
-      requestAnimationFrame(() => scrollContainerToBottomStable(container));
+      rafId = requestAnimationFrame(() => {
+        scrollContainerToBottomStable(container);
+        rafId = null;
+      });
     }
-  }, [isPartnerTyping, typingClearance, scrollAnchorReady]);
+    
+    return () => {
+      if (rafId !== null) cancelAnimationFrame(rafId);
+    };
+  }, [isPartnerTyping, typingClearance, scrollAnchorReady, shouldRunScrollSnapReactions]);
 
   useLayoutEffect(() => {
-    if (!shouldRunExpensiveEffects) return;
+    if (!shouldRunScrollSnapReactions) return;
     if (!scrollAnchorReady || loading) return;
     const container = messagesContainerRef.current;
     if (!container || !lastOwnMessageId) return;
@@ -706,9 +1310,15 @@ export function ChatScreen({
     lastOwnReadAtRef.current = readAt;
     if (!isNearBottom(container)) return;
 
-    requestAnimationFrame(() => {
+    let rafId: number | null = null;
+    rafId = requestAnimationFrame(() => {
       scrollContainerToBottomStable(container, 12, { smooth: true });
+      rafId = null;
     });
+
+    return () => {
+      if (rafId !== null) cancelAnimationFrame(rafId);
+    };
   }, [messages, lastOwnMessageId, scrollAnchorReady, loading]);
 
   const loadOlderAndPreserveScroll = useCallback(async () => {
@@ -750,11 +1360,21 @@ export function ChatScreen({
   const handleMessagesScroll = useCallback(() => {
     const container = messagesContainerRef.current;
     scrollToBottomHandleScroll();
+
+    if (container && initialScrollDoneRef.current) {
+      chatScrollCache.set(conversationId, {
+        scrollTop: container.scrollTop,
+        scrollHeight: container.scrollHeight,
+        wasNearBottom: isNearBottom(container, 96),
+        timestamp: Date.now(),
+      });
+    }
+
     if (!container || loadingMore || !hasMore) return;
     if (container.scrollTop <= 80 && canLoadOlderRef.current) {
       loadOlderAndPreserveScroll();
     }
-  }, [loadOlderAndPreserveScroll, loadingMore, hasMore, scrollToBottomHandleScroll]);
+  }, [conversationId, loadOlderAndPreserveScroll, loadingMore, hasMore, scrollToBottomHandleScroll]);
 
   // Ref tracks the timestamp of the last typing=true broadcast to throttle sends.
   const lastTypingTrueRef = useRef(0);
@@ -772,7 +1392,7 @@ export function ChatScreen({
   }, [messageInput, sendTyping]);
 
   useEffect(() => {
-    if (!showOptionsMenu) return;
+    if (!showOptionsMenu || !shouldAttachGlobalListeners) return;
 
     const handleOutsideClick = (event: MouseEvent) => {
       const target = event.target as Node;
@@ -788,7 +1408,7 @@ export function ChatScreen({
 
     document.addEventListener('mousedown', handleOutsideClick);
     return () => document.removeEventListener('mousedown', handleOutsideClick);
-  }, [showOptionsMenu]);
+  }, [showOptionsMenu, shouldAttachGlobalListeners]);
 
   useEffect(() => {
     if (!profilePreviewUserId) {
@@ -826,15 +1446,25 @@ export function ChatScreen({
 
   // ──────────────────────────────────────────────────────────────────────────
   // Mark incoming messages as read only when the user is actively viewing
+  // Track scroll position passively to avoid DOM reads during unmount/cleanup
+  const scrollTrackerRef = useRef<{ scrollTop: number; scrollHeight: number; clientHeight: number } | null>(null);
+
   // the bottom of the message list (i.e. they can actually see the messages).
   // Stable ref so tryMark always sees the latest markAsRead without being a dep.
   const markAsReadRef = useRef(markAsRead);
   markAsReadRef.current = markAsRead;
   useEffect(() => {
+    if (!shouldAttachGlobalListeners) return;
     const container = messagesContainerRef.current;
     if (!container || !conversationId) return;
 
     const tryMark = () => {
+      scrollTrackerRef.current = {
+        scrollTop: container.scrollTop,
+        scrollHeight: container.scrollHeight,
+        clientHeight: container.clientHeight
+      };
+      
       // Only fire when the tab/window is visible.
       if (document.visibilityState !== 'visible') return;
       // Only fire when the user is near the bottom (messages are visible).
@@ -853,6 +1483,21 @@ export function ChatScreen({
     );
     io.observe(container);
 
+    // Track user interactions to stop any background post-stabilizations
+    const recordUserInteraction = () => {
+      userHasInteractedRef.current = true;
+      if (pendingPreviewBottomStabilizeRef.current !== null) {
+        cancelAnimationFrame(pendingPreviewBottomStabilizeRef.current);
+        pendingPreviewBottomStabilizeRef.current = null;
+      }
+    };
+
+    container.addEventListener('wheel', recordUserInteraction, { passive: true });
+    container.addEventListener('touchstart', recordUserInteraction, { passive: true });
+    container.addEventListener('touchmove', recordUserInteraction, { passive: true });
+    container.addEventListener('pointerdown', recordUserInteraction, { passive: true });
+    container.addEventListener('keydown', recordUserInteraction, { passive: true });
+
     // Scroll listener — fires while the user scrolls towards the bottom.
     container.addEventListener('scroll', tryMark, { passive: true });
 
@@ -864,12 +1509,17 @@ export function ChatScreen({
 
     return () => {
       io.disconnect();
+      container.removeEventListener('wheel', recordUserInteraction);
+      container.removeEventListener('touchstart', recordUserInteraction);
+      container.removeEventListener('touchmove', recordUserInteraction);
+      container.removeEventListener('pointerdown', recordUserInteraction);
+      container.removeEventListener('keydown', recordUserInteraction);
       container.removeEventListener('scroll', tryMark);
       document.removeEventListener('visibilitychange', tryMark);
     };
     // messages intentionally omitted: messagesRef.current is read inside tryMark
     // via markAsReadRef, so the observers don't need to be recreated per message.
-  }, [conversationId]);
+  }, [conversationId, shouldAttachGlobalListeners]);
 
   const focusMessageInput = useCallback(() => {
     if (!isMdUp) return;
@@ -885,7 +1535,7 @@ export function ChatScreen({
       messageInputRef.current?.focus({ preventScroll: true });
     });
     return () => cancelAnimationFrame(id);
-  }, [conversationId, isMdUp]);
+  }, [conversationId, isMdUp, shouldRunExpensiveEffects]);
 
   const sendWithAttachments = useCallback(
     async (content: string, attachmentIds: string[], replyToMessageId: string | null) => {
@@ -1091,14 +1741,19 @@ export function ChatScreen({
         <div className="flex items-center gap-1 shrink-0 min-w-0">
           <button
             type="button"
-            onClick={() =>
+            onPointerDown={() => debugChatCallBridge('start-call-button pointerdown')}
+            onClick={() => {
+              debugChatCallBridge('start-call-button click');
               void startDirectCall({
                 conversationId,
                 otherUserId: otherUser.id,
                 otherUserName: otherDisplay,
                 otherUserAvatar: otherUser.imageUrl,
-              })
-            }
+              });
+            }}
+            onDoubleClick={() => debugChatCallBridge('start-call-button dblclick')}
+            onFocus={() => debugChatCallBridge('start-call-button focus')}
+            onBlur={() => debugChatCallBridge('start-call-button blur')}
             title="Start call"
             disabled={isCallButtonDisabled}
             className={`p-2 rounded-full transition-colors shrink-0 ${
@@ -1120,7 +1775,7 @@ export function ChatScreen({
           </button>
         </div>
       </div>
-      <ChatEmbeddedCallBar conversationId={conversationId} currentUserId={currentUserId} />
+      <ChatEmbeddedCallBar conversationId={conversationId} currentUserId={currentUserId} isActive={isActiveTopScreen} />
     </div>
   );
 
@@ -1185,14 +1840,19 @@ export function ChatScreen({
             <div className="flex items-center gap-1 shrink-0 min-w-0">
               <button
                 type="button"
-                onClick={() =>
+                onPointerDown={() => debugChatCallBridge('start-call-button pointerdown')}
+                onClick={() => {
+                  debugChatCallBridge('start-call-button click');
                   void startDirectCall({
                     conversationId,
                     otherUserId: otherUser.id,
                     otherUserName: otherDisplay,
                     otherUserAvatar: otherUser.imageUrl,
-                  })
-                }
+                  });
+                }}
+                onDoubleClick={() => debugChatCallBridge('start-call-button dblclick')}
+                onFocus={() => debugChatCallBridge('start-call-button focus')}
+                onBlur={() => debugChatCallBridge('start-call-button blur')}
                 title="Start call"
                 disabled={isCallButtonDisabled}
                 className={`p-2 rounded-full transition-colors shrink-0 ${
@@ -1214,7 +1874,7 @@ export function ChatScreen({
               </button>
             </div>
           </div>
-          <ChatEmbeddedCallBar conversationId={conversationId} currentUserId={currentUserId} />
+          <ChatEmbeddedCallBar conversationId={conversationId} currentUserId={currentUserId} isActive={isActiveTopScreen} />
         </div>
       ) : (
         <>
@@ -1282,14 +1942,19 @@ export function ChatScreen({
             <div className="flex items-center gap-1 shrink-0 min-w-0">
               <button
                 type="button"
-                onClick={() =>
+                onPointerDown={() => debugChatCallBridge('start-call-button pointerdown')}
+                onClick={() => {
+                  debugChatCallBridge('start-call-button click');
                   void startDirectCall({
                     conversationId,
                     otherUserId: otherUser.id,
                     otherUserName: otherDisplay,
                     otherUserAvatar: otherUser.imageUrl,
-                  })
-                }
+                  });
+                }}
+                onDoubleClick={() => debugChatCallBridge('start-call-button dblclick')}
+                onFocus={() => debugChatCallBridge('start-call-button focus')}
+                onBlur={() => debugChatCallBridge('start-call-button blur')}
                 title="Start call"
                 disabled={isCallButtonDisabled}
                 className={`p-2 rounded-full transition-colors shrink-0 ${
@@ -1311,7 +1976,7 @@ export function ChatScreen({
               </button>
             </div>
           </div>
-          <ChatEmbeddedCallBar conversationId={conversationId} currentUserId={currentUserId} />
+          <ChatEmbeddedCallBar conversationId={conversationId} currentUserId={currentUserId} isActive={isActiveTopScreen} />
         </div>,
         document.body
       )}
@@ -1378,7 +2043,7 @@ export function ChatScreen({
             <p className="text-gray-500 dark:text-gray-400">{t('chat.noMessagesHint')}</p>
           </div>
         ) : (
-          <>
+          <div ref={messagesContentRef} className="flex flex-col min-h-full w-full">
             {loadingMore && (
               <div className="flex items-center justify-center py-2">
                 <Loader2 className="w-4 h-4 animate-spin text-gray-400" />
@@ -1388,8 +2053,9 @@ export function ChatScreen({
             {typingClearance > 0 && (
               <div aria-hidden style={{ height: typingClearance, flexShrink: 0 }} />
             )}
+            <div ref={bottomAnchorRef} data-chat-bottom-anchor aria-hidden style={{ height: 1, flexShrink: 0, overflowAnchor: 'auto' }} />
             <div ref={messagesEndRef} data-chat-scroll-end aria-hidden />
-          </>
+          </div>
         )}
         </div>
         <ScrollToBottomButton show={showScrollToBottom} onClick={scrollToBottom} />

@@ -38,11 +38,14 @@ export function ChatCallPanel({ conversationId }: ChatCallPanelProps) {
     hangUp,
     isCallForConversation,
     retryConnection,
-    registerEmbeddedCallHost,
-    embeddedCallConversationId,
     callDisplayMode,
+    callHostTarget,
+    registerCallHost,
     callPinned,
-    registerCallHostAnchor,
+    desiredHostKey,
+    activeHostKey,
+    registeredHosts,
+    isRestoreLockActive,
   } = useCallCore();
   const {
     connectionState,
@@ -89,27 +92,28 @@ export function ChatCallPanel({ conversationId }: ChatCallPanelProps) {
 
   const isActiveConversationCall =
     isCallForConversation(conversationId) && (state === 'calling' || state === 'in_call');
-  const isEmbeddedCallHost =
-    embeddedCallConversationId === conversationId && callDisplayMode === 'embedded';
+  const isTargetActiveHost = callHostTarget.type === 'chat' && callHostTarget.conversationId === conversationId;
+  const isCurrentlyActiveHost = activeHostKey === `chat:${conversationId}`;
+  
+  const isRestoringThisChat = isRestoreLockActive && desiredHostKey === `chat:${conversationId}`;
+
+  const isHostFallbackAllowed =
+    callDisplayMode === 'embedded' &&
+    (desiredHostKey !== activeHostKey || isRestoreLockActive) &&
+    !registeredHosts[desiredHostKey] &&
+    isCurrentlyActiveHost;
+
+  const shouldRenderHost = isTargetActiveHost || isHostFallbackAllowed || isRestoringThisChat;
 
   useLayoutEffect(() => {
-    if (callPinned) return undefined;
-    if (isActiveConversationCall && state === 'in_call') {
-      registerEmbeddedCallHost(conversationId);
-      return () => registerEmbeddedCallHost(null);
+    if (shouldRenderHost) {
+      console.log(`[CALL HOST REGISTRY] ChatCallPanel registering: key=chat:${conversationId}`);
+      registerCallHost(`chat:${conversationId}`, callHostAnchorRef.current);
+      return () => registerCallHost(`chat:${conversationId}`, null);
     }
-    registerEmbeddedCallHost(null);
+    registerCallHost(`chat:${conversationId}`, null);
     return undefined;
-  }, [callPinned, conversationId, isActiveConversationCall, registerEmbeddedCallHost, state]);
-
-  useLayoutEffect(() => {
-    if (!isEmbeddedCallHost || state !== 'in_call') {
-      registerCallHostAnchor(null);
-      return () => registerCallHostAnchor(null);
-    }
-    registerCallHostAnchor(callHostAnchorRef.current);
-    return () => registerCallHostAnchor(null);
-  }, [isEmbeddedCallHost, registerCallHostAnchor, state]);
+  }, [shouldRenderHost, conversationId, registerCallHost]);
 
   const stageParticipants = useMemo(() => {
     const localName =
@@ -122,7 +126,7 @@ export function ChatCallPanel({ conversationId }: ChatCallPanelProps) {
       240
     );
 
-    const participants = [
+    const participants: Array<{ id: string; name: string; avatarUrl: string | undefined; jitsiParticipantId?: string; isLocal: boolean; }> = [
       {
         id: '__local__',
         name: localName,
@@ -146,11 +150,22 @@ export function ChatCallPanel({ conversationId }: ChatCallPanelProps) {
     return filterJoinedStageParticipants(participants, remoteParticipantCount);
   }, [activeCall?.participants, currentUserProfile, localIdentity, remoteParticipantCount, t]);
 
-  if (!isActiveConversationCall) return null;
+  if (!isActiveConversationCall) {
+    console.log(`[CALL DEBUG] ChatCallPanel hidden because not active conversation call. conversationId=${conversationId}, isActiveConversationCall=false`);
+    return null;
+  }
 
-  if (callPinned) return null;
+  if (callPinned && !isActiveConversationCall) {
+    console.log(`[CALL DEBUG] ChatCallPanel hidden because callPinned and not active conversation call. conversationId=${conversationId}`);
+    return null;
+  }
 
-  if (callDisplayMode === 'pip' && state === 'in_call') return null;
+  if (!shouldRenderHost && state === 'in_call') {
+    console.log(`[CALL DEBUG] ChatCallPanel hidden: shouldRenderHost=false, callDisplayMode=${callDisplayMode}, callPinned=${callPinned}, conversationId=${conversationId}, isActiveConversationCall=${isActiveConversationCall}, isHostFallbackAllowed=${isHostFallbackAllowed}, desiredHostKey=${desiredHostKey}, activeHostKey=${activeHostKey}`);
+    return null;
+  }
+
+  console.log(`[CALL DEBUG] ChatCallPanel visible: shouldRenderHost=true, callDisplayMode=${callDisplayMode}, callPinned=${callPinned}, conversationId=${conversationId}, isActiveConversationCall=${isActiveConversationCall}, isHostFallbackAllowed=${isHostFallbackAllowed}, desiredHostKey=${desiredHostKey}, activeHostKey=${activeHostKey}`);
 
   const subtitle =
     state === 'calling'
@@ -176,10 +191,23 @@ export function ChatCallPanel({ conversationId }: ChatCallPanelProps) {
     isJitsiCallProvider() &&
     !micPermissionGranted;
 
-  const showEmbeddedHost = state === 'in_call' && isJitsiCallProvider() && isEmbeddedCallHost;
+  const showEmbeddedHost = state === 'in_call' && isJitsiCallProvider() && shouldRenderHost;
 
   return (
-    <div className="relative shrink-0">
+    <div
+      className="relative shrink-0"
+      onPointerDown={(e) => e.stopPropagation()}
+      onPointerUp={(e) => e.stopPropagation()}
+      onTouchStart={(e) => e.stopPropagation()}
+      onTouchEnd={(e) => e.stopPropagation()}
+      onMouseDown={(e) => e.stopPropagation()}
+      onMouseUp={(e) => e.stopPropagation()}
+      onClick={(e) => e.stopPropagation()}
+      onDoubleClick={(e) => {
+        e.stopPropagation();
+        e.preventDefault();
+      }}
+    >
       {showEmbeddedHost ? (
           <div
             ref={callHostAnchorRef}

@@ -63,6 +63,7 @@ export async function subscribeToWebPush(userId: string): Promise<boolean> {
     try {
       subscription = await registration.pushManager.subscribe({
         userVisibleOnly: true,
+// @ts-expect-error Types mismatched from Web Push standard vs local DOM definitions
         applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
       });
     } catch (error) {

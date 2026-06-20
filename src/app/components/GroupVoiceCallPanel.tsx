@@ -39,12 +39,10 @@ export function GroupVoiceCallPanel({ groupId, channelId, currentUserId }: Group
     hangUp,
     isVoiceChannelActive,
     retryConnection,
-    registerEmbeddedVoiceHost,
-    embeddedVoiceGroupId,
-    embeddedVoiceChannelId,
     callDisplayMode,
+    callHostTarget,
+    registerCallHost,
     callPinned,
-    registerCallHostAnchor,
   } = useCallCore();
   const {
     connectionState,
@@ -90,29 +88,16 @@ export function GroupVoiceCallPanel({ groupId, channelId, currentUserId }: Group
   }, [isMuted]);
 
   const isActiveVoiceCall = isVoiceChannelActive(groupId, channelId);
-  const isEmbeddedVoiceHost =
-    embeddedVoiceGroupId === groupId &&
-    embeddedVoiceChannelId === channelId &&
-    callDisplayMode === 'embedded';
+  const isTargetActiveHost = callHostTarget.type === 'voice' && callHostTarget.groupId === groupId && callHostTarget.channelId === channelId;
 
   useLayoutEffect(() => {
-    if (callPinned) return undefined;
-    if (isActiveVoiceCall && state === 'in_call') {
-      registerEmbeddedVoiceHost(groupId, channelId);
-      return () => registerEmbeddedVoiceHost(null, null);
+    if (isTargetActiveHost) {
+      registerCallHost(`voice:${groupId}:${channelId}`, callHostAnchorRef.current);
+      return () => registerCallHost(`voice:${groupId}:${channelId}`, null);
     }
-    registerEmbeddedVoiceHost(null, null);
+    registerCallHost(`voice:${groupId}:${channelId}`, null);
     return undefined;
-  }, [callPinned, channelId, groupId, isActiveVoiceCall, registerEmbeddedVoiceHost, state]);
-
-  useLayoutEffect(() => {
-    if (!isEmbeddedVoiceHost || state !== 'in_call') {
-      registerCallHostAnchor(null);
-      return () => registerCallHostAnchor(null);
-    }
-    registerCallHostAnchor(callHostAnchorRef.current);
-    return () => registerCallHostAnchor(null);
-  }, [isEmbeddedVoiceHost, registerCallHostAnchor, state]);
+  }, [isTargetActiveHost, groupId, channelId, registerCallHost]);
 
   const stageParticipants = useMemo(() => {
     const localName =
@@ -125,7 +110,7 @@ export function GroupVoiceCallPanel({ groupId, channelId, currentUserId }: Group
       240
     );
 
-    const participants = [
+    const participants: Array<{ id: string; name: string; avatarUrl: string | undefined; jitsiParticipantId?: string; isLocal: boolean; }> = [
       {
         id: '__local__',
         name: localName,
@@ -153,7 +138,14 @@ export function GroupVoiceCallPanel({ groupId, channelId, currentUserId }: Group
 
   if (callPinned) return null;
 
-  if (callDisplayMode === 'pip' && state === 'in_call') return null;
+  const shouldRenderHost = isTargetActiveHost;
+
+  if (!shouldRenderHost && state === 'in_call') {
+    console.log(`[CALL DEBUG] GroupVoiceCallPanel hidden: shouldRenderHost=false, callDisplayMode=${callDisplayMode}`);
+    return null;
+  }
+
+  console.log(`[CALL DEBUG] GroupVoiceCallPanel visible: shouldRenderHost=true, callDisplayMode=${callDisplayMode}`);
 
   const subtitle =
     state === 'in_call' ? connectionLabel(connectionState, t) : t('call.connectionConnecting');
@@ -176,10 +168,23 @@ export function GroupVoiceCallPanel({ groupId, channelId, currentUserId }: Group
     !micPermissionGranted;
 
   const showEmbeddedHost =
-    state === 'in_call' && isJitsiCallProvider() && isEmbeddedVoiceHost;
+    state === 'in_call' && isJitsiCallProvider() && isTargetActiveHost;
 
   return (
-    <div className="relative shrink-0">
+    <div
+      className="relative shrink-0"
+      onPointerDown={(e) => e.stopPropagation()}
+      onPointerUp={(e) => e.stopPropagation()}
+      onTouchStart={(e) => e.stopPropagation()}
+      onTouchEnd={(e) => e.stopPropagation()}
+      onMouseDown={(e) => e.stopPropagation()}
+      onMouseUp={(e) => e.stopPropagation()}
+      onClick={(e) => e.stopPropagation()}
+      onDoubleClick={(e) => {
+        e.stopPropagation();
+        e.preventDefault();
+      }}
+    >
       {showEmbeddedHost ? (
         <div
           ref={callHostAnchorRef}

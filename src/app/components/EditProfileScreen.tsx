@@ -150,7 +150,7 @@ export function EditProfileScreen({ onBack, onSave, previousScreen }: EditProfil
         setBio(supabaseProfile.bio || '');
         setPronouns(supabaseProfile.pronouns || '');
         setGender(supabaseProfile.gender || '');
-        setFavoriteFood(supabaseProfile.favorite_food || supabaseProfile.favoriteFood || '');
+        setFavoriteFood(supabaseProfile.favorite_food || (supabaseProfile as any).favoriteFood || '');
         
         // Track original images for cleanup comparison
         const images = supabaseProfile.images || [];
@@ -158,7 +158,7 @@ export function EditProfileScreen({ onBack, onSave, previousScreen }: EditProfil
         
         // Map avatar_url for display
         if (supabaseProfile.avatar_url) {
-          supabaseProfile.imageUrl = supabaseProfile.avatar_url;
+          (supabaseProfile as any).imageUrl = supabaseProfile.avatar_url;
         }
       } else {
         console.warn('⚠️ EditProfileScreen: No profile found for user');

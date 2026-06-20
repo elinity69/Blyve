@@ -25,6 +25,7 @@ interface UseEdgeBackNavigationProps {
   canForwardPull?: (cached: { id: string }) => boolean;
   /** Seed forward-pull cache synchronously before the pop commit (avoids one black frame). */
   onPopToPreview?: (poppedScreenId?: string | null) => void;
+  onBeforeBack?: () => void;
 }
 
 const navViewportClipStyle = {
@@ -71,6 +72,7 @@ export function useEdgeBackNavigation({
   forwardSwipeEnabled = true,
   canForwardPull,
   onPopToPreview,
+  onBeforeBack,
 }: UseEdgeBackNavigationProps) {
   const isMobile = useIsMobile();
   const [stack, setStack] = useState<StackScreen[]>([]);
@@ -166,6 +168,8 @@ export function useEdgeBackNavigation({
     }
   }, [stack]);
 
+  const getStack = useCallback(() => stackRef.current, []);
+
   const pushScreen = useCallback(
     (
       content: React.ReactNode,
@@ -173,6 +177,19 @@ export function useEdgeBackNavigation({
       options?: { skipEnterAnimation?: boolean }
     ) => {
       const screenId = id || `screen-${++stackIdCounter.current}`;
+
+      if (stackRef.current.some((s) => s.id === screenId)) {
+        navDebug.log('nav', 'pushScreen:ignored:already-in-stack', { screenId });
+        return;
+      }
+
+      const cached = lastScreenCacheRef.current;
+      if (cached && cached.id === screenId && stackRef.current.length === 0) {
+        navDebug.log('nav', 'pushScreen:restored-from-cache', { screenId });
+        setStack([{ ...cached, skipEnterAnimation: options?.skipEnterAnimation ?? true }]);
+        return;
+      }
+
       navDebug.log('nav', 'pushScreen', {
         screenId,
         skipEnter: options?.skipEnterAnimation ?? false,
@@ -249,6 +266,16 @@ export function useEdgeBackNavigation({
     setStack([]);
   }, []);
 
+  const popToScreen = useCallback((screenId: string) => {
+    const idx = stackRef.current.findIndex((s) => s.id === screenId);
+    if (idx !== -1) {
+      navDebug.log('nav', 'popToScreen', { screenId, targetDepth: idx + 1 });
+      setStack(stackRef.current.slice(0, idx + 1));
+    }
+  }, []);
+
+  const getForwardCache = useCallback(() => lastScreenCacheRef.current, []);
+
   const handleForwardOpenStart = useCallback(() => {
     const cached = lastScreenCacheRef.current;
     navDebug.log('nav', 'forwardOpenStart', {
@@ -322,6 +349,7 @@ export function useEdgeBackNavigation({
         forwardShellRef={previewShellRef}
         skipEnterAnimation={topStack?.skipEnterAnimation ?? true}
         onBack={tracedPopScreen}
+        onBeforeBack={onBeforeBack}
         onForwardOpenStart={handleForwardOpenStart}
         onForwardComplete={handleForwardComplete}
       >
@@ -389,5 +417,8 @@ export function useEdgeBackNavigation({
     clearForwardCache,
     setForwardCache,
     renderLayers,
+    getStack,
+    popToScreen,
+    getForwardCache,
   };
 }

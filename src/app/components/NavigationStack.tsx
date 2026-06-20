@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
+import { takeDomSnapshot } from '../lib/domSnapshot';
 import { animate, motion, useMotionValue, useMotionValueEvent } from 'framer-motion';
 import { useMobileViewportDriver } from '../hooks/useMobileViewportInsets';
 import { navDebug } from '../lib/navDebug';
@@ -156,6 +157,56 @@ export function NavigationStack({
 
   useMobileViewportDriver(isMobile);
 
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const active = (navPhase === 'drag' || navPhase === 'snap');
+      (window as any).__blyveNavSwipeActive = active;
+    }
+    return () => {
+      if (typeof window !== 'undefined') {
+        (window as any).__blyveNavSwipeActive = false;
+      }
+    };
+  }, [navPhase]);
+
+  const debugNavOverlay = useCallback((event: string, payload?: any) => {
+    const ts = performance.now();
+    const callInGlobalRoot = typeof document !== 'undefined' && (!!document.getElementById('floating-call-widget-root') || !!document.querySelector('.floating-call-widget-global'));
+    const callInPreview = typeof document !== 'undefined' && !!document.querySelector('[data-messages-preview-panel] .floating-call-widget-global');
+    const callInHostZone = typeof document !== 'undefined' && !!document.querySelector('[data-chat-call-host-zone]');
+    
+    let callLayerAttached = 'none';
+    if (callInHostZone) callLayerAttached = 'host-zone';
+    else if (callInPreview) callLayerAttached = 'preview-root';
+    else if (callInGlobalRoot) callLayerAttached = 'global-root';
+
+    const globalBlockerActive = typeof document !== 'undefined' && !!document.querySelector('.pointer-events-none.fixed, .pointer-events-none.absolute');
+
+    console.log(`[NAV OVERLAY DEBUG]`, {
+      ts,
+      event,
+      screenId,
+      isForwardPull,
+      navPhase,
+      callLayerAttached,
+      globalBlockerActive,
+      ...(payload || {})
+    });
+  }, [screenId, isForwardPull, navPhase]);
+
+  useEffect(() => {
+    const intervalId = setInterval(() => {
+      const callInGlobalRoot = typeof document !== 'undefined' && (!!document.getElementById('floating-call-widget-root') || !!document.querySelector('.floating-call-widget-global'));
+      const callInPreview = typeof document !== 'undefined' && !!document.querySelector('[data-messages-preview-panel] .floating-call-widget-global');
+      const hasActiveChat = typeof document !== 'undefined' && !!document.querySelector('[data-chat-call-host-zone]');
+      
+      if ((callInGlobalRoot || callInPreview) && !screenId && !hasActiveChat) {
+        console.warn(`[NAV OVERLAY DEBUG][ILLEGAL LAYER] Call-Layer is hanging at global/preview root but screenId is null and no active chat screen is present! ts=${performance.now()}`);
+      }
+    }, 1000);
+    return () => clearInterval(intervalId);
+  }, [screenId]);
+
   const logPose = useCallback(
     (event: string, extra?: Record<string, unknown>) => {
       navDebug.log('stack', event, {
@@ -178,6 +229,9 @@ export function NavigationStack({
 
   useMotionValueEvent(panelX, 'change', (latest) => {
     panelXRef.current = latest;
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('navigation-swipe'));
+    }
   });
 
   const setSwipeBackLock = (locked: boolean) => {
@@ -409,6 +463,7 @@ export function NavigationStack({
         settleOpenPanel(width, 'skip-enter');
       } else {
         scheduleEnterShieldRelease();
+        debugNavOverlay('forward reopen commit');
         logPose('settle:open:forward-commit', { viewportW: Math.round(width) });
       }
       logPose('layout:skip-enter', { fromForwardCommit });
@@ -539,6 +594,7 @@ export function NavigationStack({
     const offscreenX = offscreenPanelX(width);
 
     setNavPhase('snap');
+    debugNavOverlay('snap:start', { targetPull, targetPanelX });
     const snapLayoutGen = layoutGenRef.current;
     snapOnDoneRef.current = onDone ?? null;
     logPose('snap:start', {
@@ -573,6 +629,7 @@ export function NavigationStack({
         }
 
         setNavPhase('idle');
+        debugNavOverlay('snap:complete', { dismissingStack });
         if (dismissingStack) {
           const hiddenX = offscreenPanelX(width);
           jumpPanelX(hiddenX);
@@ -582,6 +639,7 @@ export function NavigationStack({
             targetPanelX: Math.round(hiddenX),
             layoutGen: snapLayoutGen,
           });
+          takeDomSnapshot('after back swipe complete');
         } else if (!forward && targetPull <= NAV_SWIPE_OFFSCREEN_EPSILON_PX) {
           settleOpenPanel(width, 'snap-open');
           logPose('snap:complete:open', {
@@ -598,6 +656,9 @@ export function NavigationStack({
             targetPanelX: Math.round(targetPanelX),
             layoutGen: snapLayoutGen,
           });
+          if (forward && targetPull >= width - NAV_SWIPE_OFFSCREEN_EPSILON_PX) {
+            takeDomSnapshot('after forward swipe complete');
+          }
         }
         done?.();
       },
@@ -729,10 +790,13 @@ export function NavigationStack({
         isDraggingRef.current = true;
         setNavPhase('drag');
         if (isForwardPull) {
+          debugNavOverlay('forward preview start');
           setNavForwardSwipeLock(true, forwardShellRef?.current);
         } else {
+          debugNavOverlay('back swipe start');
           setSwipeBackLock(true);
         }
+        debugNavOverlay('drag-lock reached');
         logPose('touch:drag-lock', { deltaX: Math.round(deltaX), deltaY: Math.round(deltaY) });
       } else {
         return;

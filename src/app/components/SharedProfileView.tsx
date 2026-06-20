@@ -276,6 +276,7 @@ export function SharedProfileView({
       {/* Centering wrapper (desktop) / full-screen wrapper (mobile) */}
       <motion.div
         key="shared-profile-modal-root"
+        data-profile-preview-root="true"
         initial={{ opacity: isDesktop ? 0 : 1 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: isDesktop ? 0 : 1 }}
@@ -290,9 +291,9 @@ export function SharedProfileView({
         <motion.div
           // ── Enter / exit animations ──────────────────────────────────
           ref={cardRef}
-          initial={isDesktop ? { opacity: 0, scale: 0.96, y: 0 } : false}
-          animate={isDesktop ? { opacity: 1, scale: 1, y: 0 } : false}
-          exit={isDesktop ? { opacity: 0, scale: 0.96, y: 0 } : false}
+          initial={isDesktop ? { opacity: 0, scale: 0.96, y: 0 } : undefined}
+          animate={isDesktop ? { opacity: 1, scale: 1, y: 0 } : undefined}
+          exit={isDesktop ? { opacity: 0, scale: 0.96, y: 0 } : undefined}
           transition={
             isDesktop
               ? { type: 'spring', damping: 30, stiffness: 300 }

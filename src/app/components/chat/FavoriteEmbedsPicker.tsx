@@ -408,12 +408,12 @@ export function FavoriteEmbedsPicker({ open, onClose, onSelect }: FavoriteEmbeds
             onClose={onClose}
             syncStatus={syncStatus}
             isCloudEnabled={isCloudEnabled}
-            onRefresh={handleRefresh}
+            onRefresh={() => { handleRefresh(); }}
           />
           <FavoriteEmbedsPullRefresh
             enabled={isCloudEnabled}
             refreshing={isSyncing}
-            onRefresh={handleRefresh}
+            onRefresh={() => { handleRefresh(); }}
           >
             <FavoriteEmbedsGrid
               favorites={favorites}

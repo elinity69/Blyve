@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback, type ReactNode } from 'react';
+import React, { useState, useEffect, useRef, useCallback, type ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { motion } from 'framer-motion';
 import { supabase } from './lib/supabase';
@@ -73,7 +73,139 @@ function AppContent({ onUserIdChange }: AppContentProps = {}) {
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [callJoinParams, setCallJoinParams] = useState(() => parseCallJoinParams());
   const [showCallJoin, setShowCallJoin] = useState(() => parseCallJoinParams() != null);
-  const { state: callState, callDisplayMode } = useCall();
+
+  const {
+    state: callState,
+    callDisplayMode,
+    requestOpenPip,
+    requestOpenEmbeddedForConversation,
+    requestOpenEmbeddedForVoice,
+    requestOpenFullscreen,
+    requestPinEmbeddedGlobal,
+    requestUnpinEmbeddedGlobal,
+    hangUp: leaveCall,
+    leaveEmbeddedCallToPiP,
+    registerCallHost,
+    setIsProfilePreviewOpen,
+  } = useCall();
+
+  const debugAppSurface = useCallback((event: string, payload?: any) => {
+    const ts = performance.now();
+    console.log(`[APP SURFACE DEBUG]`, {
+      ts,
+      event,
+      activeTab,
+      showLegalDocs,
+      showCallJoin,
+      callState,
+      callDisplayMode,
+      ...(payload || {})
+    });
+  }, [activeTab, showLegalDocs, showCallJoin, callState, callDisplayMode]);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      (window as any).__debugAppSurface = debugAppSurface;
+      (window as any).__setIsAuthenticated = setIsAuthenticated;
+      (window as any).__setLoading = setLoading;
+      (window as any).__setCurrentUserId = setCurrentUserId;
+    }
+    return () => {
+      if (typeof window !== 'undefined') {
+        delete (window as any).__debugAppSurface;
+        delete (window as any).__setIsAuthenticated;
+        delete (window as any).__setLoading;
+        delete (window as any).__setCurrentUserId;
+      }
+    };
+  }, [debugAppSurface]);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      (window as any).__callActions = {
+        requestOpenPip,
+        requestOpenEmbeddedForConversation,
+        requestOpenEmbeddedForVoice,
+        requestOpenFullscreen,
+        requestPinEmbeddedGlobal,
+        requestUnpinEmbeddedGlobal,
+        leaveCall,
+        leaveEmbeddedCallToPiP,
+        registerCallHost,
+        setIsProfilePreviewOpen,
+      };
+    }
+    return () => {
+      if (typeof window !== 'undefined') {
+        delete (window as any).__callActions;
+      }
+    };
+  }, [
+    requestOpenPip,
+    requestOpenEmbeddedForConversation,
+    requestOpenEmbeddedForVoice,
+    requestOpenFullscreen,
+    requestPinEmbeddedGlobal,
+    requestUnpinEmbeddedGlobal,
+    leaveCall,
+    leaveEmbeddedCallToPiP,
+    registerCallHost,
+    setIsProfilePreviewOpen,
+  ]);
+
+  const lastLoggedSurfaceRef = useRef<any>({});
+  useEffect(() => {
+    const checkSurface = () => {
+      const activeScreen = activeTab;
+      const previewOpen = !!document.querySelector('[data-messages-preview-panel]');
+      const settingsScreenOpen = !!document.querySelector('[screen-id="settings"], [screen-id="edit-profile"], [screen-id="add-media"]');
+      const profileTopbarVisible = activeTab === 'profile' || settingsScreenOpen;
+      const globalOverlayVisible = !!document.querySelector('.fixed.inset-0.z-50') || showLegalDocs || showCallJoin;
+      const callLayerVisible = callState === 'in_call';
+      const pipVisible = callState === 'in_call' && callDisplayMode === 'pip';
+      const blockerLayerVisible = !!document.querySelector('[data-nav-overlay]');
+      
+      // Check for pointer-events none blocker layers
+      const pointerBlockerActive = !!document.querySelector('.pointer-events-none.fixed, .pointer-events-none.absolute');
+
+      const nextState = {
+        activeScreen,
+        previewOpen,
+        profileTopbarVisible,
+        globalOverlayVisible,
+        callLayerVisible,
+        pipVisible,
+        blockerLayerVisible,
+        pointerBlockerActive
+      };
+
+      const keys = Object.keys(nextState) as Array<keyof typeof nextState>;
+      let changed = false;
+      for (const k of keys) {
+        if (nextState[k] !== lastLoggedSurfaceRef.current[k]) {
+          changed = true;
+          break;
+        }
+      }
+
+      if (changed) {
+        lastLoggedSurfaceRef.current = nextState;
+        console.log(`[APP SURFACE DEBUG] ts=${performance.now()}`, nextState);
+
+        if (profileTopbarVisible) {
+          console.log(`[APP SURFACE DEBUG][PROFILE TOPBAR VISIBLE] why=tab_or_subscreen_active, screen=${settingsScreenOpen ? 'subscreen' : 'base_profile'}, previewMode=${previewOpen}, callActive=${callLayerVisible}, overlayActive=${globalOverlayVisible}`);
+        }
+
+        if (profileTopbarVisible && activeTab !== 'profile') {
+          console.warn(`[APP SURFACE DEBUG][ILLEGAL TOPBAR] Profile topbar/subscreen is visible but active top-level route is ${activeTab}! ts=${performance.now()}`);
+        }
+      }
+    };
+
+    const intervalId = window.setInterval(checkSurface, 300);
+    return () => window.clearInterval(intervalId);
+  }, [activeTab, showLegalDocs, showCallJoin, callState, callDisplayMode]);
+
   const isMobile = useIsMobile();
   const hideBottomNavigationForCall =
     callState === 'in_call' && callDisplayMode === 'fullscreen';

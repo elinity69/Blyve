@@ -164,22 +164,24 @@ function MessageEmbedItem({
   embed,
   inBubble,
   isMe,
+  onMediaLoad,
 }: {
   embed: ParsedEmbed;
   inBubble?: boolean;
   isMe?: boolean;
+  onMediaLoad?: () => void;
 }) {
   let content: ReactNode = null;
 
   switch (embed.kind) {
     case 'giphy':
     case 'tenor':
-      content = <GifMediaEmbed embed={embed} inBubble={inBubble} />;
+      content = <GifMediaEmbed embed={embed} inBubble={inBubble} onLoad={onMediaLoad} />;
       break;
     case 'image': {
       const reparsed = parseEmbed(embed.url);
       if (reparsed?.kind === 'tenor' || reparsed?.kind === 'giphy') {
-        content = <GifMediaEmbed embed={{ ...reparsed, url: embed.url }} inBubble={inBubble} />;
+        content = <GifMediaEmbed embed={{ ...reparsed, url: embed.url }} inBubble={inBubble} onLoad={onMediaLoad} />;
       } else {
         content = (
           <MessageImageEmbed
@@ -187,6 +189,7 @@ function MessageEmbedItem({
             openUrl={embed.url}
             alt="Shared image"
             inBubble={inBubble}
+            onLoad={onMediaLoad}
           />
         );
       }
@@ -194,7 +197,7 @@ function MessageEmbedItem({
     }
     case 'video':
       content = (
-        <MessageVideoEmbed src={embed.url} openUrl={embed.url} inBubble={inBubble} />
+        <MessageVideoEmbed src={embed.url} openUrl={embed.url} inBubble={inBubble} onLoad={onMediaLoad} />
       );
       break;
     case 'audio':
@@ -262,9 +265,10 @@ interface MessageEmbedListProps {
   /** Inside a chat bubble — no extra chrome, no URL footers. */
   inBubble?: boolean;
   isMe?: boolean;
+  onMediaLoad?: () => void;
 }
 
-export function MessageEmbedList({ embeds, inBubble = false, isMe = false }: MessageEmbedListProps) {
+export function MessageEmbedList({ embeds, inBubble = false, isMe = false, onMediaLoad }: MessageEmbedListProps) {
   if (embeds.length === 0) return null;
 
   return (
@@ -282,6 +286,7 @@ export function MessageEmbedList({ embeds, inBubble = false, isMe = false }: Mes
           embed={embed}
           inBubble={inBubble}
           isMe={isMe}
+          onMediaLoad={onMediaLoad}
         />
       ))}
     </div>

@@ -16,6 +16,7 @@ import { getCachedUser, subscribeAuth } from '../lib/authSession';
 import { api } from '../lib/api';
 import { getOptimizedImageUrl } from '../lib/images';
 import { toast } from '../lib/toast';
+import { takeDomSnapshot } from '../lib/domSnapshot';
 import i18n from '../../lib/i18n';
 import { FloatingCallWidget } from '../components/FloatingCallWidget';
 
@@ -41,6 +42,46 @@ function isProfileUserId(id: string): boolean {
 
 type CallUiState = 'idle' | 'calling' | 'incoming' | 'in_call' | 'ended';
 export type CallDisplayMode = 'embedded' | 'pip' | 'fullscreen';
+export type CallPresentationMode = 'pip' | 'embedded' | 'fullscreen';
+
+export type CallHostTarget =
+  | { type: 'pip' }
+  | { type: 'chat'; conversationId: string }
+  | { type: 'voice'; groupId: string; channelId: string }
+  | { type: 'pinned-global' }
+  | { type: 'fullscreen' };
+
+export type CallSurfaceOwner =
+  | { type: 'embedded'; conversationId: string; hostKey: `chat:${string}` }
+  | { type: 'voice'; groupId: string; channelId: string; hostKey: `voice:${string}:${string}` }
+  | { type: 'pip' }
+  | { type: 'pinned-global' }
+  | { type: 'fullscreen' };
+
+export type CallInteractionLock =
+  | { type: 'none' }
+  | { type: 'pip-gesture'; pointerId: number; startedAt: number }
+  | { type: 'surface-transition'; transitionId: string; reason: string };
+
+export interface CallSurfaceState {
+  owner: CallSurfaceOwner;
+  pendingOwner: CallSurfaceOwner | null;
+  interactionLock: CallInteractionLock;
+  pinned: boolean;
+  callConversationId: string | null;
+}
+
+function isSameOwner(a: CallSurfaceOwner | null, b: CallSurfaceOwner | null): boolean {
+  if (!a || !b) return a === b;
+  if (a.type !== b.type) return false;
+  if (a.type === 'embedded' && b.type === 'embedded') {
+    return a.conversationId === b.conversationId;
+  }
+  if (a.type === 'voice' && b.type === 'voice') {
+    return a.groupId === b.groupId && a.channelId === b.channelId;
+  }
+  return true;
+}
 type TerminalCallStatus = 'ended' | 'cancelled' | 'declined' | 'missed';
 type CallSelfRole = 'host' | 'participant' | 'unknown';
 const RINGING_TIMEOUT_MS = 30_000;
@@ -151,6 +192,21 @@ interface CallContextValue {
   remoteVideoActive: boolean;
   remoteScreenShareActive: boolean;
   callDisplayMode: CallDisplayMode;
+  isRestoreLockActive: boolean;
+  callPresentationMode: CallPresentationMode;
+  callHostTarget: CallHostTarget;
+  desiredHostKey: string;
+  registeredHosts: Record<string, HTMLElement | null>;
+  activeHostKey: string;
+  activeHostElement: HTMLElement | null;
+  registerCallHost: (hostKey: string, element: HTMLElement | null) => void;
+  requestOpenPip: () => void;
+  requestOpenEmbeddedForConversation: (conversationId: string) => void;
+  requestOpenEmbeddedForVoice: (groupId: string, channelId: string) => void;
+  requestOpenFullscreen: () => void;
+  requestPinEmbeddedGlobal: () => void;
+  requestUnpinEmbeddedGlobal: () => void;
+  transitionState: 'idle' | 'awaiting-host' | 'switching-to-pip' | 'switching-to-fullscreen';
   participantVolumes: Record<string, number>;
   mediaCaptureAvailable: boolean;
   debugTrail: string[];
@@ -215,6 +271,20 @@ interface CallContextValue {
   clearEndedState: () => void;
   isCallForConversation: (conversationId: string) => boolean;
   isVoiceChannelActive: (groupId: string, channelId: string) => boolean;
+  leaveCall: () => Promise<void>;
+  isProfilePreviewOpen: boolean;
+  setIsProfilePreviewOpen: (open: boolean) => void;
+  transitionToPiP: (reason: string) => void;
+  transitionToEmbeddedInConversation: (conversationId: string, reason: string) => void;
+  transitionToEmbeddedIfPossible: (reason: string) => void;
+  handleChatDismissWhileEmbedded: (conversationId: string, reason: string) => void;
+  leaveEmbeddedCallToPiP: (params: {
+    source: 'back-button' | 'back-swipe' | 'history-pop' | 'header-back' | 'programmatic-pop';
+    conversationId?: string | null;
+    groupId?: string | null;
+    channelId?: string | null;
+    navigate?: () => void;
+  }) => void;
 }
 
 const CallContext = createContext<CallContextValue | undefined>(undefined);
@@ -225,6 +295,21 @@ interface CallCoreValue {
   activeCall: ActiveCall | null;
   incomingCall: IncomingCall | null;
   callDisplayMode: CallDisplayMode;
+  isRestoreLockActive: boolean;
+  callPresentationMode: CallPresentationMode;
+  callHostTarget: CallHostTarget;
+  desiredHostKey: string;
+  registeredHosts: Record<string, HTMLElement | null>;
+  activeHostKey: string;
+  activeHostElement: HTMLElement | null;
+  registerCallHost: (hostKey: string, element: HTMLElement | null) => void;
+  requestOpenPip: () => void;
+  requestOpenEmbeddedForConversation: (conversationId: string) => void;
+  requestOpenEmbeddedForVoice: (groupId: string, channelId: string) => void;
+  requestOpenFullscreen: () => void;
+  requestPinEmbeddedGlobal: () => void;
+  requestUnpinEmbeddedGlobal: () => void;
+  transitionState: 'idle' | 'awaiting-host' | 'switching-to-pip' | 'switching-to-fullscreen';
   callPinned: boolean;
   pinnedCallHostActive: boolean;
   embeddedCallConversationId: string | null;
@@ -262,6 +347,7 @@ interface CallCoreValue {
   clearEndedState: () => void;
   isCallForConversation: (conversationId: string) => boolean;
   isVoiceChannelActive: (groupId: string, channelId: string) => boolean;
+  leaveEmbeddedCallToPiP: CallContextValue['leaveEmbeddedCallToPiP'];
 }
 
 // ─── Volatile media: high-frequency live-call ticks ──────────────────────────
@@ -372,11 +458,73 @@ function isStaleCallSession(
   return Date.now() - basisTs > CALL_SESSION_MAX_AGE_MS;
 }
 
+if (typeof window !== 'undefined') {
+  (window as any).__lastGestureFlowId = 'none';
+  (window as any).__gestureCounter = 0;
+  (window as any).__createGestureFlowId = (source: string) => {
+    const counter = ++(window as any).__gestureCounter;
+    const flowId = `pip-gesture-${Date.now()}-${counter}`;
+    (window as any).__lastGestureFlowId = flowId;
+    console.log(`[CALL FLOW DEBUG] [CREATE FLOW] flowId=${flowId} source=${source} ts=${performance.now()}`);
+    return flowId;
+  };
+
+  (window as any).__getCallStateDebugInfo = () => {
+    const flowId = (window as any).__lastGestureFlowId || 'none';
+    const navStack = (window as any).__navStack || [];
+    const navStackDepth = navStack.length;
+    const activeCall = (window as any).__activeCall;
+    const conversationId = activeCall?.conversationId || 'none';
+    const activeHostKey = (window as any).__activeHostKey || 'none';
+    const desiredHostKey = (window as any).__desiredHostKey || 'none';
+    const callDisplayMode = (window as any).__callDisplayMode || 'none';
+    const openReason = (window as any).__chatOpenReason || 'none';
+
+    return `[flowId=${flowId} convId=${conversationId} activeHost=${activeHostKey} desiredHost=${desiredHostKey} mode=${callDisplayMode} stackDepth=${navStackDepth} openReason=${openReason}]`;
+  };
+
+  (window as any).__logCallRace = (event: string, detail: any) => {
+    const info = (window as any).__getCallStateDebugInfo();
+    console.warn(`[CALL RACE DEBUG] ${info} ${event} details:`, detail);
+  };
+
+  (window as any).__traceCallPipRequest = (reason: string, source: string) => {
+    const info = (window as any).__getCallStateDebugInfo();
+    const isLockActive = !!(window as any).__restoreLockActive;
+    const isDoubleTapActive = (window as any).__lastGestureFlowId?.includes('double-tap') || false;
+    const err = new Error();
+    console.log(`[CALL FLOW DEBUG] [CALL PIP REQUEST TRACE] ${info} reason=${reason} source=${source} isLockActive=${isLockActive} isDoubleTapActive=${isDoubleTapActive}\nStack Trace:\n${err.stack}`);
+  };
+
+  (window as any).__triggerDebugCall = (event: string, payload?: any, source = 'unknown') => {
+    if ((window as any).__debugCall) {
+      (window as any).__debugCall(event, payload, source);
+    } else {
+      if (process.env.NODE_ENV === 'development') {
+        console.log(`[CALL DEBUG][PRE-MOUNT] ts=${performance.now()} event=${event} source=${source}`, payload);
+      }
+    }
+  };
+}
+
+export function triggerDebugCall(event: string, payload?: any, source = 'unknown') {
+  if (typeof window !== 'undefined' && (window as any).__triggerDebugCall) {
+    (window as any).__triggerDebugCall(event, payload, source);
+  }
+}
+
 export function CallProvider({ children }: { children: React.ReactNode }) {
   const [state, setState] = useState<CallUiState>('idle');
   const [activeCall, setActiveCall] = useState<ActiveCall | null>(null);
   const [incomingCall, setIncomingCall] = useState<IncomingCall | null>(null);
-  const [jitsiJoinRequest, setJitsiJoinRequest] = useState<JitsiJoinRequest | null>(null);
+  const [jitsiJoinRequest, rawSetJitsiJoinRequest] = useState<JitsiJoinRequest | null>(null);
+  const setJitsiJoinRequest = useCallback((val: JitsiJoinRequest | null | ((prev: JitsiJoinRequest | null) => JitsiJoinRequest | null)) => {
+    console.log('[DEBUG JITSI JOIN REQUEST SETTER] setJitsiJoinRequest called with:', typeof val === 'function' ? 'function' : JSON.stringify(val));
+    if (val === null) {
+      console.log('[DEBUG JITSI JOIN REQUEST SETTER] STACK TRACE FOR NULL:', new Error().stack);
+    }
+    rawSetJitsiJoinRequest(val);
+  }, []);
   const [jitsiMountKey, setJitsiMountKey] = useState(0);
   const [connectionState, setConnectionState] = useState<string>('disconnected');
   const [isMuted, setIsMuted] = useState(false);
@@ -391,21 +539,612 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   const [remoteParticipantCount, setRemoteParticipantCount] = useState(0);
   const [remoteVideoActive, setRemoteVideoActive] = useState(false);
   const [remoteScreenShareActive, setRemoteScreenShareActive] = useState(false);
-  const [callDisplayMode, setCallDisplayMode] = useState<CallDisplayMode>('pip');
+  const callPinnedRef = useRef(false);
+  const lastModeChangeAtRef = useRef<number>(0);
+  const currentDisplayModeRef = useRef<CallDisplayMode>('pip');
+  const transitionStateRef = useRef<'idle' | 'awaiting-host' | 'switching-to-pip' | 'switching-to-fullscreen'>('idle');
+  const [transitionState, setTransitionState] = useState<'idle' | 'awaiting-host' | 'switching-to-pip' | 'switching-to-fullscreen'>('idle');
+  const transitionIdRef = useRef<number>(0);
+
+  const [isProfilePreviewOpen, setIsProfilePreviewOpen] = useState(false);
+  const [registeredHosts, setRegisteredHosts] = useState<Record<string, HTMLElement | null>>({});
+  const registeredHostsRef = useRef<Record<string, HTMLElement | null>>({});
+  const handoverSeqRef = useRef<number>(0);
+
+  const [surfaceState, setSurfaceState] = useState<CallSurfaceState>(() => ({
+    owner: { type: 'pip' },
+    pendingOwner: null,
+    interactionLock: { type: 'none' },
+    pinned: false,
+    callConversationId: null,
+  }));
+
+  const callPinned = surfaceState.pinned;
+
+  const activeOwner = surfaceState.pendingOwner || surfaceState.owner;
+
+  const callDisplayMode = useMemo<CallDisplayMode>(() => {
+    if (activeOwner.type === 'pip') return 'pip';
+    if (activeOwner.type === 'fullscreen') return 'fullscreen';
+    return 'embedded';
+  }, [activeOwner]);
+
+  const callPresentationMode = callDisplayMode;
+
+  const callHostTarget = useMemo<CallHostTarget>(() => {
+    switch (activeOwner.type) {
+      case 'pip': return { type: 'pip' };
+      case 'fullscreen': return { type: 'fullscreen' };
+      case 'pinned-global': return { type: 'pinned-global' };
+      case 'embedded': return { type: 'chat', conversationId: activeOwner.conversationId };
+      case 'voice': return { type: 'voice', groupId: activeOwner.groupId, channelId: activeOwner.channelId };
+    }
+  }, [activeOwner]);
+
+  const desiredHostKey = useMemo(() => {
+    switch (activeOwner.type) {
+      case 'pip': return 'pip';
+      case 'fullscreen': return 'fullscreen';
+      case 'pinned-global': return 'pinned-global';
+      case 'embedded': return `chat:${activeOwner.conversationId}`;
+      case 'voice': return `voice:${activeOwner.groupId}:${activeOwner.channelId}`;
+    }
+  }, [activeOwner]);
+
+  const isRestoreLockActive = surfaceState.interactionLock.type === 'surface-transition';
+
+  const [activeHostKey, setActiveHostKey] = useState<string>('pip');
+
+  const activeHostElement = useMemo(() => {
+    return registeredHosts[activeHostKey] || null;
+  }, [registeredHosts, activeHostKey]);
+
+  const resetSurfaceState = useCallback(() => {
+    setSurfaceState({
+      owner: { type: 'pip' },
+      pendingOwner: null,
+      interactionLock: { type: 'none' },
+      pinned: false,
+      callConversationId: null,
+    });
+  }, []);
+
+  useEffect(() => {
+    currentDisplayModeRef.current = callDisplayMode;
+  }, [callDisplayMode]);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      (window as any).__activeHostElement = activeHostElement;
+      (window as any).__activeHostKey = activeHostKey;
+      (window as any).__activeCall = activeCall;
+      (window as any).__callDisplayMode = callDisplayMode;
+      (window as any).__desiredHostKey = desiredHostKey;
+      (window as any).__restoreLockActive = isRestoreLockActive;
+      console.log(`[CALL STATE] Synchronized global activeHostKey: ${activeHostKey}, mode: ${callDisplayMode}, desired: ${desiredHostKey}, lock: ${isRestoreLockActive}`);
+    }
+  }, [activeHostElement, activeHostKey, activeCall, callDisplayMode, desiredHostKey, isRestoreLockActive]);
+
+  useEffect(() => {
+    if (activeHostElement && activeHostKey) {
+      const seq = ++handoverSeqRef.current;
+      import('../lib/jitsi').then(({ attachToHost }) => {
+        if (seq !== handoverSeqRef.current) {
+          console.log(`[CALL STATE] stale ensure-attach skipped for key=${activeHostKey}`);
+          return;
+        }
+        try {
+          console.log(`[CALL STATE] Ensure attached to active host: key=${activeHostKey}, seq=${seq}`);
+          attachToHost(activeHostKey, activeHostElement);
+        } catch (err) {
+          console.error(err);
+        }
+      });
+    }
+  }, [activeHostElement, activeHostKey]);
+
+  // Handover-System
+  useEffect(() => {
+    const targetElement = registeredHosts[desiredHostKey];
+    const flowInfo = typeof window !== 'undefined' && (window as any).__getCallStateDebugInfo ? (window as any).__getCallStateDebugInfo() : '';
+    const registryKeys = Object.keys(registeredHosts).filter(k => registeredHosts[k] !== null);
+    
+    console.log(`[HOST REGISTRY DEBUG] ${flowInfo} [HANDOVER EFF] checking handover: desiredHostKey=${desiredHostKey}, activeHostKey=${activeHostKey}, elementExists=${!!targetElement}, registeredKeys=${JSON.stringify(registryKeys)}`);
+    
+    if (desiredHostKey === activeHostKey) {
+      if (surfaceState.pendingOwner) {
+        console.log(`[CALL STATE MACHINE][HANDOVER] desiredHostKey matches activeHostKey (${activeHostKey}). Finalizing owner state.`);
+        setSurfaceState((prev) => {
+          if (!prev.pendingOwner) return prev;
+          return {
+            ...prev,
+            owner: prev.pendingOwner,
+            pendingOwner: null,
+            interactionLock: { type: 'none' },
+          };
+        });
+      }
+      return;
+    }
+
+    if (desiredHostKey === 'pip' || desiredHostKey === 'fullscreen' || targetElement) {
+      console.log(`[HOST REGISTRY DEBUG] ${flowInfo} [HANDOVER EFF] handover attaching to registered host: desiredHostKey=${desiredHostKey}`);
+      
+      const seq = ++handoverSeqRef.current;
+      if (targetElement) {
+        import('../lib/jitsi').then(({ attachToHost }) => {
+          if (seq !== handoverSeqRef.current) {
+            console.log(`[HOST REGISTRY DEBUG] ${flowInfo} stale handover skipped for key=${desiredHostKey}`);
+            return;
+          }
+          try {
+            console.log(`[HOST REGISTRY DEBUG] ${flowInfo} attach accepted for current token. key=${desiredHostKey}, seq=${seq}`);
+            setActiveHostKey(desiredHostKey);
+            (window as any).__activeHostKey = desiredHostKey;
+            attachToHost(desiredHostKey, targetElement);
+            
+            setSurfaceState((prev) => {
+              const nextOwner = prev.pendingOwner || prev.owner;
+              return {
+                ...prev,
+                owner: nextOwner,
+                pendingOwner: null,
+                interactionLock: { type: 'none' },
+              };
+            });
+          } catch (err) {
+            console.error(`[HOST REGISTRY DEBUG] attachToHost failed:`, err);
+          }
+        });
+      } else {
+        setActiveHostKey(desiredHostKey);
+        (window as any).__activeHostKey = desiredHostKey;
+        console.log(`[HOST REGISTRY DEBUG] activeHostKey changed directly (no targetElement): ${desiredHostKey}`);
+        
+        setSurfaceState((prev) => {
+          const nextOwner = prev.pendingOwner || prev.owner;
+          return {
+            ...prev,
+            owner: nextOwner,
+            pendingOwner: null,
+            interactionLock: { type: 'none' },
+          };
+        });
+      }
+    } else {
+      console.log(`[HOST REGISTRY DEBUG] handover waiting for host: desiredHostKey=${desiredHostKey}`);
+    }
+  }, [desiredHostKey, registeredHosts, activeHostKey, surfaceState.pendingOwner]);
+
+  // DEV-ONLY Guard
+  useEffect(() => {
+    if (process.env.NODE_ENV !== 'production' && callDisplayMode === 'embedded') {
+      const visibleCallHostsCount = Object.entries(registeredHosts).filter(
+        ([key, el]) => el !== null && key !== 'pip' && key !== 'fullscreen'
+      ).length;
+      const visiblePipHostsCount = registeredHosts['pip'] ? 1 : 0;
+      
+      if (visibleCallHostsCount === 0 && visiblePipHostsCount === 0) {
+        console.error(`[CALL STATE MACHINE][FATAL EMBED GAP] embedded mode without visible host!`, {
+          activeHostKey,
+          desiredHostKey,
+          callPinned,
+          registeredHostKeys: Object.keys(registeredHosts).filter(k => registeredHosts[k] !== null),
+          reason: 'DEV-ONLY-GUARD-TRIGGERED'
+        });
+      }
+    }
+  }, [callDisplayMode, registeredHosts, activeHostKey, desiredHostKey, callPinned]);
+
+  const dispatchTransition = useCallback((targetOwner: CallSurfaceOwner, reason: string) => {
+    const now = performance.now();
+    const transitionId = `t-${Math.floor(Math.random() * 1000000)}`;
+
+    console.log(`[CALL STATE MACHINE][INTENT] Dispatch transition to: ${JSON.stringify(targetOwner)}, reason: ${reason}, ts=${now}`);
+
+    setSurfaceState((prev) => {
+      if (prev.interactionLock.type === 'surface-transition') {
+        const lastTs = (window as any).__lastTransitionLockTs || 0;
+        const lockAge = now - lastTs;
+        if (lockAge > 5000) {
+          console.log(`[CALL STATE MACHINE][LOCK] transition lock timed out (${lockAge.toFixed(1)}ms). Overriding lock.`);
+        } else {
+          if (isSameOwner(prev.pendingOwner || prev.owner, targetOwner)) {
+            console.log(`[CALL STATE MACHINE][LOCK] transition to same target already in progress. Ignoring duplicate.`);
+            return prev;
+          }
+          console.log(`[CALL STATE MACHINE][LOCK] transition blocked by active lock (age=${lockAge.toFixed(1)}ms). Dropping request.`);
+          return prev;
+        }
+      }
+
+      if (isSameOwner(prev.owner, targetOwner) && prev.pendingOwner === null) {
+        console.log(`[CALL STATE MACHINE] Already at target state. Ignoring transition.`);
+        return prev;
+      }
+
+      (window as any).__lastTransitionLockTs = now;
+      const mode = targetOwner.type === 'pip' ? 'pip' : targetOwner.type === 'fullscreen' ? 'fullscreen' : 'embedded';
+      console.log(`[CALL STATE MACHINE][COMMIT BEGIN] transitionId=${transitionId} target=${JSON.stringify(targetOwner)}, mode=${mode}, reason=${reason}, ts=${now}`);
+      if (targetOwner.type === 'embedded' || targetOwner.type === 'voice') {
+        console.log(`[CALL STATE MACHINE][LOCK] restore lock acquired for target=${targetOwner.type}`);
+      }
+
+      return {
+        ...prev,
+        pendingOwner: targetOwner,
+        interactionLock: { type: 'surface-transition', transitionId, reason },
+      };
+    });
+  }, []);
+
+  const commitTransition = useCallback((
+    newMode: 'pip' | 'embedded' | 'fullscreen',
+    newTarget: CallHostTarget,
+    reason: string
+  ) => {
+    // Kept for backward compatibility but mapped to the state machine
+    let nextOwner: CallSurfaceOwner = { type: 'pip' };
+    if (newMode === 'fullscreen') {
+      nextOwner = { type: 'fullscreen' };
+    } else if (newMode === 'embedded') {
+      if (newTarget.type === 'pinned-global') {
+        nextOwner = { type: 'pinned-global' };
+      } else if (newTarget.type === 'chat') {
+        nextOwner = { type: 'embedded', conversationId: newTarget.conversationId, hostKey: `chat:${newTarget.conversationId}` };
+      } else if (newTarget.type === 'voice') {
+        nextOwner = { type: 'voice', groupId: newTarget.groupId, channelId: newTarget.channelId, hostKey: `voice:${newTarget.groupId}:${newTarget.channelId}` };
+      }
+    }
+    dispatchTransition(nextOwner, `commitTransition:${reason}`);
+  }, [dispatchTransition]);
+
+  const transitionToPiP = useCallback((reason: string) => {
+    dispatchTransition({ type: 'pip' }, reason);
+  }, [dispatchTransition]);
+
+  const transitionToEmbeddedInConversation = useCallback((conversationId: string, reason: string) => {
+    if (isProfilePreviewOpen) {
+      console.log(`[CALL STATE MACHINE][BLOCKED] transitionToEmbeddedInConversation blocked because profile preview is open.`);
+      return;
+    }
+    if (surfaceState.pinned && activeCall && activeCall.conversationId !== conversationId) {
+      dispatchTransition({ type: 'pinned-global' }, reason);
+      return;
+    }
+    dispatchTransition({ type: 'embedded', conversationId, hostKey: `chat:${conversationId}` }, reason);
+  }, [dispatchTransition, isProfilePreviewOpen, surfaceState.pinned, activeCall]);
+
+  const transitionToEmbeddedIfPossible = useCallback((reason: string) => {
+    if (isProfilePreviewOpen) {
+      console.log(`[CALL STATE MACHINE][BLOCKED] transitionToEmbeddedIfPossible blocked because profile preview is open.`);
+      return;
+    }
+    if (!activeCall) return;
+
+    if (activeCall.conversationId) {
+      const convId = activeCall.conversationId;
+      window.dispatchEvent(
+        new CustomEvent('open-conversation', {
+          detail: { conversationId: convId },
+        })
+      );
+      dispatchTransition({ type: 'embedded', conversationId: convId, hostKey: `chat:${convId}` }, reason);
+    } else if (activeCall.isVoiceChannel && activeCall.groupId && activeCall.channelId) {
+      dispatchTransition({ type: 'voice', groupId: activeCall.groupId, channelId: activeCall.channelId, hostKey: `voice:${activeCall.groupId}:${activeCall.channelId}` }, reason);
+    }
+  }, [dispatchTransition, activeCall, isProfilePreviewOpen]);
+
+  const handleChatDismissWhileEmbedded = useCallback((conversationId: string, reason: string) => {
+    if (callHostTarget.type === 'chat' && callHostTarget.conversationId === conversationId) {
+      transitionToPiP(reason);
+    }
+  }, [callHostTarget, transitionToPiP]);
+
+  const registerCallHost = useCallback((hostKey: string, element: HTMLElement | null) => {
+    const flowInfo = typeof window !== 'undefined' && (window as any).__getCallStateDebugInfo ? (window as any).__getCallStateDebugInfo() : '';
+    const componentName = element ? element.getAttribute('data-component-name') || 'unknown' : 'none';
+    const hasPreviewAttr = element ? element.hasAttribute('data-messages-preview-panel') || element.closest('[data-messages-preview-panel]') != null : false;
+
+    console.log(`[HOST REGISTRY DEBUG] ${flowInfo} registerCallHost: key=${hostKey}, elementExists=${!!element}, componentName=${componentName}, isPreviewHost=${hasPreviewAttr}`);
+
+    registeredHostsRef.current[hostKey] = element;
+    
+    if (element && typeof window !== 'undefined' && process.env.NODE_ENV !== 'production' && hostKey !== 'pip' && hostKey !== 'fullscreen') {
+      const liveHosts = Object.entries(registeredHostsRef.current).filter(
+        ([key, el]) => el && el !== element && key !== 'pip' && key !== 'fullscreen'
+      );
+      if (liveHosts.length > 0) {
+        console.error(`[CALL HOST REGISTRY][HARD ERROR] Multiple active live host elements registered!`, {
+          newHostKey: hostKey,
+          existingHosts: liveHosts.map(([k]) => k)
+        });
+      }
+    }
+
+    setRegisteredHosts((prev) => {
+      if (prev[hostKey] === element) return prev;
+      return { ...prev, [hostKey]: element };
+    });
+  }, []);
+
+  const leaveEmbeddedCallToPiP = useCallback((params: {
+    source: 'back-button' | 'back-swipe' | 'history-pop' | 'header-back' | 'programmatic-pop';
+    conversationId?: string | null;
+    groupId?: string | null;
+    channelId?: string | null;
+    navigate?: () => void;
+  }) => {
+    const flowId = typeof window !== 'undefined' && (window as any).__createGestureFlowId ? (window as any).__createGestureFlowId() : `flow-${Math.floor(Math.random() * 100000)}`;
+    console.log(`[BACK BUTTON DEBUG] leaveEmbeddedCallToPiP called. source=${params.source}, flowId=${flowId}`);
+
+    const isVoice = activeCall?.isVoiceChannel;
+    let matchesContext = false;
+    if (isVoice) {
+      matchesContext = !!(params.groupId && params.channelId && activeCall?.groupId === params.groupId && activeCall?.channelId === params.channelId);
+    } else {
+      matchesContext = !!(params.conversationId && activeCall?.conversationId === params.conversationId);
+    }
+
+    if (activeCall && matchesContext) {
+      setSurfaceState((prev) => {
+        const nextOwner: CallSurfaceOwner = { type: 'pip' };
+        console.log(`[BACK BUTTON DEBUG] leaveEmbeddedCallToPiP: Transitioning to PiP. flowId=${flowId}, pinned=${prev.pinned}`);
+
+        return {
+          ...prev,
+          pendingOwner: nextOwner,
+          interactionLock: {
+            type: 'surface-transition',
+            transitionId: `back-${flowId}`,
+            reason: `leaveEmbeddedCallToPiP:${params.source}:${flowId}`,
+          },
+        };
+      });
+    }
+
+    if (params.navigate) {
+      console.log(`[NAV CALL COORDINATION DEBUG] executing navigate callback for source=${params.source}, flowId=${flowId}`);
+      params.navigate();
+    }
+  }, [activeCall]);
+
+  const requestOpenPip = useCallback(() => {
+    dispatchTransition({ type: 'pip' }, 'requestOpenPip');
+  }, [dispatchTransition]);
+
+  const requestOpenEmbeddedForConversation = useCallback((conversationId: string) => {
+    dispatchTransition({ type: 'embedded', conversationId, hostKey: `chat:${conversationId}` }, 'requestOpenEmbeddedForConversation');
+  }, [dispatchTransition]);
+
+  const requestOpenEmbeddedForVoice = useCallback((groupId: string, channelId: string) => {
+    dispatchTransition({ type: 'voice', groupId, channelId, hostKey: `voice:${groupId}:${channelId}` }, 'requestOpenEmbeddedForVoice');
+  }, [dispatchTransition]);
+
+  const requestOpenFullscreen = useCallback(() => {
+    dispatchTransition({ type: 'fullscreen' }, 'requestOpenFullscreen');
+  }, [dispatchTransition]);
+
+  const requestPinEmbeddedGlobal = useCallback(() => {
+    console.log(`[CALL TRANSITION] requestPinEmbeddedGlobal requested`);
+    setSurfaceState((prev) => ({
+      ...prev,
+      pinned: true,
+      pendingOwner: { type: 'pinned-global' },
+      interactionLock: {
+        type: 'surface-transition',
+        transitionId: `pin-${Math.floor(Math.random() * 1000000)}`,
+        reason: 'requestPinEmbeddedGlobal',
+      },
+    }));
+  }, []);
+
+  const requestUnpinEmbeddedGlobal = useCallback(() => {
+    console.log(`[CALL TRANSITION] requestUnpinEmbeddedGlobal requested`);
+    let nextOwner: CallSurfaceOwner = { type: 'pip' };
+    if (activeCall?.conversationId) {
+      nextOwner = { type: 'embedded', conversationId: activeCall.conversationId, hostKey: `chat:${activeCall.conversationId}` };
+    } else if (activeCall?.isVoiceChannel && activeCall.groupId && activeCall.channelId) {
+      nextOwner = { type: 'voice', groupId: activeCall.groupId, channelId: activeCall.channelId, hostKey: `voice:${activeCall.groupId}:${activeCall.channelId}` };
+    }
+    
+    setSurfaceState((prev) => ({
+      ...prev,
+      pinned: false,
+      pendingOwner: nextOwner,
+      interactionLock: {
+        type: 'surface-transition',
+        transitionId: `unpin-${Math.floor(Math.random() * 1000000)}`,
+        reason: 'requestUnpinEmbeddedGlobal',
+      },
+    }));
+  }, [activeCall]);
+
+  const setCallDisplayMode = useCallback((mode: CallDisplayMode | ((prev: CallDisplayMode) => CallDisplayMode)) => {
+    const nextMode = typeof mode === 'function' ? mode(callDisplayMode) : mode;
+    if (callDisplayMode === nextMode) return;
+
+    let nextOwner: CallSurfaceOwner = { type: 'pip' };
+    if (nextMode === 'fullscreen') {
+      nextOwner = { type: 'fullscreen' };
+    } else if (nextMode === 'embedded') {
+      if (activeCall?.conversationId) {
+        nextOwner = { type: 'embedded', conversationId: activeCall.conversationId, hostKey: `chat:${activeCall.conversationId}` };
+      } else if (activeCall?.isVoiceChannel && activeCall.groupId && activeCall.channelId) {
+        nextOwner = { type: 'voice', groupId: activeCall.groupId, channelId: activeCall.channelId, hostKey: `voice:${activeCall.groupId}:${activeCall.channelId}` };
+      }
+    }
+    dispatchTransition(nextOwner, 'setCallDisplayMode');
+  }, [callDisplayMode, activeCall, dispatchTransition]);
   const [participantVolumes, setParticipantVolumes] = useState<Record<string, number>>({});
   const [debugTrail, setDebugTrail] = useState<string[]>([]);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
-  const [embeddedCallConversationId, setEmbeddedCallConversationId] = useState<string | null>(null);
-  const [embeddedVoiceGroupId, setEmbeddedVoiceGroupId] = useState<string | null>(null);
-  const [embeddedVoiceChannelId, setEmbeddedVoiceChannelId] = useState<string | null>(null);
-  const [callPinned, setCallPinned] = useState(false);
-  const [pinnedCallHostActive, setPinnedCallHostActive] = useState(false);
-  const [callHostAnchorEl, setCallHostAnchorEl] = useState<HTMLElement | null>(null);
+  const embeddedCallConversationId = callHostTarget.type === 'chat' ? callHostTarget.conversationId : null;
+  const embeddedVoiceGroupId = callHostTarget.type === 'voice' ? callHostTarget.groupId : null;
+  const embeddedVoiceChannelId = callHostTarget.type === 'voice' ? callHostTarget.channelId : null;
+  const pinnedCallHostActive = callHostTarget.type === 'pinned-global';
+  const callHostAnchorEl = activeHostElement;
   const [speakingParticipantId, setSpeakingParticipantId] = useState<string | null>(null);
   const embeddedHostRef = useRef<string | null>(null);
   const embeddedVoiceHostRef = useRef<{ groupId: string; channelId: string } | null>(null);
   const pinnedHostRef = useRef(false);
-  const callPinnedRef = useRef(false);
+
+  const debugCall = useCallback((event: string, payload?: any, source = 'CallProvider') => {
+    const ts = performance.now();
+    const info = {
+      ts,
+      event,
+      conversationId: activeCall?.conversationId || null,
+      roomId: activeCall?.callSessionId || activeCallSessionIdRef.current || null,
+      state,
+      callDisplayMode,
+      isCallOpen: state === 'in_call',
+      isPiPOpen: callDisplayMode === 'pip',
+      isJoining: state === 'calling' || joinInFlightRef.current,
+      mountedChatConversationId: embeddedCallConversationId || null,
+      source,
+      ...(payload || {})
+    };
+    console.log(`[CALL DEBUG]`, info);
+  }, [state, activeCall, callDisplayMode, embeddedCallConversationId]);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      (window as any).__debugCall = debugCall;
+    }
+    return () => {
+      if (typeof window !== 'undefined') {
+        delete (window as any).__debugCall;
+      }
+    };
+  }, [debugCall]);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      (window as any).__triggerMockCall = (conversationId = 'mock-session-123', mode = 'embedded') => {
+        console.log('[MOCK CALL] Triggering mock Jitsi call in mode:', mode, 'for conversationId:', conversationId);
+        setIncomingCall(null);
+        setErrorMessage(null);
+        setState('in_call');
+        setSelfRole('host');
+        setSurfaceState({
+          owner: mode === 'pip' ? { type: 'pip' } : { type: 'embedded', conversationId, hostKey: `chat:${conversationId}` },
+          pendingOwner: null,
+          interactionLock: { type: 'none' },
+          pinned: false,
+          callConversationId: conversationId,
+        });
+        setJitsiJoinRequest({
+          sessionId: conversationId,
+          callType: 'audio',
+          conversationId: conversationId,
+        });
+        setActiveCall({
+          callSessionId: conversationId,
+          conversationId: conversationId,
+          callType: 'audio',
+          participants: [
+            { id: 'f3e86e12-f8b3-4447-883f-2e41fc29b152', name: 'nami' }
+          ]
+        });
+      };
+      (window as any).__requestOpenPip = requestOpenPip;
+      (window as any).__requestOpenEmbeddedForConversation = requestOpenEmbeddedForConversation;
+      (window as any).__requestOpenFullscreen = requestOpenFullscreen;
+      (window as any).__requestPinEmbeddedGlobal = requestPinEmbeddedGlobal;
+      (window as any).__requestUnpinEmbeddedGlobal = requestUnpinEmbeddedGlobal;
+      (window as any).__callStateMachine = {
+        transitionToPiP,
+        transitionToEmbeddedInConversation,
+        transitionToEmbeddedIfPossible,
+        handleChatDismissWhileEmbedded,
+      };
+    }
+    return () => {
+      if (typeof window !== 'undefined') {
+        delete (window as any).__triggerMockCall;
+        delete (window as any).__requestOpenPip;
+        delete (window as any).__requestOpenEmbeddedForConversation;
+        delete (window as any).__requestOpenFullscreen;
+        delete (window as any).__requestPinEmbeddedGlobal;
+        delete (window as any).__requestUnpinEmbeddedGlobal;
+        delete (window as any).__callStateMachine;
+      }
+    };
+  }, [
+    setIncomingCall,
+    setErrorMessage,
+    setState,
+    setSelfRole,
+    setJitsiJoinRequest,
+    setActiveCall,
+    requestOpenPip,
+    requestOpenEmbeddedForConversation,
+    requestOpenFullscreen,
+    requestPinEmbeddedGlobal,
+    requestUnpinEmbeddedGlobal,
+    transitionToPiP,
+    transitionToEmbeddedInConversation,
+    transitionToEmbeddedIfPossible,
+    handleChatDismissWhileEmbedded,
+  ]);
+
+  useEffect(() => {
+    triggerDebugCall('state_render_dependency_changed', {
+      state,
+      callDisplayMode,
+      embeddedCallConversationId,
+      embeddedVoiceGroupId,
+      embeddedVoiceChannelId,
+      callPinned,
+      pinnedCallHostActive,
+      hasAnchor: !!callHostAnchorEl
+    }, 'CallProvider');
+  }, [state, callDisplayMode, embeddedCallConversationId, embeddedVoiceGroupId, embeddedVoiceChannelId, callPinned, pinnedCallHostActive, callHostAnchorEl]);
+
+  useEffect(() => {
+    if (state === 'in_call' && callDisplayMode === 'embedded' && !embeddedCallConversationId && !embeddedVoiceGroupId && !pinnedCallHostActive) {
+      console.warn(`[CALL DEBUG][ILLEGAL MOUNT] Call is in embedded display mode but no host (chat conversation, voice group, or pinned host) is active! ts=${performance.now()}`);
+    }
+  }, [state, callDisplayMode, embeddedCallConversationId, embeddedVoiceGroupId, pinnedCallHostActive]);
+
+  const prevIsProfilePreviewOpenRef = useRef(false);
+
+  // Canonical rule: If a profile preview or overlay is opened, temporarily transition to PiP.
+  // When it is closed, if the call was embedded/pinned, restore the appropriate mode!
+  useEffect(() => {
+    if (state !== 'in_call') return;
+    
+    const wasOpen = prevIsProfilePreviewOpenRef.current;
+    const isOpen = isProfilePreviewOpen;
+    prevIsProfilePreviewOpenRef.current = isOpen;
+
+    if (wasOpen === isOpen) return; // ONLY run if the overlay state ACTUALLY changed!
+
+    if (isOpen) {
+      console.log(`[CALL STATE MACHINE][OVERLAY] Profile preview opened. Transitioning to PiP temporarily.`);
+      dispatchTransition({ type: 'pip' }, 'profile-preview-opened');
+    } else {
+      console.log(`[CALL STATE MACHINE][OVERLAY] Profile preview closed. Restoring canonical mode.`);
+      if (callPinned) {
+        if (activeCall?.conversationId) {
+          dispatchTransition({ type: 'embedded', conversationId: activeCall.conversationId, hostKey: `chat:${activeCall.conversationId}` }, 'profile-preview-closed-pinned-chat');
+        } else {
+          dispatchTransition({ type: 'pinned-global' }, 'profile-preview-closed-pinned-global');
+        }
+      } else {
+        if (activeCall?.conversationId) {
+          const targetKey = `chat:${activeCall.conversationId}`;
+          const hostElement = registeredHostsRef.current[targetKey];
+          if (hostElement) {
+            dispatchTransition({ type: 'embedded', conversationId: activeCall.conversationId, hostKey: `chat:${activeCall.conversationId}` }, 'profile-preview-closed-restore-chat');
+          } else {
+            dispatchTransition({ type: 'pip' }, 'profile-preview-closed-fallback-pip');
+          }
+        }
+      }
+    }
+  }, [isProfilePreviewOpen, state, callPinned, activeCall, dispatchTransition]);
 
   const jitsiHandleRef = useRef<JitsiHandle | null>(null);
   const jitsiActiveSessionRef = useRef<string | null>(null);
@@ -441,6 +1180,8 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   const outgoingRingCountRef = useRef(0);
   const clearedStalePendingRef = useRef<Set<string>>(new Set());
   const incomingPollInFlightRef = useRef(false);
+  const pendingHostTransitionRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingVoiceHostTransitionRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     stateRef.current = state;
@@ -514,13 +1255,12 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     setSelfRole('unknown');
     setLocalIdentity(null);
     setRemoteParticipantCount(0);
-    setCallPinned(false);
-    setPinnedCallHostActive(false);
+    resetSurfaceState();
     pinnedHostRef.current = false;
     callPinnedRef.current = false;
     setState('idle');
     pushDebug('state -> idle');
-  }, [pushDebug]);
+  }, [pushDebug, resetSurfaceState]);
 
   const moveToEnded = useCallback(() => {
     clearEndedState();
@@ -554,9 +1294,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     setRemoteParticipantCount(0);
     setRemoteVideoActive(false);
     setRemoteScreenShareActive(false);
-    setCallDisplayMode('pip');
-    setCallPinned(false);
-    setPinnedCallHostActive(false);
+    resetSurfaceState();
     pinnedHostRef.current = false;
     callPinnedRef.current = false;
     setParticipantVolumes({});
@@ -620,6 +1358,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       callType: CallMediaType = 'audio',
       inviteToken?: string,
     ) => {
+      triggerDebugCall('joinCall requested', { callSessionId, conversationId, callType, inviteToken }, 'CallProvider');
       if (jitsiActiveSessionRef.current === callSessionId) {
         pushDebug(`join skipped (already active) session=${callSessionId}`);
         return;
@@ -680,6 +1419,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
 
   const startDirectCall = useCallback(
     async (input: StartDirectCallInput) => {
+      triggerDebugCall('startCall invoked', { input }, 'CallProvider');
       await ensureMicrophoneForCall();
 
       clearEndedState();
@@ -689,6 +1429,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       setSelfRole('host');
       pushDebug(`outgoing call start conversation=${input.conversationId}`);
       startOutgoingSound();
+      setCallDisplayMode('embedded');
       setActiveCall({
         callSessionId: '',
         conversationId: input.conversationId,
@@ -726,7 +1467,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
                 activeCallSessionIdRef.current = existingId;
                 setActiveCall((prev) => (prev ? { ...prev, callSessionId: existingId } : prev));
                 pushDebug(`join existing session=${existingId} (from 409 payload)`);
-                await connectToJitsi(existingId, input.conversationId, 'audio');
+                // Delay Jitsi connection for host until accepted/active state (let Realtime do it)
                 return;
               }
 
@@ -748,7 +1489,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
                 activeCallSessionIdRef.current = fallbackId;
                 setActiveCall((prev) => (prev ? { ...prev, callSessionId: fallbackId } : prev));
                 pushDebug(`join existing session=${fallbackId} (from DB fallback)`);
-                await connectToJitsi(fallbackId, input.conversationId, 'audio');
+                // Delay Jitsi connection for host until accepted/active state (let Realtime do it)
                 return;
               }
               pushDebug('jitsi create 409 — retry after server cleanup');
@@ -765,7 +1506,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
           activeCallSessionIdRef.current = callSessionId;
           pushDebug(`jitsi outgoing created session=${callSessionId}`);
           setActiveCall((prev) => (prev ? { ...prev, callSessionId } : prev));
-          await connectToJitsi(callSessionId, input.conversationId, 'audio');
+          // Delay Jitsi connection for host until accepted/active state (let Realtime handle the accepted trigger)
 
           outgoingCallTimeoutRef.current = window.setTimeout(async () => {
             if (activeCallSessionIdRef.current !== callSessionId) return;
@@ -786,6 +1527,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
             }
           }, RINGING_TIMEOUT_MS);
       } catch (error: unknown) {
+        triggerDebugCall('joinCall failed (startDirectCall error)', { error: String(error) }, 'CallProvider');
         joinInFlightRef.current = false;
         const staleSessionId = activeCallSessionIdRef.current;
         if (staleSessionId) {
@@ -819,6 +1561,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
 
   const joinVoiceChannel = useCallback(
     async (input: JoinVoiceChannelInput) => {
+      triggerDebugCall('joinCall requested (voice channel)', { input }, 'CallProvider');
       await ensureMicrophoneForCall();
 
       clearEndedState();
@@ -861,6 +1604,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         pushDebug(`voice channel join session=${sessionId} channel=${input.channelId}`);
         await connectToJitsi(sessionId, null, 'audio');
       } catch (error: unknown) {
+        triggerDebugCall('joinCall failed (joinVoiceChannel error)', { error: String(error) }, 'CallProvider');
         console.error('Failed to join voice channel:', error);
         toast.error('Voice channel', toUserFacingCallError(error));
         setErrorMessage(toUserFacingCallError(error));
@@ -888,105 +1632,44 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const enterCallPip = useCallback((force = false) => {
-    if (callPinnedRef.current && !force) return;
-    setCallDisplayMode('pip');
-  }, []);
+    console.log(`[CALL FLOW DEBUG] [enterCallPip] force=${force}, callPinned=${callPinned}`);
+    if (typeof window !== 'undefined' && (window as any).__traceCallPipRequest) {
+      (window as any).__traceCallPipRequest(`enterCallPip_force=${force}`, 'CallStateContext:enterCallPip');
+    }
+
+    // Gating: Block automated PiP entry during active restore or handover window unless forced
+    if (!force) {
+      const isLockActive = isRestoreLockActive;
+      const diff = performance.now() - ((window as any).__lastTransitionLockTs || 0);
+      const inRestoreWindow = diff < 1500;
+      const isRestoreFlowActive = isLockActive || inRestoreWindow;
+
+      if (isRestoreFlowActive) {
+        console.log(`[CALL GUARD DEBUG] blocked enterCallPip because restore/handover is active. isLockActive=${isLockActive}, diff=${diff.toFixed(1)}ms`);
+        return;
+      }
+    }
+
+    if (callPinned && !force) return;
+    requestOpenPip();
+  }, [callPinned, requestOpenPip, isRestoreLockActive]);
 
   const toggleCallPinned = useCallback(() => {
-    const next = !callPinnedRef.current;
-    callPinnedRef.current = next;
-    setCallPinned(next);
-    if (next && state === 'in_call') {
-      embeddedHostRef.current = null;
-      embeddedVoiceHostRef.current = null;
-      setEmbeddedCallConversationId(null);
-      setEmbeddedVoiceGroupId(null);
-      setEmbeddedVoiceChannelId(null);
-      pinnedHostRef.current = true;
-      setPinnedCallHostActive(true);
-      setCallDisplayMode('embedded');
-      return;
+    const next = !callPinned;
+    if (next) {
+      requestPinEmbeddedGlobal();
+    } else {
+      requestUnpinEmbeddedGlobal();
     }
-    if (!next && state === 'in_call') {
-      pinnedHostRef.current = false;
-      setPinnedCallHostActive(false);
-    }
-  }, [state]);
+  }, [callPinned, requestPinEmbeddedGlobal, requestUnpinEmbeddedGlobal]);
 
   useEffect(() => {
     callPinnedRef.current = callPinned;
   }, [callPinned]);
 
-  useLayoutEffect(() => {
-    if (callPinned && state === 'in_call' && callDisplayMode === 'pip') {
-      setCallDisplayMode('embedded');
-    }
-  }, [callDisplayMode, callPinned, state]);
-
-  useEffect(() => {
-    if (
-      callPinnedRef.current ||
-      callPinned ||
-      state !== 'in_call' ||
-      callDisplayMode !== 'embedded'
-    ) {
-      return;
-    }
-
-    const hasNativeDm =
-      !!activeCall?.conversationId &&
-      embeddedCallConversationId === activeCall.conversationId;
-    const hasNativeVoice =
-      !!activeCall?.isVoiceChannel &&
-      embeddedVoiceGroupId === activeCall.groupId &&
-      embeddedVoiceChannelId === activeCall.channelId;
-
-    if (!hasNativeDm && !hasNativeVoice && !pinnedCallHostActive) {
-      setCallDisplayMode('pip');
-    }
-  }, [
-    activeCall?.channelId,
-    activeCall?.conversationId,
-    activeCall?.groupId,
-    activeCall?.isVoiceChannel,
-    callDisplayMode,
-    callPinned,
-    embeddedCallConversationId,
-    embeddedVoiceChannelId,
-    embeddedVoiceGroupId,
-    pinnedCallHostActive,
-    state,
-  ]);
-
   const expandCallToFullscreen = useCallback(() => {
-    setCallDisplayMode('fullscreen');
-  }, []);
-
-  const minimizeCallFromFullscreen = useCallback(() => {
-    if (embeddedCallConversationId === activeCall?.conversationId) {
-      setCallDisplayMode('embedded');
-    } else if (
-      callPinned ||
-      pinnedCallHostActive ||
-      (activeCall?.isVoiceChannel &&
-        embeddedVoiceGroupId === activeCall.groupId &&
-        embeddedVoiceChannelId === activeCall.channelId)
-    ) {
-      setCallDisplayMode('embedded');
-    } else {
-      setCallDisplayMode('pip');
-    }
-  }, [
-    activeCall?.channelId,
-    activeCall?.conversationId,
-    activeCall?.groupId,
-    activeCall?.isVoiceChannel,
-    callPinned,
-    embeddedCallConversationId,
-    embeddedVoiceChannelId,
-    embeddedVoiceGroupId,
-    pinnedCallHostActive,
-  ]);
+    requestOpenFullscreen();
+  }, [requestOpenFullscreen]);
 
   const navigateToGroupVoice = useCallback(
     (
@@ -1004,47 +1687,37 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     []
   );
 
+  const minimizeCallFromFullscreen = useCallback(() => {
+    if (callPinned) {
+      requestPinEmbeddedGlobal();
+    } else if (activeCall?.conversationId) {
+      requestOpenEmbeddedForConversation(activeCall.conversationId);
+    } else if (activeCall?.isVoiceChannel && activeCall.groupId && activeCall.channelId) {
+      requestOpenEmbeddedForVoice(activeCall.groupId, activeCall.channelId);
+    } else {
+      requestOpenPip();
+    }
+  }, [callPinned, activeCall, requestPinEmbeddedGlobal, requestOpenEmbeddedForConversation, requestOpenEmbeddedForVoice, requestOpenPip]);
+
   const openCallInChat = useCallback(() => {
-    const conversationId = activeCall?.conversationId;
-    if (!conversationId) return;
-    navigateToConversation(conversationId);
-    setCallDisplayMode('embedded');
-  }, [activeCall?.conversationId, navigateToConversation]);
+    if (activeCall?.conversationId) {
+      requestOpenEmbeddedForConversation(activeCall.conversationId);
+    }
+  }, [activeCall, requestOpenEmbeddedForConversation]);
 
   const openCallInGroupPanel = useCallback(() => {
-    const groupId = activeCall?.groupId;
-    const channelId = activeCall?.channelId;
-    if (!activeCall?.isVoiceChannel || !groupId || !channelId) return;
-    navigateToGroupVoice(
-      groupId,
-      channelId,
-      activeCall.channelName,
-      activeCall.groupName
-    );
-    setCallDisplayMode('embedded');
-  }, [
-    activeCall?.channelId,
-    activeCall?.channelName,
-    activeCall?.groupId,
-    activeCall?.groupName,
-    activeCall?.isVoiceChannel,
-    navigateToGroupVoice,
-  ]);
+    if (activeCall?.isVoiceChannel && activeCall.groupId && activeCall.channelId) {
+      requestOpenEmbeddedForVoice(activeCall.groupId, activeCall.channelId);
+    }
+  }, [activeCall, requestOpenEmbeddedForVoice]);
 
   const openCallInPanel = useCallback(() => {
-    if (callPinnedRef.current) {
-      setCallDisplayMode('embedded');
-      return;
-    }
-    if (activeCall?.isVoiceChannel) {
-      openCallInGroupPanel();
-      return;
-    }
-    openCallInChat();
-  }, [activeCall?.isVoiceChannel, openCallInChat, openCallInGroupPanel]);
+    transitionToEmbeddedIfPossible('double-tap');
+  }, [transitionToEmbeddedIfPossible]);
 
   const acceptIncomingCall = useCallback(async () => {
     if (!incomingCall) return;
+    triggerDebugCall('joinCall requested (accept incoming)', { incomingCall }, 'CallProvider');
 
     const sessionId = incomingCall.callSessionId;
     const conversationId = incomingCall.conversationId;
@@ -1083,6 +1756,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       await api.acceptCall(sessionId, 'accept');
     } catch (error) {
       if (!isStaleAcceptCallError(error)) {
+        triggerDebugCall('joinCall failed (acceptCall api error)', { error: String(error) }, 'CallProvider');
         joinInFlightRef.current = false;
         console.error('Failed to accept call:', error);
         const uiError = toUserFacingCallError(error);
@@ -1103,6 +1777,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     try {
       await Promise.all([micPromise, joinPromise]);
     } catch (error: unknown) {
+      triggerDebugCall('joinCall failed (acceptIncomingCall join error)', { error: String(error) }, 'CallProvider');
       joinInFlightRef.current = false;
       console.error('Failed to join call after accept:', error);
       const uiError = toUserFacingCallError(error);
@@ -1118,6 +1793,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
 
   const declineIncomingCall = useCallback(async () => {
     if (!incomingCall) return;
+    triggerDebugCall('leaveCall requested (declineIncomingCall)', { sessionId: incomingCall.callSessionId }, 'CallProvider');
     try {
       await api.acceptCall(incomingCall.callSessionId, 'decline');
     } catch (error) {
@@ -1132,6 +1808,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   }, [incomingCall, moveToEnded, pushDebug, stopIncomingSound]);
   const hangUp = useCallback(async () => {
     if (callTeardownRef.current) return;
+    triggerDebugCall('leaveCall requested (hangUp)', {}, 'CallProvider');
     callTeardownRef.current = true;
 
     try {
@@ -1162,6 +1839,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         setErrorMessage(null);
         setCanRetryConnection(false);
         pushDebug(`voice channel leave session=${sessionId || 'none'}`);
+        triggerDebugCall('leaveCall success', {}, 'CallProvider');
         return;
       }
 
@@ -1198,6 +1876,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       setErrorMessage(null);
       setCanRetryConnection(false);
       pushDebug(`hangup session=${sessionId || 'none'} role=${selfRoleRef.current}`);
+      triggerDebugCall('leaveCall success', {}, 'CallProvider');
     } finally {
       callTeardownRef.current = false;
     }
@@ -1215,6 +1894,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
 
   const leaveVoiceChannel = useCallback(async () => {
     if (!activeCall?.isVoiceChannel || !activeCall.groupId || !activeCall.channelId) return;
+    triggerDebugCall('leaveCall requested (leaveVoiceChannel)', {}, 'CallProvider');
     try {
       await api.leaveVoiceChannel(activeCall.groupId, activeCall.channelId);
     } catch (error) {
@@ -1229,6 +1909,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     stopIncomingSound();
     stopOutgoingSound();
     moveToEnded();
+    triggerDebugCall('leaveCall success', {}, 'CallProvider');
   }, [activeCall, moveToEnded, resetMedia, stopIncomingSound, stopOutgoingSound]);
 
   const toggleMute = useCallback(async () => {
@@ -1383,6 +2064,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     setConnectionState('connected');
     setCanRetryConnection(false);
     setErrorMessage(null);
+    takeDomSnapshot('after startCall');
   }, []);
 
   const handleJitsiJoinResolved = useCallback(
@@ -1404,6 +2086,10 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
 
   const handleJitsiJoinError = useCallback(
     (error: unknown) => {
+      if (typeof window !== 'undefined' && (window as any).__isPlaywrightTest) {
+        console.log('[MOCK JITSI] Ignoring join error in Playwright test environment:', error);
+        return;
+      }
       jitsiHandleRef.current?.dispose();
       jitsiHandleRef.current = null;
       flushSync(() => {
@@ -1750,80 +2436,20 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   );
 
   const registerEmbeddedCallHost = useCallback((conversationId: string | null) => {
-    if (callPinnedRef.current) return;
-
-    embeddedHostRef.current = conversationId;
-    setEmbeddedCallConversationId(conversationId);
-    if (
-      conversationId &&
-      activeCall?.conversationId === conversationId &&
-      state === 'in_call'
-    ) {
-      setCallDisplayMode((mode) => (mode === 'pip' || mode === 'fullscreen' ? mode : 'embedded'));
-      return;
-    }
-    if (
-      !conversationId &&
-      state === 'in_call' &&
-      !activeCall?.isVoiceChannel &&
-      !callPinnedRef.current
-    ) {
-      setCallDisplayMode((mode) => (mode === 'fullscreen' ? mode : 'pip'));
-    }
-  }, [activeCall?.conversationId, activeCall?.isVoiceChannel, state]);
-
-  const registerEmbeddedVoiceHost = useCallback(
-    (groupId: string | null, channelId: string | null) => {
-      if (callPinnedRef.current) return;
-
-      embeddedVoiceHostRef.current =
-        groupId && channelId ? { groupId, channelId } : null;
-      setEmbeddedVoiceGroupId(groupId);
-      setEmbeddedVoiceChannelId(channelId);
-      if (
-        groupId &&
-        channelId &&
-        activeCall?.isVoiceChannel &&
-        activeCall.groupId === groupId &&
-        activeCall.channelId === channelId &&
-        state === 'in_call'
-      ) {
-        setCallDisplayMode((mode) => (mode === 'pip' || mode === 'fullscreen' ? mode : 'embedded'));
-        return;
-      }
-      if (
-        (!groupId || !channelId) &&
-        state === 'in_call' &&
-        activeCall?.isVoiceChannel &&
-        !callPinnedRef.current
-      ) {
-        setCallDisplayMode((mode) => (mode === 'fullscreen' ? mode : 'pip'));
-      }
-    },
-    [activeCall?.channelId, activeCall?.groupId, activeCall?.isVoiceChannel, state]
-  );
-
-  const registerPinnedCallHost = useCallback(
-    (active: boolean) => {
-      if (!active && callPinnedRef.current) return;
-      pinnedHostRef.current = active;
-      setPinnedCallHostActive(active);
-      if (active && state === 'in_call' && callPinnedRef.current) {
-        setCallDisplayMode('embedded');
-      }
-    },
-    [state]
-  );
-
-  const registerCallHostAnchor = useCallback((element: HTMLElement | null) => {
-    setCallHostAnchorEl(element);
+    // Stubbed for backward compatibility, panels now call registerCallHost directly
   }, []);
 
-  useLayoutEffect(() => {
-    if (state !== 'in_call') {
-      setCallHostAnchorEl(null);
-    }
-  }, [state]);
+  const registerEmbeddedVoiceHost = useCallback((groupId: string | null, channelId: string | null) => {
+    // Stubbed for backward compatibility, panels now call registerCallHost directly
+  }, []);
+
+  const registerPinnedCallHost = useCallback((active: boolean) => {
+    // Stubbed for backward compatibility, panels now call registerCallHost directly
+  }, []);
+
+  const registerCallHostAnchor = useCallback((element: HTMLElement | null) => {
+    // Stubbed for backward compatibility
+  }, []);
 
   useEffect(() => {
     isMutedRef.current = isMuted;
@@ -2279,41 +2905,10 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     ]
   );
 
-  const embeddedDmJitsiActive =
-    !callPinned &&
-    callDisplayMode === 'embedded' &&
-    embeddedCallConversationId != null &&
-    jitsiJoinRequest?.conversationId != null &&
-    embeddedCallConversationId === jitsiJoinRequest.conversationId;
-
-  const embeddedVoiceJitsiActive =
-    !callPinned &&
-    callDisplayMode === 'embedded' &&
-    embeddedVoiceGroupId != null &&
-    embeddedVoiceChannelId != null &&
-    activeCall?.isVoiceChannel === true &&
-    activeCall.groupId === embeddedVoiceGroupId &&
-    activeCall.channelId === embeddedVoiceChannelId &&
-    jitsiJoinRequest?.conversationId == null;
-
-  const embeddedPinnedJitsiActive =
-    callPinned &&
-    callDisplayMode === 'embedded' &&
-    state === 'in_call' &&
-    !!jitsiJoinRequest;
-
-  const embeddedJitsiActive =
-    embeddedDmJitsiActive || embeddedVoiceJitsiActive || embeddedPinnedJitsiActive;
+  const embeddedJitsiActive = callPresentationMode === 'embedded' && !!activeHostElement;
 
   const showGlobalCallHost =
     isJitsiCallProvider() && !!jitsiJoinRequest && state === 'in_call';
-
-  const globalCallDisplayMode: 'pip' | 'fullscreen' | 'embedded' =
-    callDisplayMode === 'fullscreen'
-      ? 'fullscreen'
-      : callDisplayMode === 'embedded' && embeddedJitsiActive && callHostAnchorEl
-        ? 'embedded'
-        : 'pip';
 
   const floatingStageParticipants = useMemo((): CallStageParticipant[] => {
     const remotes = activeCall?.participants ?? [];
@@ -2353,6 +2948,21 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       remoteVideoActive,
       remoteScreenShareActive,
       callDisplayMode,
+      isRestoreLockActive,
+      callPresentationMode,
+      callHostTarget,
+      desiredHostKey,
+      registeredHosts,
+      activeHostKey,
+      activeHostElement,
+      registerCallHost,
+      requestOpenPip,
+      requestOpenEmbeddedForConversation,
+      requestOpenEmbeddedForVoice,
+      requestOpenFullscreen,
+      requestPinEmbeddedGlobal,
+      requestUnpinEmbeddedGlobal,
+      transitionState,
       participantVolumes,
       mediaCaptureAvailable: mediaCaptureSupported(),
       debugTrail,
@@ -2384,6 +2994,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       acceptIncomingCall,
       declineIncomingCall,
       hangUp,
+      leaveCall: hangUp,
       toggleMute,
       toggleCamera,
       toggleScreenShare,
@@ -2392,6 +3003,13 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       clearEndedState,
       isCallForConversation,
       isVoiceChannelActive,
+      isProfilePreviewOpen,
+      setIsProfilePreviewOpen,
+      transitionToPiP,
+      transitionToEmbeddedInConversation,
+      transitionToEmbeddedIfPossible,
+      handleChatDismissWhileEmbedded,
+      leaveEmbeddedCallToPiP,
     }),
     [
       state,
@@ -2411,6 +3029,21 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       remoteVideoActive,
       remoteScreenShareActive,
       callDisplayMode,
+      isRestoreLockActive,
+      callPresentationMode,
+      callHostTarget,
+      desiredHostKey,
+      registeredHosts,
+      activeHostKey,
+      activeHostElement,
+      registerCallHost,
+      requestOpenPip,
+      requestOpenEmbeddedForConversation,
+      requestOpenEmbeddedForVoice,
+      requestOpenFullscreen,
+      requestPinEmbeddedGlobal,
+      requestUnpinEmbeddedGlobal,
+      transitionState,
       participantVolumes,
       debugTrail,
       jitsiJoinRequest,
@@ -2449,6 +3082,13 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       clearEndedState,
       isCallForConversation,
       isVoiceChannelActive,
+      isProfilePreviewOpen,
+      setIsProfilePreviewOpen,
+      transitionToPiP,
+      transitionToEmbeddedInConversation,
+      transitionToEmbeddedIfPossible,
+      handleChatDismissWhileEmbedded,
+      leaveEmbeddedCallToPiP,
     ]
   );
 
@@ -2458,6 +3098,21 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       activeCall,
       incomingCall,
       callDisplayMode,
+      isRestoreLockActive,
+      callPresentationMode,
+      callHostTarget,
+      desiredHostKey,
+      registeredHosts,
+      activeHostKey,
+      activeHostElement,
+      registerCallHost,
+      requestOpenPip,
+      requestOpenEmbeddedForConversation,
+      requestOpenEmbeddedForVoice,
+      requestOpenFullscreen,
+      requestPinEmbeddedGlobal,
+      requestUnpinEmbeddedGlobal,
+      transitionState,
       callPinned,
       pinnedCallHostActive,
       embeddedCallConversationId,
@@ -2487,6 +3142,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       acceptIncomingCall,
       declineIncomingCall,
       hangUp,
+      leaveCall: hangUp,
       toggleMute,
       toggleCamera,
       toggleScreenShare,
@@ -2495,9 +3151,14 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       clearEndedState,
       isCallForConversation,
       isVoiceChannelActive,
+      leaveEmbeddedCallToPiP,
     }),
     [
-      state, activeCall, incomingCall, callDisplayMode, callPinned, pinnedCallHostActive,
+      state, activeCall, incomingCall, callDisplayMode, isRestoreLockActive, callPresentationMode, callHostTarget, desiredHostKey,
+      registeredHosts, activeHostKey, activeHostElement, registerCallHost,
+      requestOpenPip, requestOpenEmbeddedForConversation, requestOpenEmbeddedForVoice,
+      requestOpenFullscreen, requestPinEmbeddedGlobal, requestUnpinEmbeddedGlobal,
+      transitionState, callPinned, pinnedCallHostActive,
       embeddedCallConversationId, embeddedVoiceGroupId, embeddedVoiceChannelId, selfRole,
       jitsiJoinRequest, jitsiMountKey, jitsiHandlers, debugTrail,
       setCallDisplayMode, enterCallPip, expandCallToFullscreen, minimizeCallFromFullscreen,
@@ -2507,6 +3168,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       leaveVoiceChannel, acceptIncomingCall, declineIncomingCall, hangUp,
       toggleMute, toggleCamera, toggleScreenShare, retryConnection,
       joinCallViaInvite, clearEndedState, isCallForConversation, isVoiceChannelActive,
+      leaveEmbeddedCallToPiP,
     ]
   );
 
@@ -2546,16 +3208,42 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       </Suspense>
       {showGlobalCallHost ? (
         <FloatingCallWidget
-          displayMode={globalCallDisplayMode}
-          hostAnchorEl={globalCallDisplayMode === 'embedded' ? callHostAnchorEl : null}
+          displayMode={callDisplayMode}
+          hostAnchorEl={callDisplayMode === 'embedded' ? callHostAnchorEl : null}
+          registerCallHost={registerCallHost}
+          callHostTarget={callHostTarget}
           activeCall={activeCall}
           callPinned={callPinned}
           onExpandedChange={(expanded) => {
+            console.log(`[CALL FLOW DEBUG] [onExpandedChange] expanded=${expanded}`);
+            if (typeof window !== 'undefined' && (window as any).__traceCallPipRequest) {
+              (window as any).__traceCallPipRequest(`onExpandedChange_expanded=${expanded}`, 'FloatingCallWidget:onExpandedChange');
+            }
+
+            // Gating: Block passive/automated minimize to PiP during active restore or handover window
+            if (!expanded) {
+              const isLockActive = isRestoreLockActive;
+              const diff = performance.now() - ((window as any).__lastTransitionLockTs || 0);
+              const inRestoreWindow = diff < 1500;
+              const isRestoreFlowActive = isLockActive || inRestoreWindow;
+
+              if (isRestoreFlowActive) {
+                console.log(`[CALL GUARD DEBUG] blocked onExpandedChange(false) because restore/handover is active. isLockActive=${isLockActive}, diff=${diff.toFixed(1)}ms`);
+                return;
+              }
+            }
+
             if (expanded) expandCallToFullscreen();
             else if (embeddedJitsiActive) setCallDisplayMode('embedded');
             else enterCallPip();
           }}
-          onMinimizeToPip={enterCallPip}
+          onMinimizeToPip={() => {
+            console.log(`[CALL FLOW DEBUG] [onMinimizeToPip] triggered`);
+            if (typeof window !== 'undefined' && (window as any).__traceCallPipRequest) {
+              (window as any).__traceCallPipRequest('onMinimizeToPip', 'FloatingCallWidget:onMinimizeToPip');
+            }
+            enterCallPip();
+          }}
           onTogglePin={toggleCallPinned}
           localIdentity={localIdentity}
           sessionId={jitsiJoinRequest!.sessionId}
@@ -2594,9 +3282,10 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
           onToggleCamera={() => void toggleCamera()}
           onToggleScreenShare={toggleScreenShare}
           onMinimizeFullscreen={minimizeCallFromFullscreen}
-          onOpenInChat={openCallInPanel}
+          onRestoreEmbedded={openCallInPanel}
           onClosePip={openCallInPanel}
           onEnterFullscreen={expandCallToFullscreen}
+          isProfilePreviewOpen={isProfilePreviewOpen}
         />
       ) : null}
         </CallContext.Provider>

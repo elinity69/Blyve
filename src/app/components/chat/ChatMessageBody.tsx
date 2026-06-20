@@ -31,6 +31,7 @@ interface ChatMessageBodyProps {
   onToggleReaction?: (emoji: string) => void;
   /** ISO timestamp of last edit — renders the subtle "edited" label if present. */
   editedAt?: string | null;
+  onMediaLoad?: () => void;
 }
 
 export function ChatMessageBody({
@@ -46,6 +47,7 @@ export function ChatMessageBody({
   summaries = [],
   onToggleReaction,
   editedAt,
+  onMediaLoad,
 }: ChatMessageBodyProps) {
   const { embeds, suppressUrls, showText } = useMessageContentParts(content);
   const textClassName = isBundled
@@ -68,7 +70,7 @@ export function ChatMessageBody({
           </div>
         ) : null}
         <MessageBubble position={bubblePosition} isMe={isMe} readLabel={readLabel}>
-          <MessageEmbedList embeds={embeds} inBubble isMe={isMe} />
+          <MessageEmbedList embeds={embeds} inBubble isMe={isMe} onMediaLoad={onMediaLoad} />
         </MessageBubble>
         <MessageEmbedTimeFooter time={messageTime} isMe={isMe} isRead={isRead} />
         {reactionBar}
@@ -85,7 +87,7 @@ export function ChatMessageBody({
           </div>
         ) : null}
         <div className={`w-max min-w-0 ${CHAT_MESSAGE_BUBBLE_MAX_WIDTH_CLASS}`}>
-          <MessageEmbedList embeds={embeds} isMe={isMe} />
+          <MessageEmbedList embeds={embeds} isMe={isMe} onMediaLoad={onMediaLoad} />
         </div>
         <MessageEmbedTimeFooter
           time={messageTime}
@@ -117,7 +119,7 @@ export function ChatMessageBody({
             embeds={embeds}
           />
         ) : null}
-        {embeds.length > 0 ? <MessageEmbedList embeds={embeds} inBubble isMe={isMe} /> : null}
+        {embeds.length > 0 ? <MessageEmbedList embeds={embeds} inBubble isMe={isMe} onMediaLoad={onMediaLoad} /> : null}
         {editedAt ? (
           <span className="mt-0.5 block text-[0.65rem] italic leading-none opacity-50">
             edited
