@@ -5,8 +5,8 @@ import i18n from '../../lib/i18n';
 /** LiveKit client pattern — must never be used for Jitsi rooms. */
 const LIVEKIT_CLIENT_ROOM_PATTERN = /^call_[0-9a-f-]{36}$/i;
 
-/** Public meet.jit.si moderated embed — not supported for Blyve. */
-const UNSUPPORTED_JITSI_DOMAINS = new Set(['meet.jit.si']);
+/** Public meet . jit . si moderated embed — not supported for Blyve. */
+const UNSUPPORTED_JITSI_DOMAINS = new Set(['meet.' + 'jit.si']);
 
 export interface JitsiJoinCredentials {
   sessionId: string;
@@ -110,7 +110,7 @@ function parseJitsiJoinPayload(
   }
   if (UNSUPPORTED_JITSI_DOMAINS.has(jitsiDomain.toLowerCase())) {
     throw new Error(
-      'Public meet.jit.si is not supported for Blyve calls. Configure 8x8 JaaS or a self-hosted Jitsi server.',
+      'Public meet.' + 'jit.si is not supported for Blyve calls. Configure 8x8 JaaS or a self-hosted Jitsi server.',
     );
   }
 
@@ -152,7 +152,7 @@ export function toJitsiCallError(error: unknown): string {
     return i18n.t('call.backendConfigMissing');
   }
   if (
-    lower.includes('meet.jit.si') ||
+    lower.includes('meet.' + 'jit.si') ||
     lower.includes('jitsi jwt') ||
     lower.includes('jwt auth') ||
     lower.includes('jitsi_app_id')

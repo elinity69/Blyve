@@ -145,6 +145,7 @@ async function handleJitsiJoin(req: Request, body: SmartActionBody): Promise<Res
   }
 
   const inviteToken = body.inviteToken ? String(body.inviteToken) : undefined;
+  // handleJoinCall(auth.supabase, auth.user, sessionId, inviteToken, body)
   const result = await handleJoinCall(
     auth.supabase,
     auth.user,

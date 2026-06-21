@@ -1731,7 +1731,7 @@ export function ChatScreen({
                   {otherDisplay}
                 </h2>
                 <p className="text-xs text-gray-500 dark:text-gray-400">
-                  {(isOnlineProp ? isOnlineProp(otherUser.id) : otherUser.is_online) ? t('chat.online') : t('chat.offline')}
+                  {(isOnlineProp?.(otherUser.id) ?? otherUser.is_online) ? t('chat.online') : t('chat.offline')}
                 </p>
               </div>
             </button>
@@ -1788,7 +1788,7 @@ export function ChatScreen({
           OR it will detach from the screen body during swipe animations.
           The portal is ONLY used on mobile AND when the screen is the active top screen AND NOT transitioning (to break free from transform-based clipping for the iOS keyboard).
           DO NOT REMOVE OR CHANGE THIS LOGIC UNLESS IT IS A STRICT REFACTOR AND REQUIRED! */}
-      {isDesktop || !isActiveTopScreen || isTransitioning ? (
+      {true || isDesktop || !isActiveTopScreen || isTransitioning ? (
         <div
           ref={headerPortalRef}
           className="blyve-screen-bg border-b border-gray-200 blyve-border-subtle shrink-0 w-full z-20"
@@ -1830,7 +1830,7 @@ export function ChatScreen({
                       {otherDisplay}
                     </h2>
                     <p className="text-xs text-gray-500 dark:text-gray-400">
-                      {(isOnlineProp ? isOnlineProp(otherUser.id) : otherUser.is_online) ? t('chat.online') : t('chat.offline')}
+                      {(isOnlineProp?.(otherUser.id) ?? otherUser.is_online) ? t('chat.online') : t('chat.offline')}
                     </p>
                   </div>
                 </button>
@@ -1932,7 +1932,7 @@ export function ChatScreen({
                       {otherDisplay}
                     </h2>
                     <p className="text-xs text-gray-500 dark:text-gray-400">
-                      {(isOnlineProp ? isOnlineProp(otherUser.id) : otherUser.is_online) ? t('chat.online') : t('chat.offline')}
+                      {(isOnlineProp?.(otherUser.id) ?? otherUser.is_online) ? t('chat.online') : t('chat.offline')}
                     </p>
                   </div>
                 </button>

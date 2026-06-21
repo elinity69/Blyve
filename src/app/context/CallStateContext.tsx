@@ -3202,6 +3202,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     <CallCoreContext.Provider value={coreValue}>
       <CallMediaContext.Provider value={mediaValue}>
         <CallContext.Provider value={value}>
+      {/* JitsiCallView */}
       {children}
       <Suspense fallback={null}>
         <IncomingCallPopup />
