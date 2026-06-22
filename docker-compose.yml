@@ -35,10 +35,12 @@ services:
         condition: service_healthy
     environment:
       LITELLM_MASTER_KEY: sk-1234
+      LITELLM_LOG: ERROR
+      JSON_LOGS: "True"
       DATABASE_URL: postgresql://llmproxy:dbpassword9090@db:5432/litellm
       GOOGLE_APPLICATION_CREDENTIALS: /app/google-credentials.json
       VERTEXAI_PROJECT: project-6f2f73ef-798c-4cfb-a32
-      VERTEXAI_LOCATION: us-central1
+      VERTEXAI_LOCATION: global
       REDIS_HOST: redis
       REDIS_PORT: "6379"
       REDIS_URL: redis://redis:6379

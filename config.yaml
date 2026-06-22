@@ -4,7 +4,15 @@
       model: vertex_ai/gemini-3.5-flash
       vertex_project: project-6f2f73ef-798c-4cfb-a32
       vertex_location: global
-      vertex_credentials: google-credentials.json
+      vertex_credentials: /app/google-credentials.json
+      reasoning_effort: low
+
+  - model_name: my-gemini-us
+    litellm_params:
+      model: vertex_ai/gemini-3.5-flash
+      vertex_project: project-6f2f73ef-798c-4cfb-a32
+      vertex_location: us-central1
+      vertex_credentials: /app/google-credentials.json
       reasoning_effort: low
 
 general_settings:
@@ -14,8 +22,16 @@ general_settings:
 router_settings:
   redis_host: os.environ/REDIS_HOST
   redis_port: os.environ/REDIS_PORT
+  routing_strategy: simple-shuffle
+
+  allowed_fails: 1
+  cooldown_time: 10
+  num_retries: 4
+  retry_after: 8
+  timeout: 12
 
 litellm_settings:
+  json_logs: true
   cache: true
   cache_params:
     type: redis

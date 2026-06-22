@@ -81,7 +81,7 @@ export function measureMobileViewportFrame(): MobileViewportFrame {
     window.scrollTo(0, 0);
   }
 
-  const offsetTop = 0;
+  const offsetTop = Math.max(0, vv.offsetTop);
   const visibleHeight = vv.height;
   const obscuredBottom = Math.max(0, layoutHeight - visibleHeight);
   const bottomInset = Math.max(safeBottom, obscuredBottom);
@@ -128,7 +128,7 @@ function onViewportEvent() {
       window.scrollTo(0, 0);
     }
 
-    const offsetTop = 0;
+    const offsetTop = Math.max(0, vv.offsetTop);
     const height = vv.height;
     const root = document.documentElement;
     root.style.setProperty(MOBILE_VV_CSS.offsetTop, `${offsetTop}px`);
