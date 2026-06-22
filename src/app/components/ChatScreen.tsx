@@ -1730,8 +1730,13 @@ export function ChatScreen({
                 <h2 className="text-base font-semibold text-gray-900 dark:text-white">
                   {otherDisplay}
                 </h2>
-                <p className="text-xs text-gray-500 dark:text-gray-400">
-                  {(isOnlineProp?.(otherUser.id) ?? otherUser.is_online) ? t('chat.online') : t('chat.offline')}
+                <p className="text-xs text-gray-500 dark:text-gray-400 flex items-center gap-1.5">
+                  {(isOnlineProp?.(otherUser.id) ?? otherUser.is_online) && (
+                    <span className="w-2 h-2 rounded-full bg-green-500 shrink-0" aria-hidden />
+                  )}
+                  <span>
+                    {(isOnlineProp?.(otherUser.id) ?? otherUser.is_online) ? t('chat.online') : t('chat.offline')}
+                  </span>
                 </p>
               </div>
             </button>
@@ -1829,8 +1834,13 @@ export function ChatScreen({
                     <h2 className="text-base font-semibold text-gray-900 dark:text-white">
                       {otherDisplay}
                     </h2>
-                    <p className="text-xs text-gray-500 dark:text-gray-400">
-                      {(isOnlineProp?.(otherUser.id) ?? otherUser.is_online) ? t('chat.online') : t('chat.offline')}
+                    <p className="text-xs text-gray-500 dark:text-gray-400 flex items-center gap-1.5">
+                      {(isOnlineProp?.(otherUser.id) ?? otherUser.is_online) && (
+                        <span className="w-2 h-2 rounded-full bg-green-500 shrink-0" aria-hidden />
+                      )}
+                      <span>
+                        {(isOnlineProp?.(otherUser.id) ?? otherUser.is_online) ? t('chat.online') : t('chat.offline')}
+                      </span>
                     </p>
                   </div>
                 </button>
@@ -1931,8 +1941,13 @@ export function ChatScreen({
                     <h2 className="text-base font-semibold text-gray-900 dark:text-white">
                       {otherDisplay}
                     </h2>
-                    <p className="text-xs text-gray-500 dark:text-gray-400">
-                      {(isOnlineProp?.(otherUser.id) ?? otherUser.is_online) ? t('chat.online') : t('chat.offline')}
+                    <p className="text-xs text-gray-500 dark:text-gray-400 flex items-center gap-1.5">
+                      {(isOnlineProp?.(otherUser.id) ?? otherUser.is_online) && (
+                        <span className="w-2 h-2 rounded-full bg-green-500 shrink-0" aria-hidden />
+                      )}
+                      <span>
+                        {(isOnlineProp?.(otherUser.id) ?? otherUser.is_online) ? t('chat.online') : t('chat.offline')}
+                      </span>
                     </p>
                   </div>
                 </button>

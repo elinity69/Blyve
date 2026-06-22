@@ -83,15 +83,27 @@ export function useSwipeToReply(onReply: () => void, enabled = true) {
       const touch = event.touches[0];
       if (!touch) return;
 
+      if (isNavSwipeActive()) {
+        suppressedRef.current = true;
+        reset();
+        return;
+      }
+
       const dx = touch.clientX - startXRef.current;
       const dy = touch.clientY - startYRef.current;
 
       if (!draggingRef.current) {
         if (Math.abs(dx) < 5 && Math.abs(dy) < 5) return;
 
-        if (Math.abs(dy) > Math.abs(dx) * 1.2) return;
+        if (Math.abs(dy) > Math.abs(dx) * 1.2) {
+          suppressedRef.current = true;
+          return;
+        }
 
-        if (dx >= 0) return;
+        if (dx >= 0) {
+          suppressedRef.current = true;
+          return;
+        }
 
         draggingRef.current = true;
         attachScrollBlock();
@@ -115,7 +127,7 @@ export function useSwipeToReply(onReply: () => void, enabled = true) {
         patchState({ offsetX: 0, swipeProgress: 0, armed: false });
       }
     },
-    [enabled, attachScrollBlock, patchState]
+    [enabled, attachScrollBlock, patchState, reset]
   );
 
   const onTouchStart = useCallback(
