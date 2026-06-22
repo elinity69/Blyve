@@ -803,7 +803,7 @@ function AppContent({ onUserIdChange }: AppContentProps = {}) {
         />
       ) : (
         <>
-          <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden blyve-app-bg shadow-none md:shadow-none w-full md:pb-16 box-border">
+          <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden blyve-app-bg shadow-none md:shadow-none w-full md:pb-[61px] box-border">
             {/* Virtual Slide Map - Alle Screens permanent gemountet, horizontal positioniert */}
             <div className="relative min-h-0 flex-1 w-full overflow-hidden blyve-app-bg">
               {(['messages', 'profile'] as const).map((tab, index) => {

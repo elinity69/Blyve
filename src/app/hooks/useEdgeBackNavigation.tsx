@@ -58,7 +58,7 @@ const mobilePreviewShellStyle = {
   top: `var(${MOBILE_VV_CSS.offsetTop}, 0px)`,
   left: 0,
   right: 0,
-  bottom: `${MOBILE_BOTTOM_NAV_HEIGHT_PX}px`,
+  bottom: `calc(${MOBILE_BOTTOM_NAV_HEIGHT_PX}px + max(8px, env(safe-area-inset-bottom, 0px)) - 5px)`,
   boxSizing: 'border-box' as const,
   zIndex: 1,
   overflow: 'hidden' as const,

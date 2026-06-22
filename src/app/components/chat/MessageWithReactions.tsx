@@ -96,6 +96,28 @@ export function MessageWithReactions({
     } catch {
       // keep default
     }
+
+    // Convert Supabase storage URLs to the download endpoint to force-download via Content-Disposition attachment.
+    let targetUrl = downloadUrl;
+    if (targetUrl.includes('/storage/v1/object/public/')) {
+      targetUrl = targetUrl.replace('/storage/v1/object/public/', '/storage/v1/object/download/public/');
+    } else if (targetUrl.includes('/storage/v1/object/sign/')) {
+      targetUrl = targetUrl.replace('/storage/v1/object/sign/', '/storage/v1/object/download/sign/');
+    } else if (targetUrl.includes('/storage/v1/object/authenticated/')) {
+      targetUrl = targetUrl.replace('/storage/v1/object/authenticated/', '/storage/v1/object/download/authenticated/');
+    }
+
+    // If it is a Supabase download URL, we can just trigger a direct click/download without fetching!
+    if (targetUrl !== downloadUrl) {
+      const a = document.createElement('a');
+      a.href = targetUrl;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      return;
+    }
+
     // Fetch as blob so the browser forces a download even for cross-origin R2 URLs.
     fetch(downloadUrl)
       .then((res) => res.blob())

@@ -102,7 +102,7 @@ export function MessageContextMenu({
     <>
       <div
         ref={menuRef}
-        className="fixed min-w-[200px] max-w-[min(92vw,280px)] overflow-hidden rounded-xl border border-gray-200 bg-white shadow-2xl dark:border-white/10 dark:bg-[#1e1f22]"
+        className="fixed min-w-[200px] max-w-[min(92vw,280px)] overflow-y-auto max-h-[calc(100vh-16px)] rounded-xl border border-gray-200 bg-white shadow-2xl dark:border-white/10 dark:bg-[#1e1f22]"
         style={{ left: position.x, top: position.y, zIndex: MENU_Z_PANEL }}
         role="menu"
         onPointerDown={(event) => event.stopPropagation()}

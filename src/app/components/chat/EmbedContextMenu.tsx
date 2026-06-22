@@ -85,7 +85,7 @@ function EmbedContextMenu({ embed, x, y, onClose }: EmbedContextMenuProps) {
   return (
     <div
       ref={menuRef}
-      className="fixed z-[220] min-w-[180px] max-w-[min(92vw,280px)] overflow-hidden rounded-xl border border-gray-200 bg-white shadow-xl dark:border-white/10 dark:bg-[#1e1f22]"
+      className="fixed z-[220] min-w-[180px] max-w-[min(92vw,280px)] overflow-y-auto max-h-[calc(100vh-16px)] rounded-xl border border-gray-200 bg-white shadow-xl dark:border-white/10 dark:bg-[#1e1f22]"
       style={{ left: position.x, top: position.y }}
       role="menu"
       aria-label={t('chat.embedCopyLink')}

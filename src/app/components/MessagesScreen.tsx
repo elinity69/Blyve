@@ -2159,7 +2159,6 @@ export function MessagesScreen({ isTabActive = true }: MessagesScreenProps) {
           <div
             data-messages-preview-scroll
             className="flex-1 min-h-0 overflow-y-auto overscroll-y-contain md:pb-0 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]"
-            style={{ paddingBottom: `calc(${MOBILE_BOTTOM_NAV_HEIGHT_PX}px + max(8px, env(safe-area-inset-bottom, 0px)))` }}
           >
             {currentUserId && <ChatEmbeddedCallBar currentUserId={currentUserId} />}
             {!selectedGroup ? (

@@ -24,6 +24,31 @@ export async function resolveEmbedDownloadUrl(embed: ParsedEmbed): Promise<strin
 export async function downloadMediaFile(mediaUrl: string, filename?: string): Promise<boolean> {
   const name = filename || filenameFromUrl(mediaUrl);
 
+  // Convert Supabase storage URLs to the download endpoint to force-download via Content-Disposition attachment.
+  let targetUrl = mediaUrl;
+  if (targetUrl.includes('/storage/v1/object/public/')) {
+    targetUrl = targetUrl.replace('/storage/v1/object/public/', '/storage/v1/object/download/public/');
+  } else if (targetUrl.includes('/storage/v1/object/sign/')) {
+    targetUrl = targetUrl.replace('/storage/v1/object/sign/', '/storage/v1/object/download/sign/');
+  } else if (targetUrl.includes('/storage/v1/object/authenticated/')) {
+    targetUrl = targetUrl.replace('/storage/v1/object/authenticated/', '/storage/v1/object/download/authenticated/');
+  }
+
+  // If it is a Supabase download URL, we can just trigger a direct click/download without fetching!
+  if (targetUrl !== mediaUrl) {
+    try {
+      const anchor = document.createElement('a');
+      anchor.href = targetUrl;
+      anchor.download = name;
+      document.body.appendChild(anchor);
+      anchor.click();
+      document.body.removeChild(anchor);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   try {
     const response = await fetch(mediaUrl);
     if (!response.ok) throw new Error('fetch failed');
