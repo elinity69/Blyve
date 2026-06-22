@@ -1271,9 +1271,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     jitsiHandleRef.current?.dispose();
     jitsiHandleRef.current = null;
     jitsiActiveSessionRef.current = null;
-    flushSync(() => {
-      setJitsiJoinRequest(null);
-    });
+    setJitsiJoinRequest(null);
 
     setConnectionState('disconnected');
     setIsMuted(false);

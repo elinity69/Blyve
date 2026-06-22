@@ -76,9 +76,14 @@ export function measureMobileViewportFrame(): MobileViewportFrame {
     };
   }
 
-  const offsetTop = Math.max(0, vv.offsetTop);
+  // 1:1 Discord/iMessage Trick: Block window scrolling/shifting on iOS Safari
+  if (window.scrollY !== 0) {
+    window.scrollTo(0, 0);
+  }
+
+  const offsetTop = 0;
   const visibleHeight = vv.height;
-  const obscuredBottom = Math.max(0, layoutHeight - (offsetTop + visibleHeight));
+  const obscuredBottom = Math.max(0, layoutHeight - visibleHeight);
   const bottomInset = Math.max(safeBottom, obscuredBottom);
 
   return {
@@ -117,7 +122,13 @@ function onViewportEvent() {
   // frame-by-frame tracking of the keyboard animation, no rAF lag.
   if (typeof document !== 'undefined' && window.visualViewport) {
     const vv = window.visualViewport;
-    const offsetTop = Math.max(0, vv.offsetTop);
+    
+    // 1:1 Discord/iMessage Trick: Block window scrolling/shifting on iOS Safari
+    if (window.scrollY !== 0) {
+      window.scrollTo(0, 0);
+    }
+
+    const offsetTop = 0;
     const height = vv.height;
     const root = document.documentElement;
     root.style.setProperty(MOBILE_VV_CSS.offsetTop, `${offsetTop}px`);
