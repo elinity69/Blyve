@@ -437,6 +437,13 @@ export function ChatMessageComposer({
           type="text"
           value={value}
           onChange={(event) => onChange(event.target.value)}
+          onPointerDown={(event) => {
+            if (isMobile) {
+              console.log(`[MOBILE VIEWPORT DEBUG] Intercepted pointerdown on input. Calling preventDefault() and focus({ preventScroll: true }) to block browser scrolling.`);
+              event.preventDefault();
+              inputRef.current?.focus({ preventScroll: true });
+            }
+          }}
           onKeyDown={(event) => {
             if (event.key === 'Enter' && !event.shiftKey && (hasText || hasStagedMedia) && !recording) {
               event.preventDefault();

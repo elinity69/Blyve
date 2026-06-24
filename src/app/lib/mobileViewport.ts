@@ -78,6 +78,7 @@ export function measureMobileViewportFrame(): MobileViewportFrame {
 
   // 1:1 Discord/iMessage Trick: Block window scrolling/shifting on iOS Safari
   if (window.scrollY !== 0) {
+    console.warn(`[MOBILE VIEWPORT DEBUG] Native document scroll detected in measure! window.scrollY = ${window.scrollY}px. Resetting to 0.`);
     window.scrollTo(0, 0);
   }
 
@@ -125,6 +126,7 @@ function onViewportEvent() {
     
     // 1:1 Discord/iMessage Trick: Block window scrolling/shifting on iOS Safari
     if (window.scrollY !== 0) {
+      console.warn(`[MOBILE VIEWPORT DEBUG] Native document scroll detected in onViewportEvent! window.scrollY = ${window.scrollY}px. Resetting to 0.`);
       window.scrollTo(0, 0);
     }
 
